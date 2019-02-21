@@ -25,25 +25,30 @@
 (defn modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
 
+(def primitive-types
+  {'int Type/INT_TYPE
+   'short Type/SHORT_TYPE
+   'long Type/LONG_TYPE
+   'float Type/FLOAT_TYPE
+   'double Type/DOUBLE_TYPE
+   'char Type/CHAR_TYPE
+   'boolean Type/BOOLEAN_TYPE
+   'void Type/VOID_TYPE})
+
+(defn tag->type [tag]
+  (or (get primitive-types tag)
+      (when-let [c (and (symbol? tag) (resolve tag))]
+        (when (class? c)
+          (Type/getType c)))
+      (Type/getType Object)))
+
 (defn parse-modifiers [{:keys [tag] :as modifiers}]
-  (let [types {'int Type/INT_TYPE
-               'short Type/SHORT_TYPE
-               'long Type/LONG_TYPE
-               'float Type/FLOAT_TYPE
-               'double Type/DOUBLE_TYPE
-               'char Type/CHAR_TYPE
-               'boolean Type/BOOLEAN_TYPE
-               'void Type/VOID_TYPE}]
-    {:access (cond-> 0
-               (:static modifiers) (+ Opcodes/ACC_STATIC)
-               (:public modifiers) (+ Opcodes/ACC_PUBLIC)
-               (:protected modifiers) (+ Opcodes/ACC_PROTECTED)
-               (:private modifiers) (+ Opcodes/ACC_PRIVATE))
-     :type (or (get types tag)
-               (when-let [c (and (symbol? tag) (resolve tag))]
-                 (when (class? c)
-                   (Type/getType c)))
-               (Type/getType Object))}))
+  {:access (cond-> 0
+             (:static modifiers) (+ Opcodes/ACC_STATIC)
+             (:public modifiers) (+ Opcodes/ACC_PUBLIC)
+             (:protected modifiers) (+ Opcodes/ACC_PROTECTED)
+             (:private modifiers) (+ Opcodes/ACC_PRIVATE))
+   :type (tag->type tag)})
 
 (defn emit-field [^ClassWriter cw [_ fname value :as field]]
   (let [modifiers (modifiers-of field)
