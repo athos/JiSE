@@ -16,9 +16,9 @@
             (if-let [v (resolve (first decl))]
               (if (:macro (meta v))
                 (recur (cons (macroexpand decl) decls) ret)
-                (let [msg (str "unknown type of declaration fonud: " (first decl))]
+                (let [msg (str "unknown type of declaration found: " (first decl))]
                   (throw (ex-info msg {:decl decl}))))
-              (let [msg (str "unknown type of declaration fonud: " (first decl))]
+              (let [msg (str "unknown type of declaration found: " (first decl))]
                 (throw (ex-info msg {:decl decl})))))
           (recur decls ret))))))
 
