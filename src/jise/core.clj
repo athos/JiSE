@@ -42,13 +42,17 @@
           (Type/getType c)))
       (Type/getType Object)))
 
+(defn access-flags [modifiers]
+  (cond-> 0
+    (:static modifiers) (+ Opcodes/ACC_STATIC)
+    (:public modifiers) (+ Opcodes/ACC_PUBLIC)
+    (:protected modifiers) (+ Opcodes/ACC_PROTECTED)
+    (:private modifiers) (+ Opcodes/ACC_PRIVATE)
+    (:final modifiers) (+ Opcodes/ACC_FINAL)))
+
 (defn parse-modifiers [{:keys [tag] :as modifiers}]
-  {:access (cond-> 0
-             (:static modifiers) (+ Opcodes/ACC_STATIC)
-             (:public modifiers) (+ Opcodes/ACC_PUBLIC)
-             (:protected modifiers) (+ Opcodes/ACC_PROTECTED)
-             (:private modifiers) (+ Opcodes/ACC_PRIVATE))
-   :type (tag->type tag)})
+  {:type (tag->type tag)
+   :access (access-flags modifiers)})
 
 (defn emit-field [^ClassWriter cw [_ fname value :as field]]
   (let [modifiers (modifiers-of field)
@@ -70,7 +74,7 @@
 (defn emit [cname fields methods]
   (let [cw (ClassWriter. 0)]
     (.visit cw Opcodes/V1_5
-            (+ Opcodes/ACC_PUBLIC Opcodes/ACC_SUPER)
+            (access-flags modifiers)
             cname
             nil
             "java/lang/Object"
@@ -91,8 +95,9 @@
 
 (defmacro defclass [cname & body]
   (let [cname' (str cname)
+        modifiers (modifiers-of &form)
         {:keys [fields methods]} (parse-class-body body)
-        bytecode (emit cname' fields methods)]
+        bytecode (emit cname' modifiers fields methods)]
     (.defineClass @clojure.lang.Compiler/LOADER cname' bytecode nil)
     `(do (import '~cname)
          ~cname)))
