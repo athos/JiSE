@@ -1,5 +1,6 @@
 (ns jise.core
-  (:import [clojure.asm ClassVisitor ClassWriter MethodVisitor Opcodes Type]))
+  (:import [clojure.asm ClassVisitor ClassWriter MethodVisitor Opcodes Type]
+           [clojure.lang Compiler]))
 
 (defn parse-class-body [body]
   (loop [decls body
@@ -104,7 +105,9 @@
         modifiers (modifiers-of &form)
         {:keys [fields methods]} (parse-class-body body)
         bytecode (emit cname' modifiers fields methods)]
-    (.defineClass @clojure.lang.Compiler/LOADER cname' bytecode nil)
+    (when *compile-files*
+      (Compiler/writeClassFile cname' bytecode))
+    (.defineClass @Compiler/LOADER cname' bytecode nil)
     `(do (import '~cname)
          ~cname)))
 
