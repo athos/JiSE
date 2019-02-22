@@ -113,10 +113,23 @@
 
 (comment
 
- (defclass C
-   ^:public ^String
-   (def x nil)
-   ^:public ^int
-   (defm m []))
+  (require '[clojure.java.io :as io])
+  (import 'java.io.DataOutputStream)
+
+  (defn gen [[_ cname & body :as form] filename]
+    (let [cname' (str cname)
+          modifiers (modifiers-of form)
+          {:keys [fields methods]} (parse-class-body body)
+          bytecode (emit cname' modifiers fields methods)]
+      (with-open [out (DataOutputStream. (io/output-stream filename))]
+        (.write out bytecode)
+        (.flush out))))
+
+  ^:public
+  (defclass C
+    ^:public ^String
+    (def x nil)
+    ^:public ^int
+    (defm m [^int x]))
 
  )
