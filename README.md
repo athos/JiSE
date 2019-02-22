@@ -1,6 +1,6 @@
-# jise
+# JiSE: Java in S-Expression
 
-A Clojure library designed to ... well, that part is up to you.
+JiSE is Clojure's embedded DSL for making it as easy (or even easier) to write imperative code than in Java.
 
 ## Usage
 
@@ -8,7 +8,7 @@ FIXME
 
 ## License
 
-Copyright © 2019 FIXME
+Copyright © 2019 Shogo Ohta
 
 This program and the accompanying materials are made available under the
 terms of the Eclipse Public License 2.0 which is available at
