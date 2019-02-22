@@ -35,11 +35,12 @@
    'boolean Type/BOOLEAN_TYPE
    'void Type/VOID_TYPE})
 
-(defn tag->type [tag]
+(defn tag->type [tag & {:keys [default]}]
   (or (get primitive-types tag)
       (when-let [c (and (symbol? tag) (resolve tag))]
         (when (class? c)
           (Type/getType c)))
+      default
       (Type/getType Object)))
 
 (defn access-flags [modifiers]
@@ -60,19 +61,24 @@
     (doto (.visitField cw access (str fname) (.getDescriptor type) nil value)
       (.visitEnd))))
 
-(defn emit-method [^ClassWriter cw [_ mname :as method]]
+(defn emit-method [^ClassWriter cw [_ mname args :as method]]
   (let [modifiers (modifiers-of method)
         {:keys [access ^Type type]} (parse-modifiers modifiers)
-        desc (Type/getMethodDescriptor type (into-array Type []))]
-    (doto (.visitMethod cw access (str mname) desc nil nil)
+        desc (->> (map (comp tag->type :tag meta) args)
+                  (into-array Type)
+                  (Type/getMethodDescriptor type))
+        mv (.visitMethod cw access (str mname) desc nil nil)]
+    (doseq [arg args]
+      (.visitParameter mv (str arg) (access-flags (meta arg))))
+    (doto mv
       (.visitCode)
       (.visitInsn Opcodes/ICONST_0)
       (.visitInsn Opcodes/IRETURN)
       (.visitMaxs 1 1)
       (.visitEnd))))
 
-(defn emit [cname fields methods]
-  (let [cw (ClassWriter. 0)]
+(defn emit [cname modifiers fields methods]
+  (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)]
     (.visit cw Opcodes/V1_5
             (access-flags modifiers)
             cname
