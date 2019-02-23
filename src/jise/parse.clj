@@ -1,0 +1,98 @@
+(ns jise.parse)
+
+(def ^:const primitive-types
+  '#{int short long float double char boolean void})
+
+(defn tag->type [tag & {:keys [default]}]
+  (or (get primitive-types tag)
+      (when-let [c (and (symbol? tag) (resolve tag))]
+        (when (class? c) c))
+      default
+      Object))
+
+(defn modifiers-of [[_ name :as form]]
+  (merge (meta form) (meta name)))
+
+(defn access-flags [modifiers]
+  (cond-> #{}
+    (:static modifiers) (conj :static)
+    (:public modifiers) (conj :public)
+    (:protected modifiers) (conj :protected)
+    (:private modifiers) (conj :private)
+    (:final modifiers) (conj :final)))
+
+(defn parse-modifiers [{:keys [tag] :as modifiers}]
+  {:type (tag->type tag)
+   :access (access-flags modifiers)})
+
+(defn object-type [obj]
+  (cond (boolean? obj) 'boolean
+        (char? obj) 'char
+        (int? obj) 'int
+        (float? obj) 'float
+        (string? obj) String
+        :else nil))
+
+(defn parse-field [[_ fname value :as field]]
+  (let [modifiers (modifiers-of field)
+        {:keys [access type]} (parse-modifiers modifiers)]
+    (cond-> {:name (str fname)
+             :type type
+             :access access}
+      (not (nil? value)) (assoc :value value))))
+
+(defn parse-expr [cenv expr]
+  (if (seq? expr)
+    (assert false "not supported yet")
+    (if (nil? expr)
+      {:op :literal :type nil :value nil}
+      (if-let [t (object-type expr)]
+        {:op :literal :type t :value expr}))))
+
+(defn parse-method-body [cenv body]
+  (mapv (partial parse-expr cenv) body))
+
+(defn parse-method-arg [arg]
+  (let [{:keys [access type]} (parse-modifiers (meta arg))]
+    {:name (str arg)
+     :type type
+     :access (access-flags (meta arg))}))
+
+(defn parse-method [cenv [_ mname args & body :as method]]
+  (let [modifiers (modifiers-of method)
+        {:keys [access type]} (parse-modifiers modifiers)]
+    {:name (str mname)
+     :return-type type
+     :args (mapv parse-method-arg args)
+     :access access
+     :body (parse-method-body cenv body)}))
+
+(defn parse-class-body [body]
+  (loop [decls body
+         ret {:fields []
+              :methods []}]
+    (if (empty? decls)
+      ret
+      (let [[decl & decls] decls]
+        (if (seq? decl)
+          (case (first decl)
+            def (recur decls (update ret :fields conj decl))
+            defm (recur decls (update ret :methods conj decl))
+            do (recur (concat (rest decl) decls) ret)
+            (if-let [v (resolve (first decl))]
+              (if (:macro (meta v))
+                (recur (cons (macroexpand decl) decls) ret)
+                (let [msg (str "unknown type of declaration found: " (first decl))]
+                  (throw (ex-info msg {:decl decl}))))
+              (let [msg (str "unknown type of declaration found: " (first decl))]
+                (throw (ex-info msg {:decl decl})))))
+          (recur decls ret))))))
+
+(defn parse-class [[_ cname & body :as class]]
+  (let [modifiers (modifiers-of class)
+        {:keys [fields methods]} (parse-class-body body)
+        cenv {}]
+    {:name (str cname)
+     :access (access-flags modifiers)
+     :fields (mapv parse-field fields)
+     :methods (mapv (partial parse-method cenv) methods)}))
