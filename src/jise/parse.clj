@@ -46,7 +46,7 @@
         (assert false "not supported yet")
 
         (nil? expr)
-        {:op :literal :type (:expected-type cenv) :value nil}
+        {:op :null}
 
         (symbol? expr)
         (if-let [{:keys [index type]} ((:lenv cenv) (name expr))]

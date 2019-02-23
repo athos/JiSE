@@ -55,6 +55,7 @@
     (case (:op expr)
       :literal (let [coerce (coerce-fns (:type expr) identity)]
                  (.visitLdcInsn mv (coerce (:value expr))))
+      :null (.visitInsn mv Opcodes/ACONST_NULL)
       :local (emit-load mv expr)
       (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
     (emit-exprs mv expr))
