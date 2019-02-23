@@ -1,6 +1,8 @@
 (ns jise.core
   (:import [clojure.asm ClassVisitor ClassWriter MethodVisitor Opcodes Type]
-           [clojure.lang Compiler]))
+           [clojure.lang Compiler DynamicClassLoader]))
+
+(set! *warn-on-reflection* true)
 
 (defn parse-class-body [body]
   (loop [decls body
@@ -40,7 +42,7 @@
   (or (get primitive-types tag)
       (when-let [c (and (symbol? tag) (resolve tag))]
         (when (class? c)
-          (Type/getType c)))
+          (Type/getType ^Class c)))
       default
       (Type/getType Object)))
 
@@ -140,7 +142,7 @@
         bytecode (emit cname' modifiers fields methods)]
     (when *compile-files*
       (Compiler/writeClassFile cname' bytecode))
-    (.defineClass @Compiler/LOADER cname' bytecode nil)
+    (.defineClass ^DynamicClassLoader @Compiler/LOADER cname' bytecode nil)
     `(do (import '~cname)
          ~cname)))
 
