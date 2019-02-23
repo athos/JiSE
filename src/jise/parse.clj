@@ -47,10 +47,16 @@
     (if (nil? expr)
       {:op :literal :type nil :value nil}
       (if-let [t (object-type expr)]
-        {:op :literal :type t :value expr}))))
+        {:op :literal :value expr
+         :type (or (and ('#{int short long byte} t)
+                        (:expected-type cenv))
+                   t)}))))
 
-(defn parse-method-body [cenv body]
-  (mapv (partial parse-expr cenv) body))
+(defn  parse-exprs [cenv body]
+  (let [cenv' (dissoc cenv :expected-type)
+        last (peek body)]
+    (-> (mapv parse-expr (repeat cenv') (pop body))
+        (conj (parse-expr cenv last)))))
 
 (defn parse-method-arg [arg]
   (let [{:keys [access type]} (parse-modifiers (meta arg))]
@@ -60,12 +66,13 @@
 
 (defn parse-method [cenv [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
-        {:keys [access type]} (parse-modifiers modifiers)]
+        {:keys [access type]} (parse-modifiers modifiers)
+        cenv' (assoc cenv :expected-type type)]
     {:name (str mname)
      :return-type type
      :args (mapv parse-method-arg args)
      :access access
-     :body (parse-method-body cenv body)}))
+     :body (parse-exprs cenv' body)}))
 
 (defn parse-class-body [body]
   (loop [decls body

@@ -27,7 +27,7 @@
   (defclass C
     ^:public ^String
     (def x nil)
-    ^:public ^String
-    (defm m [^int x] "foo"))
+    ^:public ^int
+    (defm m [^int x] 1))
 
  )

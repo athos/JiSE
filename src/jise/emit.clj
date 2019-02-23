@@ -19,6 +19,12 @@
     (Type/getType ^Class x)
     (primitive-types x)))
 
+(def coerce-fns
+  {'int int
+   'short short
+   'long long
+   'byte byte})
+
 (defn access-value [flags]
   (cond-> 0
     (:static flags) (+ Opcodes/ACC_STATIC)
@@ -38,7 +44,8 @@
 (defn emit-expr [^MethodVisitor mv expr tail?]
   (if (map? expr)
     (case (:op expr)
-      :literal (.visitLdcInsn mv (:value expr))
+      :literal (let [coerce (coerce-fns (:type expr) identity)]
+                 (.visitLdcInsn mv (coerce (:value expr))))
       (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
     (emit-exprs mv expr))
   (when-not tail?
