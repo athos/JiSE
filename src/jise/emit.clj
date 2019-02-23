@@ -50,6 +50,16 @@
       (emit-expr mv expr (not (seq exprs)))
       (recur exprs))))
 
+(defn emit-return [^MethodVisitor mv type]
+  (let [insn (case type
+               (int short char byte) Opcodes/IRETURN
+               long Opcodes/LRETURN
+               float Opcodes/FRETURN
+               double Opcodes/DRETURN
+               void Opcodes/RETURN
+               Opcodes/ARETURN)]
+    (.visitInsn mv insn)))
+
 (defn emit-method [^ClassWriter cw {:keys [name access return-type args body]}]
   (let [desc (->> (map (comp ->type :type) args)
                   (into-array Type)
@@ -60,7 +70,7 @@
     (.visitCode mv)
     (emit-exprs mv body)
     (doto mv
-      (.visitInsn Opcodes/ARETURN)
+      (emit-return return-type)
       (.visitMaxs 1 1)
       (.visitEnd))))
 
