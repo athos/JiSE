@@ -62,7 +62,36 @@
     (doto (.visitField cw access (str fname) (.getDescriptor type) nil value)
       (.visitEnd))))
 
-(defn emit-method [^ClassWriter cw [_ mname args :as method]]
+(def coerce-fns
+  {Type/INT_TYPE int
+   Type/SHORT_TYPE short
+   Type/LONG_TYPE long
+   Type/BYTE_TYPE byte
+   Type/FLOAT_TYPE float
+   Type/DOUBLE_TYPE double})
+
+(defn emit-expr [^MethodVisitor mv ^Type expected-type expr]
+  (cond (or (boolean? expr)
+            (char? expr)
+            (string? expr))
+        (.visitLdcInsn mv expr)
+
+        (number? expr)
+        (if expected-type
+          (if-let [coerce (coerce-fns expected-type)]
+            (.visitLdcInsn mv (coerce expr))
+            (let [msg (str "Can't coerce number to " (.getClassName expected-type))]
+              (throw (ex-info msg {:expected-type expected-type}))))
+          (.visitLdcInsn mv expr))
+
+        :else (throw (ex-info (str "unknown expr found: " expr) {:expr expr}))))
+
+(defn emit-stmt [^MethodVisitor mv expected-type stmt]
+  (emit-expr mv expected-type stmt)
+  (when (nil? expected-type)
+    (.visitInsn mv Opcodes/POP)))
+
+(defn emit-method [^ClassWriter cw [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
         {:keys [access ^Type type]} (parse-modifiers modifiers)
         desc (->> (map (comp tag->type :tag meta) args)
@@ -71,9 +100,13 @@
         mv (.visitMethod cw access (str mname) desc nil nil)]
     (doseq [arg args]
       (.visitParameter mv (str arg) (access-flags (meta arg))))
+    (.visitCode mv)
+    (loop [[stmt & stmts] body]
+      (when stmt
+        (let [expected-type (when-not (seq stmts) type)]
+          (emit-stmt mv expected-type stmt)
+          (recur stmts))))
     (doto mv
-      (.visitCode)
-      (.visitInsn Opcodes/ICONST_0)
       (.visitInsn Opcodes/IRETURN)
       (.visitMaxs 1 1)
       (.visitEnd))))
@@ -130,6 +163,6 @@
     ^:public ^String
     (def x nil)
     ^:public ^int
-    (defm m [^int x]))
+    (defm m [^int x] 1))
 
  )
