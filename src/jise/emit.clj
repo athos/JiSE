@@ -39,6 +39,15 @@
    (doto (.visitField cw access name desc nil value)
      (.visitEnd))))
 
+(defn emit-load [^MethodVisitor mv {:keys [type index]}]
+  (let [insn (case type
+               (int short byte char) Opcodes/ILOAD
+               long Opcodes/LLOAD
+               float Opcodes/FLOAD
+               double Opcodes/DLOAD
+               Opcodes/ARETURN)]
+    (.visitVarInsn mv insn index)))
+
 (declare emit-exprs)
 
 (defn emit-expr [^MethodVisitor mv expr tail?]
@@ -46,6 +55,7 @@
     (case (:op expr)
       :literal (let [coerce (coerce-fns (:type expr) identity)]
                  (.visitLdcInsn mv (coerce (:value expr))))
+      :local (emit-load mv expr)
       (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
     (emit-exprs mv expr))
   (when-not tail?

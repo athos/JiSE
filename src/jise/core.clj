@@ -28,6 +28,6 @@
     ^:public ^String
     (def x nil)
     ^:public ^int
-    (defm m [^int x] 1))
+    (defm m [^int x] x))
 
  )

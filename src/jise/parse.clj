@@ -42,15 +42,23 @@
       (not (nil? value)) (assoc :value value))))
 
 (defn parse-expr [cenv expr]
-  (if (seq? expr)
-    (assert false "not supported yet")
-    (if (nil? expr)
-      {:op :literal :type nil :value nil}
-      (if-let [t (object-type expr)]
-        {:op :literal :value expr
-         :type (or (and ('#{int short long byte} t)
-                        (:expected-type cenv))
-                   t)}))))
+  (cond (seq? expr)
+        (assert false "not supported yet")
+
+        (nil? expr)
+        {:op :literal :type (:expected-type cenv) :value nil}
+
+        (symbol? expr)
+        (if-let [{:keys [index type]} ((:lenv cenv) (name expr))]
+          {:op :local :index index :type type}
+          (throw (ex-info (str "unknown variable found: " expr) {:variable expr})))
+
+        :else
+        (if-let [t (object-type expr)]
+          {:op :literal :value expr
+           :type (or (and ('#{int short long byte} t)
+                          (:expected-type cenv))
+                     t)})))
 
 (defn  parse-exprs [cenv body]
   (let [cenv' (dissoc cenv :expected-type)
@@ -67,10 +75,17 @@
 (defn parse-method [cenv [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
         {:keys [access type]} (parse-modifiers modifiers)
-        cenv' (assoc cenv :expected-type type)]
+        args' (mapv parse-method-arg args)
+        lenv (into {"this" {:index 0}}
+                   (map-indexed (fn [i {:keys [name type]}]
+                                  [name {:index (inc i) :type type}]))
+                   args')
+        cenv' (-> cenv
+                  (assoc :expected-type type)
+                  (assoc :lenv lenv))]
     {:name (str mname)
      :return-type type
-     :args (mapv parse-method-arg args)
+     :args args'
      :access access
      :body (parse-exprs cenv' body)}))
 
