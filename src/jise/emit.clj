@@ -39,22 +39,12 @@
    (doto (.visitField cw access name desc nil value)
      (.visitEnd))))
 
-(declare emit-exprs)
-
 (defmulti emit-expr* (fn [mv expr] (:op expr)))
 (defmethod emit-expr* :default [_ expr]
   (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
 
 (defn emit-expr [^MethodVisitor mv expr]
-  (if (map? expr)
-    (emit-expr* mv expr)
-    (emit-exprs mv expr)))
-
-(defn emit-exprs [^MethodVisitor mv exprs]
-  (loop [[expr & exprs] exprs]
-    (when expr
-      (emit-expr mv expr)
-      (recur exprs))))
+  (emit-expr* mv expr))
 
 (defn emit-return [^MethodVisitor mv type]
   (let [insn (case type
@@ -74,7 +64,7 @@
     (doseq [arg args]
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)
-    (emit-exprs mv body)
+    (emit-expr mv body)
     (doto mv
       (emit-return return-type)
       (.visitMaxs 1 1)
@@ -101,6 +91,10 @@
       (emit-method cw method))
     (.visitEnd cw)
     (.toByteArray cw)))
+
+(defmethod emit-expr* :do [mv {:keys [exprs]}]
+  (doseq [expr exprs]
+    (emit-expr mv expr)))
 
 (defmethod emit-expr* :null [^MethodVisitor mv _]
   (.visitInsn mv Opcodes/ACONST_NULL))
