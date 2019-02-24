@@ -56,9 +56,10 @@
         :else
         (if-let [t (object-type expr)]
           {:op :literal :value expr
-           :type (or (and ('#{int short long byte} t)
-                          (:expected-type cenv))
-                     t)})))
+           :type (case t
+                   (byte short int long) (:expected-type cenv 'int)
+                   (float double) (:expected-type cenv 'double)
+                   t)})))
 
 (defn  parse-exprs [cenv body]
   (let [cenv' (dissoc cenv :expected-type)
