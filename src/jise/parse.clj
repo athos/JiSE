@@ -53,22 +53,13 @@
     (not= t type)
     (array-map :op :conversion :type t :src)))
 
-(defn parse-binary-op [cenv [_ x y] op]
-  (let [lhs (parse-expr cenv x)
-        rhs (parse-expr cenv y)
-        t (wider-type (:type lhs) (:type rhs))]
-    {:op op :type t
-     :lhs (apply-conversion lhs t)
-     :rhs (apply-conversion rhs t)}))
+(defmulti parse-expr* (fn [cenv expr] (first expr)))
+(defmethod parse-expr* :default [_ _]
+  (assert false "not supported yet"))
 
 (defn parse-expr [cenv expr]
   (cond (seq? expr)
-        (case (first expr)
-          + (parse-binary-op cenv expr :add)
-          - (parse-binary-op cenv expr :sub)
-          * (parse-binary-op cenv expr :mul)
-          / (parse-binary-op cenv expr :div)
-          (assert false "not supported yet"))
+        (parse-expr* cenv expr)
 
         (nil? expr)
         {:op :null}
@@ -144,3 +135,23 @@
      :access (access-flags modifiers)
      :fields (mapv parse-field fields)
      :methods (mapv (partial parse-method cenv) methods)}))
+
+(defn parse-binary-op [cenv [_ x y] op]
+  (let [lhs (parse-expr cenv x)
+        rhs (parse-expr cenv y)
+        t (wider-type (:type lhs) (:type rhs))]
+    {:op op :type t
+     :lhs (apply-conversion lhs t)
+     :rhs (apply-conversion rhs t)}))
+
+(defmethod parse-expr* '+ [cenv expr]
+  (parse-binary-op cenv expr :add))
+
+(defmethod parse-expr* '- [cenv expr]
+  (parse-binary-op cenv expr :sub))
+
+(defmethod parse-expr* '* [cenv expr]
+  (parse-binary-op cenv expr :mul))
+
+(defmethod parse-expr* '- [cenv expr]
+  (parse-binary-op cenv expr :div))
