@@ -117,3 +117,72 @@
                double Opcodes/DLOAD
                Opcodes/ARETURN)]
     (.visitVarInsn mv insn index)))
+
+(defmethod emit-expr* :add [^MethodVisitor mv {:keys [type lhs rhs]}]
+  (let [insn (case type
+               int Opcodes/IADD
+               long Opcodes/LADD
+               float Opcodes/FADD
+               double Opcodes/DADD)]
+    (emit-expr mv lhs)
+    (emit-expr mv rhs)
+    (.visitInsn mv insn)))
+
+(defmethod emit-expr* :sub [^MethodVisitor mv {:keys [type lhs rhs]}]
+  (let [insn (case type
+               int Opcodes/ISUB
+               long Opcodes/LSUB
+               float Opcodes/FSUB
+               double Opcodes/DSUB)]
+    (emit-expr mv lhs)
+    (emit-expr mv rhs)
+    (.visitInsn mv insn)))
+
+(defmethod emit-expr* :mul [^MethodVisitor mv {:keys [type lhs rhs]}]
+  (let [insn (case type
+               int Opcodes/IMUL
+               long Opcodes/LMUL
+               float Opcodes/FMUL
+               double Opcodes/DMUL)]
+    (emit-expr mv lhs)
+    (emit-expr mv rhs)
+    (.visitInsn mv insn)))
+
+(defmethod emit-expr* :div [^MethodVisitor mv {:keys [type lhs rhs]}]
+  (let [insn (case type
+               int Opcodes/IDIV
+               long Opcodes/LDIV
+               float Opcodes/FDIV
+               double Opcodes/DDIV)]
+    (emit-expr mv lhs)
+    (emit-expr mv rhs)
+    (.visitInsn mv insn)))
+
+(defmethod emit-expr* :conversion [^MethodVisitor mv {:keys [type src]}]
+  (emit-expr mv src)
+  (case type
+    (byte char short)
+    (do (when-let [insn (case (:type src)
+                          long Opcodes/L2I
+                          float Opcodes/F2I
+                          double Opcodes/D2I)]
+          (.visitInsn mv insn))
+        (let [insn (case type
+                     byte Opcodes/I2B
+                     char Opcodes/I2C
+                     short Opcodes/I2S)]
+          (.visitInsn mv insn)))
+    (let [insn (case [(:type src) type]
+                 [int    long  ] Opcodes/I2L
+                 [int    float ] Opcodes/I2F
+                 [int    double] Opcodes/I2D
+                 [long   int   ] Opcodes/L2I
+                 [long   float ] Opcodes/L2F
+                 [long   double] Opcodes/L2D
+                 [float  int   ] Opcodes/F2I
+                 [float  long  ] Opcodes/F2L
+                 [float  double] Opcodes/F2D
+                 [double int   ] Opcodes/D2I
+                 [double long  ] Opcodes/D2L
+                 [double float ] Opcodes/D2F)]
+      (.visitInsn mv insn))))

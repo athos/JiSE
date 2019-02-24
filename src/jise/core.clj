@@ -27,7 +27,8 @@
   (defclass C
     ^:public ^String
     (def x nil)
-    ^:public ^int
-    (defm m [^int x] x))
+    ^:public ^long
+    (defm m [^int x ^long y]
+      (+ (* x x) (* y y))))
 
  )
