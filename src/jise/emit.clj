@@ -39,25 +39,15 @@
    (doto (.visitField cw access name desc nil value)
      (.visitEnd))))
 
-(defn emit-load [^MethodVisitor mv {:keys [type index]}]
-  (let [insn (case type
-               (int short byte char) Opcodes/ILOAD
-               long Opcodes/LLOAD
-               float Opcodes/FLOAD
-               double Opcodes/DLOAD
-               Opcodes/ARETURN)]
-    (.visitVarInsn mv insn index)))
-
 (declare emit-exprs)
+
+(defmulti emit-expr* (fn [mv expr] (:op expr)))
+(defmethod emit-expr* :default [_ expr]
+  (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
 
 (defn emit-expr [^MethodVisitor mv expr tail?]
   (if (map? expr)
-    (case (:op expr)
-      :literal (let [coerce (coerce-fns (:type expr) identity)]
-                 (.visitLdcInsn mv (coerce (:value expr))))
-      :null (.visitInsn mv Opcodes/ACONST_NULL)
-      :local (emit-load mv expr)
-      (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
+    (emit-expr* mv expr)
     (emit-exprs mv expr))
   (when-not tail?
     (.visitInsn mv Opcodes/POP)))
@@ -113,3 +103,19 @@
       (emit-method cw method))
     (.visitEnd cw)
     (.toByteArray cw)))
+
+(defmethod emit-expr* :null [^MethodVisitor mv _]
+  (.visitInsn mv Opcodes/ACONST_NULL))
+
+(defmethod emit-expr* :literal [^MethodVisitor mv expr]
+  (let [coerce (coerce-fns (:type expr) identity)]
+    (.visitLdcInsn mv (coerce (:value expr)))))
+
+(defmethod emit-expr* :local [^MethodVisitor mv {:keys [type index]}]
+  (let [insn (case type
+               (int short byte char) Opcodes/ILOAD
+               long Opcodes/LLOAD
+               float Opcodes/FLOAD
+               double Opcodes/DLOAD
+               Opcodes/ARETURN)]
+    (.visitVarInsn mv insn index)))
