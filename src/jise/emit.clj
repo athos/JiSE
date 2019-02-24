@@ -19,12 +19,6 @@
     (Type/getType ^Class x)
     (primitive-types x)))
 
-(def coerce-fns
-  {'int int
-   'short short
-   'long long
-   'byte byte})
-
 (defn access-value [flags]
   (cond-> 0
     (:static flags) (+ Opcodes/ACC_STATIC)
@@ -99,9 +93,8 @@
 (defmethod emit-expr* :null [^MethodVisitor mv _]
   (.visitInsn mv Opcodes/ACONST_NULL))
 
-(defmethod emit-expr* :literal [^MethodVisitor mv expr]
-  (let [coerce (coerce-fns (:type expr) identity)]
-    (.visitLdcInsn mv (coerce (:value expr)))))
+(defmethod emit-expr* :literal [^MethodVisitor mv {:keys [value]}]
+  (.visitLdcInsn mv value))
 
 (defmethod emit-expr* :local [^MethodVisitor mv {:keys [type index]}]
   (let [insn (case type
