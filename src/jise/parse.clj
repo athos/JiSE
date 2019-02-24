@@ -21,8 +21,8 @@
     (:private modifiers) (conj :private)
     (:final modifiers) (conj :final)))
 
-(defn parse-modifiers [{:keys [tag] :as modifiers}]
-  {:type (tag->type tag)
+(defn parse-modifiers [{:keys [tag] :as modifiers} & {:keys [default-type]}]
+  {:type (tag->type tag :default default-type)
    :access (access-flags modifiers)})
 
 (defn object-type [obj]
@@ -101,7 +101,8 @@
                    args')
         cenv' (-> cenv
                   (assoc :expected-type type)
-                  (assoc :lenv lenv))]
+                  (assoc :lenv lenv)
+                  (assoc :next-index (count lenv)))]
     {:name (str mname)
      :return-type type
      :args args'
@@ -157,3 +158,29 @@
 
 (defmethod parse-expr* '- [cenv expr]
   (parse-binary-op cenv expr :div))
+
+(defn parse-binding [cenv lname init]
+  (let [init' (parse-expr cenv init)
+        {:keys [access type]} (parse-modifiers (meta lname) :default-type (:type init'))
+        lname' (str lname)]
+    {:name lname'
+     :type (or type (:type init'))
+     :access access
+     :index (:next-index cenv)
+     :init init'}))
+
+(defmethod parse-expr* 'let [cenv [_ bindings & body]]
+  (let [[cenv' bindings'] (loop [[lname init & bindings] bindings
+                                 cenv cenv
+                                 ret []]
+                            (if lname
+                              (let [b (parse-binding cenv lname init)
+                                    cenv' (-> cenv
+                                              (assoc-in [:lenv (:name b)] b)
+                                              (update :next-index inc))]
+                                (recur bindings cenv'(conj ret b)))
+                              [cenv ret]))
+        body' (parse-exprs cenv' body)]
+    {:op :let :type (:type body')
+     :bindings bindings'
+     :body body'}))
