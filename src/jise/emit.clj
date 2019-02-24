@@ -188,3 +188,7 @@
     (emit-expr mv init)
     (emit-store mv b))
   (emit-expr mv body))
+
+(defmethod emit-expr* :assignment [mv {:keys [lhs rhs]}]
+  (emit-expr mv rhs)
+  (emit-store mv lhs))

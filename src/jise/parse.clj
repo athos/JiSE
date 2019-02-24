@@ -184,3 +184,8 @@
     {:op :let :type (:type body')
      :bindings bindings'
      :body body'}))
+
+(defmethod parse-expr* 'set! [cenv [_ lname expr]]
+  {:op :assignment
+   :lhs (parse-expr cenv lname)
+   :rhs (parse-expr cenv expr)})
