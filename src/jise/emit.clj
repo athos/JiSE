@@ -45,17 +45,15 @@
 (defmethod emit-expr* :default [_ expr]
   (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
 
-(defn emit-expr [^MethodVisitor mv expr tail?]
+(defn emit-expr [^MethodVisitor mv expr]
   (if (map? expr)
     (emit-expr* mv expr)
-    (emit-exprs mv expr))
-  (when-not tail?
-    (.visitInsn mv Opcodes/POP)))
+    (emit-exprs mv expr)))
 
 (defn emit-exprs [^MethodVisitor mv exprs]
   (loop [[expr & exprs] exprs]
     (when expr
-      (emit-expr mv expr (not (seq exprs)))
+      (emit-expr mv expr)
       (recur exprs))))
 
 (defn emit-return [^MethodVisitor mv type]
