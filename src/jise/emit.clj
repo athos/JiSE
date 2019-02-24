@@ -180,3 +180,18 @@
                  [double long  ] Opcodes/D2L
                  [double float ] Opcodes/D2F)]
       (.visitInsn mv insn))))
+
+(defn emit-store [^MethodVisitor mv {:keys [type index]}]
+  (let [insn (case type
+               int Opcodes/ISTORE
+               long Opcodes/LSTORE
+               float Opcodes/FSTORE
+               double Opcodes/DSTORE
+               Opcodes/ASTORE)]
+    (.visitVarInsn mv insn index)))
+
+(defmethod emit-expr* :let [mv {:keys [bindings body]}]
+  (doseq [{:keys [init] :as b} bindings]
+    (emit-expr mv init)
+    (emit-store mv b))
+  (emit-expr mv body))
