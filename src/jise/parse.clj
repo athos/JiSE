@@ -93,7 +93,7 @@
 
 (defn parse-method [cenv [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
-        {:keys [access type]} (parse-modifiers modifiers)
+        {:keys [access type]} (parse-modifiers modifiers :default-type 'void)
         args' (mapv parse-method-arg args)
         lenv (into {"this" {:index 0}}
                    (map-indexed (fn [i {:keys [name type]}]
