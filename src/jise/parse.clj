@@ -54,8 +54,11 @@
     (array-map :op :conversion :type t :src)))
 
 (defmulti parse-expr* (fn [cenv expr] (first expr)))
-(defmethod parse-expr* :default [_ _]
-  (assert false "not supported yet"))
+(defmethod parse-expr* :default [cenv expr]
+  (let [v (resolve (first expr))]
+    (if (some-> v meta :macro)
+      (parse-expr cenv (macroexpand expr))
+      (assert false "not supported yet"))))
 
 (defn parse-expr [cenv expr]
   (cond (seq? expr)
