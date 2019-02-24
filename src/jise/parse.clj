@@ -164,7 +164,7 @@
         {:keys [access type]} (parse-modifiers (meta lname) :default-type (:type init'))
         lname' (str lname)]
     {:name lname'
-     :type (or type (:type init'))
+     :type type
      :access access
      :index (:next-index cenv)
      :init init'}))
