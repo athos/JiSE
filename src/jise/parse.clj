@@ -148,9 +148,13 @@
   (let [lhs (parse-expr cenv x)
         rhs (parse-expr cenv y)
         t (wider-type (:type lhs) (:type rhs))]
-    {:op op :type t
+    {:op op
      :lhs (apply-conversion lhs t)
      :rhs (apply-conversion rhs t)}))
+
+(defn parse-arithmetic [cenv expr op]
+  (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op)]
+    (assoc ret :type (:type lhs))))
 
 (defmethod parse-expr* '+ [cenv expr]
   (parse-binary-op cenv expr :add))
@@ -163,6 +167,27 @@
 
 (defmethod parse-expr* '- [cenv expr]
   (parse-binary-op cenv expr :div))
+
+(defn parse-comparison [cenv expr op]
+  (assoc (parse-binary-op cenv expr op) :type 'boolean))
+
+(defmethod parse-expr* '== [cenv expr]
+  (parse-comparison cenv expr :eq))
+
+(defmethod parse-expr* '!= [cenv expr]
+  (parse-comparison cenv expr :ne))
+
+(defmethod parse-expr* '< [cenv expr]
+  (parse-comparison cenv expr :lt))
+
+(defmethod parse-expr* '> [cenv expr]
+  (parse-comparison cenv expr :gt))
+
+(defmethod parse-expr* '<= [cenv expr]
+  (parse-comparison cenv expr :le))
+
+(defmethod parse-expr* '>= [cenv expr]
+  (parse-comparison cenv expr :ge))
 
 (defn parse-binding [cenv lname init]
   (let [init' (parse-expr cenv init)
@@ -194,3 +219,9 @@
   {:op :assignment
    :lhs (parse-expr cenv lname)
    :rhs (parse-expr cenv expr)})
+
+(defmethod parse-expr* 'if [cenv [_ test then else]]
+  {:op :if
+   :test (parse-expr cenv test)
+   :then (parse-expr cenv then)
+   :else (parse-expr cenv else)})

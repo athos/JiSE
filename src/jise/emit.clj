@@ -1,5 +1,5 @@
 (ns jise.emit
-  (:import [clojure.asm ClassVisitor ClassWriter MethodVisitor Opcodes Type]
+  (:import [clojure.asm ClassVisitor ClassWriter Label MethodVisitor Opcodes Type]
            [clojure.lang Compiler DynamicClassLoader]))
 
 (set! *warn-on-reflection* true)
@@ -203,3 +203,44 @@
 (defmethod emit-expr* :assignment [mv {:keys [lhs rhs]}]
   (emit-expr mv rhs)
   (emit-store mv lhs))
+
+(def comparison-insns
+  {'int {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]
+         :lt [Opcodes/IF_ICMPGE], :gt [Opcodes/IF_ICMPLE]
+         :le [Opcodes/IF_ICMPGT], :ge [Opcodes/IF_ICMPLT]}
+   'long {:eq [Opcodes/LCMP Opcodes/IFNE], :ne [Opcodes/LCMP Opcodes/IFEQ]
+          :lt [Opcodes/LCMP Opcodes/IFGE], :gt [Opcodes/LCMP Opcodes/IFLE]
+          :le [Opcodes/LCMP Opcodes/IFGT], :ge [Opcodes/LCMP Opcodes/IFLT]}
+   'float {:eq [Opcodes/FCMPL Opcodes/IFNE], :ne [Opcodes/FCMPL Opcodes/IFEQ]
+           :lt [Opcodes/FCMPL Opcodes/IFGE], :gt [Opcodes/FCMPL Opcodes/IFLE]
+           :le [Opcodes/FCMPL Opcodes/IFGT], :ge [Opcodes/FCMPL Opcodes/IFLT]}
+   'double {:eq [Opcodes/DCMPL Opcodes/IFNE], :ne [Opcodes/DCMPL Opcodes/IFEQ]
+            :lt [Opcodes/DCMPL Opcodes/IFGE], :gt [Opcodes/DCMPL Opcodes/IFLE]
+            :le [Opcodes/DCMPL Opcodes/IFGT], :ge [Opcodes/DCMPL Opcodes/IFLT]}})
+
+(defmethod emit-expr* :if [^MethodVisitor mv {:keys [test then else]}]
+  (let [op (:op test)
+        else-label (Label.)
+        end-label (Label.)]
+    (case op
+      (:eq :ne :lt :gt :le :lg)
+      (let [{:keys [lhs rhs]} test
+            t (:type lhs)]
+        (emit-expr mv lhs)
+        (emit-expr mv rhs)
+        (if-let [[insn1 insn2] (get-in comparison-insns [t op])]
+          (if insn2
+            (do (.visitInsn mv insn1)
+                (.visitJumpInsn mv insn2 else-label))
+            (.visitJumpInsn mv insn1 else-label))
+          (let [insn (case op
+                       :eq Opcodes/IF_ACMPNE
+                       :ne Opcodes/IF_ACMPEQ)]
+            (.visitJumpInsn mv insn else-label))))
+      (let [msg (str "not supported conditional: " op)]
+        (throw (ex-info msg {:op op}))))
+    (emit-expr mv then)
+    (.visitJumpInsn mv Opcodes/GOTO end-label)
+    (.visitLabel mv else-label)
+    (emit-expr mv else)
+    (.visitLabel mv end-label)))

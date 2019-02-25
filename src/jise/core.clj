@@ -27,9 +27,8 @@
   (defclass C
     ^:public ^String
     (def x nil)
-    ^:public
-    (defm m [^int x]
-      (let [y (* x x)]
-        (set! y 1))))
+    ^:public ^boolean
+    (defm isZero [^int x]
+      (if (== x 0) true false)))
 
  )
