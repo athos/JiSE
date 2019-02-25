@@ -5,18 +5,21 @@ JiSE is Clojure's embedded DSL for making it as easy (or maybe even easier?) to 
 ## Usage
 
 ```clojure
-(require '[jise.core :as jise])
+(require '[jise.core :refer [defclass]])
 
 ^:public
-(jise/defclass C
-  ^:public ^boolean
-  (defm isPythagorean [^int x, ^int y, ^int z]
-    (== (+ (* x x) (* y y))
-        (* z z))))
+(defclass C
+  ^:public ^int
+  (defm sumUpTo [^int n]
+    (let [^int sum 0]
+      (for [^int i 0, (< i n), (set! i (+ i 1))]
+        (set! sum (+ sum i)))
+      sum)))
 
 ;; you can use C as an ordinary Java class
 (def c (C.))
-(.isPythagorean c 3 4 5) ;=> true
+(.sumUpTo c 10) ;=> 45
+(.sumUpTo c 100) ;=> 4950
 ```
 
 ## License
