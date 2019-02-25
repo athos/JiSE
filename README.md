@@ -1,10 +1,23 @@
 # JiSE: Java in S-Expression
 
-JiSE is Clojure's embedded DSL for making it as easy (or even easier) to write imperative code than in Java.
+JiSE is Clojure's embedded DSL for making it as easy (or maybe even easier?) to write imperative code than in Java.
 
 ## Usage
 
-FIXME
+```clojure
+(require '[jise.core :as jise])
+
+^:public
+(jise/defclass C
+  ^:public ^boolean
+  (defm isPythagorean [^int x, ^int y, ^int z]
+    (== (+ (* x x) (* y y))
+        (* z z))))
+
+;; you can use C as an ordinary Java class
+(def c (C.))
+(.isPythagorean c 3 4 5) ;=> true
+```
 
 ## License
 
