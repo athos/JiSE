@@ -53,6 +53,8 @@
     (not= t type)
     (array-map :op :conversion :type t :src)))
 
+(declare parse-expr)
+
 (defmulti parse-expr* (fn [cenv expr] (first expr)))
 (defmethod parse-expr* :default [cenv expr]
   (let [v (resolve (first expr))]
