@@ -242,13 +242,15 @@
             :lt [Opcodes/DCMPL Opcodes/IFGE], :gt [Opcodes/DCMPL Opcodes/IFLE]
             :le [Opcodes/DCMPL Opcodes/IFGT], :ge [Opcodes/DCMPL Opcodes/IFLT]}})
 
-(defmethod emit-expr* :if [^MethodVisitor mv {:keys [test then else]}]
-  (let [op (:op test)
+(defn emit-conditional [^MethodVisitor mv cond then-fn else-fn]
+  (let [op (:op cond)
+        start-label (Label.)
         end-label (Label.)
-        else-label (if else (Label.) end-label)]
+        else-label (if else-fn (Label.) end-label)]
+    (.visitLabel mv start-label)
     (case op
       (:eq :ne :lt :gt :le :lg)
-      (let [{:keys [lhs rhs]} test
+      (let [{:keys [lhs rhs]} cond
             t (:type lhs)]
         (emit-expr mv lhs)
         (emit-expr mv rhs)
@@ -263,9 +265,20 @@
             (.visitJumpInsn mv insn else-label))))
       (let [msg (str "not supported conditional: " op)]
         (throw (ex-info msg {:op op}))))
-    (emit-expr mv then)
-    (when else
+    (then-fn mv start-label)
+    (when else-fn
       (.visitJumpInsn mv Opcodes/GOTO end-label)
       (.visitLabel mv else-label)
-      (emit-expr mv else))
+      (else-fn mv))
     (.visitLabel mv end-label)))
+
+(defmethod emit-expr* :if [^MethodVisitor mv {:keys [test then else]}]
+  (let [then-fn (fn [mv _] (emit-expr mv then))
+        else-fn (when else #(emit-expr % else))]
+    (emit-conditional mv test then-fn else-fn)))
+
+(defmethod emit-expr* :while [^MethodVisitor mv {:keys [cond body]}]
+  (let [then-fn (fn [^MethodVisitor mv start-label]
+                  (emit-expr mv body)
+                  (.visitJumpInsn mv Opcodes/GOTO start-label))]
+    (emit-conditional mv cond then-fn nil)))

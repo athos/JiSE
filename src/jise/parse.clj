@@ -224,3 +224,8 @@
            :test (parse-expr cenv test)
            :then (parse-expr cenv then)}
     else (assoc :else (parse-expr cenv else))))
+
+(defmethod parse-expr* 'while [cenv [_ cond & body]]
+  {:op :while
+   :cond (parse-expr cenv cond)
+   :body (parse-exprs cenv body)})
