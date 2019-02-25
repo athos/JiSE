@@ -157,16 +157,16 @@
     (assoc ret :type (:type lhs))))
 
 (defmethod parse-expr* '+ [cenv expr]
-  (parse-binary-op cenv expr :add))
+  (parse-arithmetic cenv expr :add))
 
 (defmethod parse-expr* '- [cenv expr]
-  (parse-binary-op cenv expr :sub))
+  (parse-arithmetic cenv expr :sub))
 
 (defmethod parse-expr* '* [cenv expr]
-  (parse-binary-op cenv expr :mul))
+  (parse-arithmetic cenv expr :mul))
 
 (defmethod parse-expr* '- [cenv expr]
-  (parse-binary-op cenv expr :div))
+  (parse-arithmetic cenv expr :div))
 
 (defn parse-comparison [cenv expr op]
   (assoc (parse-binary-op cenv expr op) :type 'boolean))
