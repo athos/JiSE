@@ -93,8 +93,19 @@
 (defmethod emit-expr* :null [^MethodVisitor mv _]
   (.visitInsn mv Opcodes/ACONST_NULL))
 
-(defmethod emit-expr* :literal [^MethodVisitor mv {:keys [value]}]
-  (.visitLdcInsn mv value))
+(defmethod emit-expr* :literal [^MethodVisitor mv {:keys [type value]}]
+  (let [consts {'int {-1 Opcodes/ICONST_M1, 0 Opcodes/ICONST_0
+                      1 Opcodes/ICONST_1, 2 Opcodes/ICONST_2
+                      3 Opcodes/ICONST_3,4 Opcodes/ICONST_4
+                      5 Opcodes/ICONST_5}
+                'long {0 Opcodes/LCONST_0, 1 Opcodes/LCONST_1}
+                'float {0 Opcodes/FCONST_0, 1 Opcodes/FCONST_1
+                        2 Opcodes/FCONST_2}
+                'double {0 Opcodes/DCONST_0, 1 Opcodes/DCONST_1}
+                'boolean {true Opcodes/ICONST_1, false Opcodes/ICONST_0}}]
+    (if-let [insn (get-in consts [type value])]
+      (.visitInsn mv insn)
+      (.visitLdcInsn mv value))))
 
 (defmethod emit-expr* :local [^MethodVisitor mv {:keys [type index]}]
   (let [insn (case type
