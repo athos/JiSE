@@ -84,10 +84,9 @@
 
 (defn  parse-exprs [cenv body]
   (let [cenv' (dissoc cenv :expected-type)
-        last (peek body)
-        last' (parse-expr cenv last)]
+        last' (parse-expr cenv (last body))]
     {:op :do :type (:type last')
-     :exprs (-> (mapv parse-expr (repeat cenv') (pop body))
+     :exprs (-> (mapv parse-expr (repeat cenv') (butlast body))
                 (conj last'))}))
 
 (defn parse-method-arg [arg]
