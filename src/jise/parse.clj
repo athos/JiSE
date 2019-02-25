@@ -220,7 +220,7 @@
    :rhs (parse-expr cenv expr)})
 
 (defmethod parse-expr* 'if [cenv [_ test then else]]
-  {:op :if
-   :test (parse-expr cenv test)
-   :then (parse-expr cenv then)
-   :else (parse-expr cenv else)})
+  (cond-> {:op :if
+           :test (parse-expr cenv test)
+           :then (parse-expr cenv then)}
+    else (assoc :else (parse-expr cenv else))))

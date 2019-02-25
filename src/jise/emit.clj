@@ -244,8 +244,8 @@
 
 (defmethod emit-expr* :if [^MethodVisitor mv {:keys [test then else]}]
   (let [op (:op test)
-        else-label (Label.)
-        end-label (Label.)]
+        end-label (Label.)
+        else-label (if else (Label.) end-label)]
     (case op
       (:eq :ne :lt :gt :le :lg)
       (let [{:keys [lhs rhs]} test
@@ -264,7 +264,8 @@
       (let [msg (str "not supported conditional: " op)]
         (throw (ex-info msg {:op op}))))
     (emit-expr mv then)
-    (.visitJumpInsn mv Opcodes/GOTO end-label)
-    (.visitLabel mv else-label)
-    (emit-expr mv else)
+    (when else
+      (.visitJumpInsn mv Opcodes/GOTO end-label)
+      (.visitLabel mv else-label)
+      (emit-expr mv else))
     (.visitLabel mv end-label)))
