@@ -42,7 +42,7 @@
 
 (defn emit-return [^MethodVisitor mv type]
   (let [insn (case type
-               (int short char byte) Opcodes/IRETURN
+               (int short char byte boolean) Opcodes/IRETURN
                long Opcodes/LRETURN
                float Opcodes/FRETURN
                double Opcodes/DRETURN
