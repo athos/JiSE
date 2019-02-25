@@ -1,4 +1,5 @@
 (ns jise.emit
+  (:require [jise.parse :as parse])
   (:import [clojure.asm ClassVisitor ClassWriter Label MethodVisitor Opcodes Type]
            [clojure.lang Compiler DynamicClassLoader]))
 
@@ -155,6 +156,29 @@
     (emit-expr mv lhs)
     (emit-expr mv rhs)
     (.visitInsn mv insn)))
+
+(defn emit-comparison-expr [mv expr]
+  (emit-expr mv {:op :if :type 'int :test expr
+                 :then (parse/parse-expr {} true)
+                 :else (parse/parse-expr {} false)}))
+
+(defmethod emit-expr* :eq [mv expr]
+  (emit-comparison-expr mv expr))
+
+(defmethod emit-expr* :ne [mv expr]
+  (emit-comparison-expr mv expr))
+
+(defmethod emit-expr* :lt [mv expr]
+  (emit-comparison-expr mv expr))
+
+(defmethod emit-expr* :gt [mv expr]
+  (emit-comparison-expr mv expr))
+
+(defmethod emit-expr* :le [mv expr]
+  (emit-comparison-expr mv expr))
+
+(defmethod emit-expr* :ge [mv expr]
+  (emit-comparison-expr mv expr))
 
 (defmethod emit-expr* :conversion [^MethodVisitor mv {:keys [type src]}]
   (emit-expr mv src)
