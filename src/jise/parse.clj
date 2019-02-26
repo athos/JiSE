@@ -236,3 +236,9 @@
       :cond (parse-expr cenv' cond)
       :step (parse-expr cenv' step)
       :body (parse-exprs cenv' body)}}))
+
+(defmethod parse-expr* 'continue [_ _]
+  {:op :continue})
+
+(defmethod parse-expr* 'break [_ _]
+  {:op :break})

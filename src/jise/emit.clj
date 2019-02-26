@@ -5,6 +5,10 @@
 
 (set! *warn-on-reflection* true)
 
+(def ^:dynamic *env*
+  {:continue-label nil
+   :break-label nil})
+
 (def primitive-types
   {'int Type/INT_TYPE
    'short Type/SHORT_TYPE
@@ -276,18 +280,34 @@
 (defmethod emit-expr* :while [^MethodVisitor mv {:keys [cond body]}]
   (let [start-label (Label.)
         end-label (Label.)]
-    (.visitLabel mv start-label)
-    (emit-conditional mv cond end-label)
-    (emit-expr mv body)
-    (.visitJumpInsn mv Opcodes/GOTO start-label)
-    (.visitLabel mv end-label)))
+    (binding [*env* (assoc *env*
+                           :continue-label start-label
+                           :break-label end-label)]
+      (.visitLabel mv start-label)
+      (emit-conditional mv cond end-label)
+      (emit-expr mv body)
+      (.visitJumpInsn mv Opcodes/GOTO start-label)
+      (.visitLabel mv end-label))))
 
 (defmethod emit-expr* :for [^MethodVisitor mv {:keys [cond step body]}]
   (let [start-label (Label.)
+        continue-label (Label.)
         end-label (Label.)]
-    (.visitLabel mv start-label)
-    (emit-conditional mv cond end-label)
-    (emit-expr mv body)
-    (emit-expr mv step)
-    (.visitJumpInsn mv Opcodes/GOTO start-label)
-    (.visitLabel mv end-label)))
+    (binding [*env* (assoc *env*
+                           :continue-label continue-label
+                           :break-label end-label)]
+      (.visitLabel mv start-label)
+      (emit-conditional mv cond end-label)
+      (emit-expr mv body)
+      (.visitLabel mv continue-label)
+      (emit-expr mv step)
+      (.visitJumpInsn mv Opcodes/GOTO start-label)
+      (.visitLabel mv end-label))))
+
+(defmethod emit-expr* :continue [^MethodVisitor mv _]
+  (let [^Label label (:continue-label *env*)]
+    (.visitJumpInsn mv Opcodes/GOTO label)))
+
+(defmethod emit-expr* :break [^MethodVisitor mv _]
+  (let [^Label label (:break-label *env*)]
+    (.visitJumpInsn mv Opcodes/GOTO label)))
