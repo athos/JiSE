@@ -7,7 +7,8 @@
 
 (def ^:dynamic *env*
   {:continue-label nil
-   :break-label nil})
+   :break-label nil
+   :labels {}})
 
 (def primitive-types
   {'int Type/INT_TYPE
@@ -235,6 +236,12 @@
 (defmethod emit-expr* :increment [^MethodVisitor mv {:keys [target by]}]
   (.visitIincInsn mv (:index target) by))
 
+(defmethod emit-expr* :labeled [^MethodVisitor mv {:keys [label target kind]}]
+  (let [break-label (Label.)]
+    (binding [*env* (assoc-in *env* [:labels label] {:break-label break-label})]
+      (emit-expr mv target))
+    (.visitLabel mv break-label)))
+
 (def comparison-insns
   {'int {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]
          :lt [Opcodes/IF_ICMPGE], :gt [Opcodes/IF_ICMPLE]
@@ -311,6 +318,8 @@
   (let [^Label label (:continue-label *env*)]
     (.visitJumpInsn mv Opcodes/GOTO label)))
 
-(defmethod emit-expr* :break [^MethodVisitor mv _]
-  (let [^Label label (:break-label *env*)]
+(defmethod emit-expr* :break [^MethodVisitor mv {:keys [label]}]
+  (let [^Label label (if label
+                       (get-in *env* [:labels label :break-label])
+                       (:break-label *env*))]
     (.visitJumpInsn mv Opcodes/GOTO label)))

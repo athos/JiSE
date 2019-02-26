@@ -65,7 +65,11 @@
 
 (defn parse-expr [cenv expr]
   (cond (seq? expr)
-        (parse-expr* cenv expr)
+        (let [expr' (parse-expr* cenv expr)]
+          (if-let [label (:label (meta expr))]
+            (cond-> {:op :labeled :label label :target expr'}
+              (#{:while :for} (:op expr')) (assoc :kind (:op expr')))
+            expr'))
 
         (nil? expr)
         {:op :null}
@@ -257,5 +261,6 @@
 (defmethod parse-expr* 'continue [_ _]
   {:op :continue})
 
-(defmethod parse-expr* 'break [_ _]
-  {:op :break})
+(defmethod parse-expr* 'break [_ [_ label]]
+  (cond-> {:op :break}
+    label (assoc :label label)))
