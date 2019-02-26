@@ -228,8 +228,11 @@
    :body (parse-exprs cenv body)})
 
 (defmethod parse-expr* 'for [cenv [_ [lname init cond step] & body]]
-  (let [expr' `(~'let [~lname ~init]
-                (~'while ~cond
-                 ~@body
-                 ~step))]
-    (parse-expr cenv expr')))
+  (let [[cenv' bindings'] (parse-bindings cenv [lname init])]
+    {:op :let
+     :bindings bindings'
+     :body
+     {:op :for
+      :cond (parse-expr cenv' cond)
+      :step (parse-expr cenv' step)
+      :body (parse-exprs cenv' body)}}))

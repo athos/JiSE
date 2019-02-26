@@ -281,3 +281,13 @@
     (emit-expr mv body)
     (.visitJumpInsn mv Opcodes/GOTO start-label)
     (.visitLabel mv end-label)))
+
+(defmethod emit-expr* :for [^MethodVisitor mv {:keys [cond step body]}]
+  (let [start-label (Label.)
+        end-label (Label.)]
+    (.visitLabel mv start-label)
+    (emit-conditional mv cond end-label)
+    (emit-expr mv body)
+    (emit-expr mv step)
+    (.visitJumpInsn mv Opcodes/GOTO start-label)
+    (.visitLabel mv end-label)))
