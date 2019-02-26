@@ -1,13 +1,26 @@
 (ns jise.core
-  (:require [jise.emit :as emit]
+  (:require [clojure.string :as str]
+            [jise.emit :as emit]
             [jise.parse :as parse])
   (:import [clojure.lang Compiler DynamicClassLoader]))
 
+(defn qualify-cname [cname]
+  (let [cname' (name cname)]
+    (-> (cond->> cname'
+          (neg? (.indexOf cname' "."))
+          (str (ns-name *ns*) \.))
+        symbol
+        (with-meta (meta cname)))))
+
 (defmacro defclass [cname & body]
-  (let [cname' (str cname)
-        bytecode (emit/emit-class (parse/parse-class &form))]
+  (let [cname (qualify-cname cname)
+        cname' (str cname)
+        bytecode (-> `(defclass ~cname ~@body)
+                     (with-meta (meta &form))
+                     parse/parse-class
+                     emit/emit-class)]
     (when *compile-files*
-      (Compiler/writeClassFile cname' bytecode))
+      (Compiler/writeClassFile (str/replace cname' \. \/) bytecode))
     (.defineClass ^DynamicClassLoader @Compiler/LOADER cname' bytecode nil)
     `(do (import '~cname)
          ~cname)))

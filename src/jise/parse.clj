@@ -1,4 +1,5 @@
-(ns jise.parse)
+(ns jise.parse
+  (:require [clojure.string :as str]))
 
 (def ^:const primitive-types
   '#{int short long float double char boolean void})
@@ -154,7 +155,7 @@
   (let [modifiers (modifiers-of class)
         {:keys [fields methods]} (parse-class-body body)
         cenv {}]
-    {:name (str cname)
+    {:name (str/replace (str cname) \. \/)
      :access (access-flags modifiers)
      :fields (mapv parse-field fields)
      :methods (mapv (partial parse-method cenv) methods)}))
