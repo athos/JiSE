@@ -242,12 +242,8 @@
             :lt [Opcodes/DCMPL Opcodes/IFGE], :gt [Opcodes/DCMPL Opcodes/IFLE]
             :le [Opcodes/DCMPL Opcodes/IFGT], :ge [Opcodes/DCMPL Opcodes/IFLT]}})
 
-(defn emit-conditional [^MethodVisitor mv cond then-fn else-fn]
-  (let [op (:op cond)
-        start-label (Label.)
-        end-label (Label.)
-        else-label (if else-fn (Label.) end-label)]
-    (.visitLabel mv start-label)
+(defn emit-conditional [^MethodVisitor mv cond label]
+  (let [op (:op cond)]
     (case op
       (:eq :ne :lt :gt :le :lg)
       (let [{:keys [lhs rhs]} cond
@@ -257,28 +253,31 @@
         (if-let [[insn1 insn2] (get-in comparison-insns [t op])]
           (if insn2
             (do (.visitInsn mv insn1)
-                (.visitJumpInsn mv insn2 else-label))
-            (.visitJumpInsn mv insn1 else-label))
+                (.visitJumpInsn mv insn2 label))
+            (.visitJumpInsn mv insn1 label))
           (let [insn (case op
                        :eq Opcodes/IF_ACMPNE
                        :ne Opcodes/IF_ACMPEQ)]
-            (.visitJumpInsn mv insn else-label))))
+            (.visitJumpInsn mv insn label))))
       (let [msg (str "not supported conditional: " op)]
-        (throw (ex-info msg {:op op}))))
-    (then-fn mv start-label)
-    (when else-fn
-      (.visitJumpInsn mv Opcodes/GOTO end-label)
-      (.visitLabel mv else-label)
-      (else-fn mv))
-    (.visitLabel mv end-label)))
+        (throw (ex-info msg {:op op}))))))
 
 (defmethod emit-expr* :if [^MethodVisitor mv {:keys [test then else]}]
-  (let [then-fn (fn [mv _] (emit-expr mv then))
-        else-fn (when else #(emit-expr % else))]
-    (emit-conditional mv test then-fn else-fn)))
+  (let [end-label (Label.)
+        else-label (if else (Label.) end-label)]
+    (emit-conditional mv test else-label)
+    (emit-expr mv then)
+    (when else
+      (.visitJumpInsn mv Opcodes/GOTO end-label)
+      (.visitLabel mv else-label)
+      (emit-expr mv else))
+    (.visitLabel mv end-label)))
 
 (defmethod emit-expr* :while [^MethodVisitor mv {:keys [cond body]}]
-  (let [then-fn (fn [^MethodVisitor mv start-label]
-                  (emit-expr mv body)
-                  (.visitJumpInsn mv Opcodes/GOTO start-label))]
-    (emit-conditional mv cond then-fn nil)))
+  (let [start-label (Label.)
+        end-label (Label.)]
+    (.visitLabel mv start-label)
+    (emit-conditional mv cond end-label)
+    (emit-expr mv body)
+    (.visitJumpInsn mv Opcodes/GOTO start-label)
+    (.visitLabel mv end-label)))
