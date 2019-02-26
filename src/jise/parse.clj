@@ -89,29 +89,45 @@
      :exprs (-> (mapv parse-expr (repeat cenv') (butlast body))
                 (conj last'))}))
 
-(defn parse-method-arg [arg]
-  (let [{:keys [access type]} (parse-modifiers (meta arg))]
-    {:name (str arg)
-     :type type
-     :access (access-flags (meta arg))}))
+(defn type-category [t]
+  (case t
+    (long double) 2
+    1))
+
+(defn parse-binding [cenv lname init]
+  (let [init' (some->> init (parse-expr cenv))
+        {:keys [access type]} (parse-modifiers (meta lname) :default-type (:type init'))
+        lname' (str lname)]
+    (cond-> {:name lname'
+             :type type
+             :access access
+             :index (:next-index cenv)}
+      init' (assoc :init init'))))
+
+(defn parse-bindings [cenv bindings]
+  (loop [[lname init & bindings] bindings
+         cenv cenv
+         ret []]
+    (if lname
+      (let [b (parse-binding cenv lname init)
+            cenv' (-> cenv
+                      (assoc-in [:lenv (:name b)] b)
+                      (update :next-index + (type-category (:type b))))]
+        (recur bindings cenv'(conj ret b)))
+      [cenv ret])))
 
 (defn parse-method [cenv [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
         {:keys [access type]} (parse-modifiers modifiers :default-type 'void)
-        args' (mapv parse-method-arg args)
-        lenv (into {"this" {:index 0}}
-                   (map-indexed (fn [i {:keys [name type]}]
-                                  [name {:index (inc i) :type type}]))
-                   args')
-        cenv' (-> cenv
-                  (assoc :expected-type type)
-                  (assoc :lenv lenv)
-                  (assoc :next-index (count lenv)))]
+        init-lenv (if (:static access) {} {"this" 0})
+        init-index (count init-lenv)
+        [cenv' args'] (parse-bindings (assoc cenv :lenv init-lenv :next-index init-index)
+                                      (interleave args (repeat nil)))]
     {:name (str mname)
      :return-type type
      :args args'
      :access access
-     :body (parse-exprs cenv' body)}))
+     :body (parse-exprs (assoc cenv' :expected-type type) body)}))
 
 (defn parse-class-body [body]
   (loop [decls body
@@ -188,27 +204,8 @@
 (defmethod parse-expr* '>= [cenv expr]
   (parse-comparison cenv expr :ge))
 
-(defn parse-binding [cenv lname init]
-  (let [init' (parse-expr cenv init)
-        {:keys [access type]} (parse-modifiers (meta lname) :default-type (:type init'))
-        lname' (str lname)]
-    {:name lname'
-     :type type
-     :access access
-     :index (:next-index cenv)
-     :init init'}))
-
 (defmethod parse-expr* 'let [cenv [_ bindings & body]]
-  (let [[cenv' bindings'] (loop [[lname init & bindings] bindings
-                                 cenv cenv
-                                 ret []]
-                            (if lname
-                              (let [b (parse-binding cenv lname init)
-                                    cenv' (-> cenv
-                                              (assoc-in [:lenv (:name b)] b)
-                                              (update :next-index inc))]
-                                (recur bindings cenv'(conj ret b)))
-                              [cenv ret]))
+  (let [[cenv' bindings'] (parse-bindings cenv bindings)
         body' (parse-exprs cenv' body)]
     {:op :let :type (:type body')
      :bindings bindings'
