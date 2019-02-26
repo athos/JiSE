@@ -232,6 +232,9 @@
   (emit-expr mv rhs)
   (emit-store mv lhs))
 
+(defmethod emit-expr* :increment [^MethodVisitor mv {:keys [target by]}]
+  (.visitIincInsn mv (:index target) by))
+
 (def comparison-insns
   {'int {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]
          :lt [Opcodes/IF_ICMPGE], :gt [Opcodes/IF_ICMPLE]

@@ -217,6 +217,22 @@
    :lhs (parse-expr cenv lname)
    :rhs (parse-expr cenv expr)})
 
+(defmethod parse-expr* 'inc! [cenv [_ lname by]]
+  (let [by (or by 1)
+        lname' (parse-expr cenv lname)]
+    (if (and (= (wider-type (:type lname') 'int) 'int)
+             (pos-int? by))
+      {:op :increment, :target lname', :by by}
+      (parse-expr cenv `(set! ~lname (~'+ ~lname ~by))))))
+
+(defmethod parse-expr* 'dec! [cenv [_ lname by]]
+  (let [by (or by 1)
+        lname' (parse-expr cenv lname)]
+    (if (and (= (wider-type (:type lname') 'int) 'int)
+             (pos-int? by))
+      {:op :increment, :target lname', :by (- by)}
+      (parse-expr cenv `(set! ~lname (~'- ~lname ~by))))))
+
 (defmethod parse-expr* 'if [cenv [_ test then else]]
   (cond-> {:op :if
            :test (parse-expr cenv test)
