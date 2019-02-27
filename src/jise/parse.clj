@@ -1,4 +1,5 @@
 (ns jise.parse
+  (:refer-clojure :exclude [macroexpand])
   (:require [clojure.string :as str]))
 
 (def ^:const primitive-types
@@ -53,6 +54,17 @@
   (cond->> x
     (not= t type)
     (array-map :op :conversion :type t :src)))
+
+(defn macroexpand [form]
+  (let [v (resolve (first form))]
+    (if (some-> v meta :macro)
+      (let [expanded (macroexpand-1 form)]
+        (if (identical? expanded form)
+          form
+          (recur (cond-> expanded
+                   (instance? clojure.lang.IObj expanded)
+                   (vary-meta merge (meta form))))))
+      form)))
 
 (declare parse-expr)
 
