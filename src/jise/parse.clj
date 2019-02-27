@@ -237,20 +237,18 @@
 
 (defmethod parse-expr* 'inc! [cenv [_ lname by]]
   (let [by (or by 1)
-        lname' (parse-expr cenv lname)]
+        {:keys [type] :as lname'} (parse-expr (with-context cenv :expression) lname)]
     (if (and (= (wider-type (:type lname') 'int) 'int)
-             (pos-int? by)
-             (= (:context cenv) :statement))
-      {:op :increment, :target lname', :by by}
+             (pos-int? by))
+      (inherit-context {:op :increment, :target lname', :type type, :by by} cenv)
       (parse-expr cenv `(set! ~lname (~'+ ~lname ~by))))))
 
 (defmethod parse-expr* 'dec! [cenv [_ lname by]]
   (let [by (or by 1)
-        lname' (parse-expr cenv lname)]
+        {:keys [type] :as lname'} (parse-expr (with-context cenv :expression) lname)]
     (if (and (= (wider-type (:type lname') 'int) 'int)
-             (pos-int? by)
-             (= (:context cenv) :statement))
-      {:op :increment, :target lname', :by (- by)}
+             (pos-int? by))
+      (inherit-context {:op :increment, :target lname', :type type, :by (- by)} cenv)
       (parse-expr cenv `(set! ~lname (~'- ~lname ~by))))))
 
 (defmethod parse-expr* 'if [{:keys [context] :as cenv} [_ test then else]]

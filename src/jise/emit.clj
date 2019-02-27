@@ -122,15 +122,18 @@
         (.visitInsn mv insn)
         (.visitLdcInsn mv value)))))
 
-(defmethod emit-expr* :local [^MethodVisitor mv {:keys [type index context]}]
+(defn emit-load [^MethodVisitor mv type index]
   (let [insn (case type
                (int short byte char) Opcodes/ILOAD
                long Opcodes/LLOAD
                float Opcodes/FLOAD
                double Opcodes/DLOAD
                Opcodes/ALOAD)]
-    (when-not (= context :statement)
-      (.visitVarInsn mv insn index))))
+    (.visitVarInsn mv insn index)))
+
+(defmethod emit-expr* :local [mv {:keys [type index context]}]
+  (when-not (= context :statement)
+    (emit-load mv type index)))
 
 (defmethod emit-expr* :add [^MethodVisitor mv {:keys [type lhs rhs context]}]
   (let [insn (case type
@@ -231,8 +234,11 @@
       (.visitInsn mv insn)))
   (emit-store mv lhs))
 
-(defmethod emit-expr* :increment [^MethodVisitor mv {:keys [target by]}]
-  (.visitIincInsn mv (:index target) by))
+(defmethod emit-expr* :increment [^MethodVisitor mv {:keys [target by context]}]
+  (let [{:keys [type index]} target]
+    (.visitIincInsn mv index by)
+    (when-not (= context :statement)
+      (emit-load mv type index))))
 
 (defmethod emit-expr* :labeled [^MethodVisitor mv {:keys [label target kind]}]
   (let [break-label (Label.)]
