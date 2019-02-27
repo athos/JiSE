@@ -135,49 +135,42 @@
   (when-not (= context :statement)
     (emit-load mv type index)))
 
-(defmethod emit-expr* :add [^MethodVisitor mv {:keys [type lhs rhs context]}]
-  (let [insn (case type
-               int Opcodes/IADD
-               long Opcodes/LADD
-               float Opcodes/FADD
-               double Opcodes/DADD)]
+(def arithmetic-insns
+  {:add {'int Opcodes/IADD
+         'long Opcodes/LADD
+         'float Opcodes/FADD
+         'double Opcodes/DADD}
+   :sub {'int Opcodes/ISUB
+         'long Opcodes/LSUB
+         'float Opcodes/FSUB
+         'double Opcodes/DSUB}
+   :mul {'int Opcodes/IMUL
+         'long Opcodes/LMUL
+         'float Opcodes/FMUL
+         'double Opcodes/DMUL}
+   :div {'int Opcodes/IDIV
+         'long Opcodes/LDIV
+         'float Opcodes/FDIV
+         'double Opcodes/DDIV}})
+
+(defn emit-arithmetic [^MethodVisitor mv {:keys [type lhs rhs context]} op]
+  (let [insn (get-in arithmetic-insns [op type])]
     (emit-expr mv lhs)
     (emit-expr mv rhs)
     (.visitInsn mv insn)
     (drop-if-statement mv context)))
 
-(defmethod emit-expr* :sub [^MethodVisitor mv {:keys [type lhs rhs context]}]
-  (let [insn (case type
-               int Opcodes/ISUB
-               long Opcodes/LSUB
-               float Opcodes/FSUB
-               double Opcodes/DSUB)]
-    (emit-expr mv lhs)
-    (emit-expr mv rhs)
-    (.visitInsn mv insn)
-    (drop-if-statement mv context)))
+(defmethod emit-expr* :add [mv expr]
+  (emit-arithmetic mv expr :add))
 
-(defmethod emit-expr* :mul [^MethodVisitor mv {:keys [type lhs rhs context]}]
-  (let [insn (case type
-               int Opcodes/IMUL
-               long Opcodes/LMUL
-               float Opcodes/FMUL
-               double Opcodes/DMUL)]
-    (emit-expr mv lhs)
-    (emit-expr mv rhs)
-    (.visitInsn mv insn)
-    (drop-if-statement mv context)))
+(defmethod emit-expr* :sub [mv expr]
+  (emit-arithmetic mv expr :sub))
 
-(defmethod emit-expr* :div [^MethodVisitor mv {:keys [type lhs rhs context]}]
-  (let [insn (case type
-               int Opcodes/IDIV
-               long Opcodes/LDIV
-               float Opcodes/FDIV
-               double Opcodes/DDIV)]
-    (emit-expr mv lhs)
-    (emit-expr mv rhs)
-    (.visitInsn mv insn)
-    (drop-if-statement mv context)))
+(defmethod emit-expr* :mul [mv expr]
+  (emit-arithmetic mv expr :mul))
+
+(defmethod emit-expr* :div [mv expr]
+  (emit-arithmetic mv expr :div))
 
 (defmethod emit-expr* :conversion [^MethodVisitor mv {:keys [type src context]}]
   (emit-expr mv src)
