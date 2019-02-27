@@ -243,23 +243,31 @@
            :then (parse-expr cenv then)}
     else (assoc :else (parse-expr cenv else))))
 
-(defmethod parse-expr* 'while [cenv [_ cond & body]]
-  {:op :while
-   :cond (parse-expr cenv cond)
-   :body (parse-exprs cenv body)})
+(defn extract-label [expr]
+  (:label (meta expr)))
 
-(defmethod parse-expr* 'for [cenv [_ [lname init cond step] & body]]
-  (let [[cenv' bindings'] (parse-bindings cenv [lname init])]
+(defmethod parse-expr* 'while [cenv [_ cond & body :as expr]]
+  (let [label (extract-label expr)]
+    (cond-> {:op :while
+             :cond (parse-expr cenv cond)
+             :body (parse-exprs cenv body)}
+      label (assoc :label label))))
+
+(defmethod parse-expr* 'for [cenv [_ [lname init cond step] & body :as expr]]
+  (let [[cenv' bindings'] (parse-bindings cenv [lname init])
+        label (extract-label expr)]
     {:op :let
      :bindings bindings'
      :body
-     {:op :for
-      :cond (parse-expr cenv' cond)
-      :step (parse-expr cenv' step)
-      :body (parse-exprs cenv' body)}}))
+     (cond-> {:op :for
+              :cond (parse-expr cenv' cond)
+              :step (parse-expr cenv' step)
+              :body (parse-exprs cenv' body)}
+       label (assoc :label label))}))
 
-(defmethod parse-expr* 'continue [_ _]
-  {:op :continue})
+(defmethod parse-expr* 'continue [_ [_ label]]
+  (cond-> {:op :continue}
+    label (assoc :label label)))
 
 (defmethod parse-expr* 'break [_ [_ label]]
   (cond-> {:op :break}

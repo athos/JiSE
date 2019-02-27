@@ -287,35 +287,44 @@
       (emit-expr mv else))
     (.visitLabel mv end-label)))
 
-(defmethod emit-expr* :while [^MethodVisitor mv {:keys [cond body]}]
+(defn with-labels [label-name continue-label break-label f]
+  (let [env (-> *env*
+                (assoc :continue-label continue-label :break-label break-label)
+                (cond->
+                  label-name
+                  (assoc-in [:labels label-name :continue-label] continue-label)))]
+    (binding [*env* env]
+      (f))))
+
+(defmethod emit-expr* :while [^MethodVisitor mv {:keys [cond body label]}]
   (let [start-label (Label.)
         end-label (Label.)]
-    (binding [*env* (assoc *env*
-                           :continue-label start-label
-                           :break-label end-label)]
-      (.visitLabel mv start-label)
-      (emit-conditional mv cond end-label)
-      (emit-expr mv body)
-      (.visitJumpInsn mv Opcodes/GOTO start-label)
-      (.visitLabel mv end-label))))
+    (with-labels label start-label end-label
+      (fn []
+        (.visitLabel mv start-label)
+        (emit-conditional mv cond end-label)
+        (emit-expr mv body)
+        (.visitJumpInsn mv Opcodes/GOTO start-label)
+        (.visitLabel mv end-label)))))
 
-(defmethod emit-expr* :for [^MethodVisitor mv {:keys [cond step body]}]
+(defmethod emit-expr* :for [^MethodVisitor mv {:keys [cond step body label]}]
   (let [start-label (Label.)
         continue-label (Label.)
         end-label (Label.)]
-    (binding [*env* (assoc *env*
-                           :continue-label continue-label
-                           :break-label end-label)]
-      (.visitLabel mv start-label)
-      (emit-conditional mv cond end-label)
-      (emit-expr mv body)
-      (.visitLabel mv continue-label)
-      (emit-expr mv step)
-      (.visitJumpInsn mv Opcodes/GOTO start-label)
-      (.visitLabel mv end-label))))
+    (with-labels label continue-label end-label
+      (fn []
+        (.visitLabel mv start-label)
+        (emit-conditional mv cond end-label)
+        (emit-expr mv body)
+        (.visitLabel mv continue-label)
+        (emit-expr mv step)
+        (.visitJumpInsn mv Opcodes/GOTO start-label)
+        (.visitLabel mv end-label)))))
 
-(defmethod emit-expr* :continue [^MethodVisitor mv _]
-  (let [^Label label (:continue-label *env*)]
+(defmethod emit-expr* :continue [^MethodVisitor mv {:keys [label]}]
+  (let [^Label label (if label
+                       (get-in *env* [:labels label :continue-label])
+                       (:continue-label *env*))]
     (.visitJumpInsn mv Opcodes/GOTO label)))
 
 (defmethod emit-expr* :break [^MethodVisitor mv {:keys [label]}]
