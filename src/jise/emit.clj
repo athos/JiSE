@@ -259,7 +259,7 @@
 (defn emit-conditional [^MethodVisitor mv cond label]
   (let [op (:op cond)]
     (case op
-      (:eq :ne :lt :gt :le :lg)
+      (:eq :ne :lt :gt :le :ge)
       (let [{:keys [lhs rhs]} cond
             t (:type lhs)]
         (emit-expr mv lhs)
