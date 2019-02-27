@@ -63,32 +63,37 @@
       (parse-expr cenv (macroexpand expr))
       (assert false "not supported yet"))))
 
+(defn with-context [x context]
+  (assoc x :context context))
+
+(defn inherit-context [x {:keys [context]}]
+  (with-context x context))
+
 (defn parse-expr [cenv expr]
   (cond (seq? expr)
         (let [expr' (parse-expr* cenv expr)]
           (if-let [label (:label (meta expr))]
-            (cond-> {:op :labeled :label label :target expr'}
-              (#{:while :for} (:op expr')) (assoc :kind (:op expr')))
+            {:op :labeled :label label :target expr'}
             expr'))
 
         (nil? expr)
-        {:op :null}
+        (inherit-context {:op :null} cenv)
 
         (symbol? expr)
         (if-let [{:keys [index type]} ((:lenv cenv) (name expr))]
-          {:op :local :index index :type type}
+          (inherit-context {:op :local :index index :type type} cenv)
           (throw (ex-info (str "unknown variable found: " expr) {:variable expr})))
 
         :else
         (if-let [t (object-type expr)]
-          (merge {:op :literal}
+          (merge (inherit-context {:op :literal} cenv)
                  (case t
                    (byte short int long) {:type 'int :value (int expr)}
                    (float double) {:type 'double :value (double expr)}
                    {:type t :value expr})))))
 
 (defn  parse-exprs [cenv body]
-  (let [cenv' (dissoc cenv :expected-type)
+  (let [cenv' (with-context cenv :statement)
         last' (parse-expr cenv (last body))]
     {:op :do :type (:type last')
      :exprs (-> (mapv parse-expr (repeat cenv') (butlast body))
@@ -100,7 +105,7 @@
     1))
 
 (defn parse-binding [cenv lname init]
-  (let [init' (some->> init (parse-expr cenv))
+  (let [init' (some->> init (parse-expr (with-context cenv :expression)))
         {:keys [access type]} (parse-modifiers (meta lname) :default-type (:type init'))
         lname' (str lname)]
     (cond-> {:name lname'
@@ -111,15 +116,15 @@
 
 (defn parse-bindings [cenv bindings]
   (loop [[lname init & bindings] bindings
-         cenv cenv
+         cenv' (with-context cenv :expression)
          ret []]
     (if lname
-      (let [b (parse-binding cenv lname init)
-            cenv' (-> cenv
+      (let [b (parse-binding cenv' lname init)
+            cenv' (-> cenv'
                       (assoc-in [:lenv (:name b)] b)
                       (update :next-index + (type-category (:type b))))]
-        (recur bindings cenv'(conj ret b)))
-      [cenv ret])))
+        (recur bindings cenv' (conj ret b)))
+      [(inherit-context cenv' cenv) ret])))
 
 (defn parse-method [cenv [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
@@ -127,12 +132,13 @@
         init-lenv (if (:static access) {} {"this" 0})
         init-index (count init-lenv)
         [cenv' args'] (parse-bindings (assoc cenv :lenv init-lenv :next-index init-index)
-                                      (interleave args (repeat nil)))]
+                                      (interleave args (repeat nil)))
+        context (if (= type 'void) :statement :return)]
     {:name (str mname)
      :return-type type
      :args args'
      :access access
-     :body (parse-exprs (assoc cenv' :expected-type type) body)}))
+     :body (parse-exprs (with-context cenv' context) body)}))
 
 (defn parse-class-body [body]
   (loop [decls body
@@ -165,10 +171,12 @@
      :methods (mapv (partial parse-method cenv) methods)}))
 
 (defn parse-binary-op [cenv [_ x y] op]
-  (let [lhs (parse-expr cenv x)
-        rhs (parse-expr cenv y)
+  (let [cenv' (with-context cenv :expression)
+        lhs (parse-expr cenv' x)
+        rhs (parse-expr cenv' y)
         t (wider-type (:type lhs) (:type rhs))]
     {:op op
+     :context (:context cenv)
      :lhs (apply-conversion lhs t)
      :rhs (apply-conversion rhs t)}))
 
@@ -189,7 +197,9 @@
   (parse-arithmetic cenv expr :div))
 
 (defn parse-comparison [cenv expr op]
-  (assoc (parse-binary-op cenv expr op) :type 'boolean))
+  (if (:within-conditional? cenv)
+    (assoc (parse-binary-op cenv expr op) :type 'boolean)
+    (parse-expr (dissoc cenv :within-conditional?) `(if ~expr true false))))
 
 (defmethod parse-expr* '== [cenv expr]
   (parse-comparison cenv expr :eq))
@@ -217,15 +227,20 @@
      :body body'}))
 
 (defmethod parse-expr* 'set! [cenv [_ lname expr]]
-  {:op :assignment
-   :lhs (parse-expr cenv lname)
-   :rhs (parse-expr cenv expr)})
+  (let [cenv' (with-context cenv :expression)
+        lhs (parse-expr cenv' lname)]
+    {:op :assignment
+     :type (:type lhs)
+     :context (:context cenv)
+     :lhs lhs
+     :rhs (parse-expr cenv' expr)}))
 
 (defmethod parse-expr* 'inc! [cenv [_ lname by]]
   (let [by (or by 1)
         lname' (parse-expr cenv lname)]
     (if (and (= (wider-type (:type lname') 'int) 'int)
-             (pos-int? by))
+             (pos-int? by)
+             (= (:context cenv) :statement))
       {:op :increment, :target lname', :by by}
       (parse-expr cenv `(set! ~lname (~'+ ~lname ~by))))))
 
@@ -233,15 +248,24 @@
   (let [by (or by 1)
         lname' (parse-expr cenv lname)]
     (if (and (= (wider-type (:type lname') 'int) 'int)
-             (pos-int? by))
+             (pos-int? by)
+             (= (:context cenv) :statement))
       {:op :increment, :target lname', :by (- by)}
       (parse-expr cenv `(set! ~lname (~'- ~lname ~by))))))
 
-(defmethod parse-expr* 'if [cenv [_ test then else]]
-  (cond-> {:op :if
-           :test (parse-expr cenv test)
-           :then (parse-expr cenv then)}
-    else (assoc :else (parse-expr cenv else))))
+(defmethod parse-expr* 'if [{:keys [context] :as cenv} [_ test then else]]
+  (let [cenv' (cond-> cenv
+                (not= context :statement)
+                (assoc :context :expression))
+        test' (parse-expr (-> cenv
+                              (with-context :expression)
+                              (assoc :within-conditional? true))
+                          test)
+        then' (parse-expr cenv' then)
+        else' (some->> else (parse-expr cenv'))]
+    (cond-> {:op :if, :context context, :test test', :then then'}
+      else' (assoc :else else')
+      (not= context :statement) (assoc :type (:type then')))))
 
 (defn extract-label [expr]
   (:label (meta expr)))
@@ -249,8 +273,12 @@
 (defmethod parse-expr* 'while [cenv [_ cond & body :as expr]]
   (let [label (extract-label expr)]
     (cond-> {:op :while
-             :cond (parse-expr cenv cond)
-             :body (parse-exprs cenv body)}
+             :context (:context cenv)
+             :cond (parse-expr (-> cenv
+                                   (with-context :expression)
+                                   (assoc :within-conditional? true))
+                               cond)
+             :body (parse-exprs (with-context cenv :statement) body)}
       label (assoc :label label))))
 
 (defmethod parse-expr* 'for [cenv [_ [lname init cond step] & body :as expr]]
@@ -260,9 +288,13 @@
      :bindings bindings'
      :body
      (cond-> {:op :for
-              :cond (parse-expr cenv' cond)
-              :step (parse-expr cenv' step)
-              :body (parse-exprs cenv' body)}
+              :context (:context cenv)
+              :cond (parse-expr (-> cenv'
+                                    (with-context :expression)
+                                    (assoc :within-conditional? true))
+                                cond)
+              :step (parse-expr (with-context cenv' :statement) step)
+              :body (parse-exprs (with-context cenv' :statement) body)}
        label (assoc :label label))}))
 
 (defmethod parse-expr* 'continue [_ [_ label]]

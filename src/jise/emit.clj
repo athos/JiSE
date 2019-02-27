@@ -43,9 +43,6 @@
 (defmethod emit-expr* :default [_ expr]
   (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
 
-(defn emit-expr [^MethodVisitor mv expr]
-  (emit-expr* mv expr))
-
 (defn emit-return [^MethodVisitor mv type]
   (let [insn (case type
                (int short char byte boolean) Opcodes/IRETURN
@@ -56,6 +53,11 @@
                Opcodes/ARETURN)]
     (.visitInsn mv insn)))
 
+(defn emit-expr [^MethodVisitor mv expr]
+  (emit-expr* mv expr)
+  (when (= (:context expr) :return)
+    (emit-return mv (:type expr))))
+
 (defn emit-method [^ClassWriter cw {:keys [name access return-type args body]}]
   (let [desc (->> (map (comp ->type :type) args)
                   (into-array Type)
@@ -65,10 +67,8 @@
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)
     (emit-expr mv body)
-    (doto mv
-      (emit-return return-type)
-      (.visitMaxs 1 1)
-      (.visitEnd))))
+    (.visitMaxs mv 1 1)
+    (.visitEnd mv)))
 
 (defn emit-class [{:keys [name access fields methods]}]
   (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)]
@@ -96,10 +96,18 @@
   (doseq [expr exprs]
     (emit-expr mv expr)))
 
-(defmethod emit-expr* :null [^MethodVisitor mv _]
-  (.visitInsn mv Opcodes/ACONST_NULL))
+(defn drop-if-statement [^MethodVisitor mv context]
+  (when (= context :statement)
+    (let [insn (case type
+                 (long double) Opcodes/POP2
+                 Opcodes/POP)]
+      (.visitInsn mv insn))))
 
-(defmethod emit-expr* :literal [^MethodVisitor mv {:keys [type value]}]
+(defmethod emit-expr* :null [^MethodVisitor mv {:keys [context]}]
+  (when-not (= context :statement)
+    (.visitInsn mv Opcodes/ACONST_NULL)))
+
+(defmethod emit-expr* :literal [^MethodVisitor mv {:keys [type value context]}]
   (let [consts {'int {-1 Opcodes/ICONST_M1, 0 Opcodes/ICONST_0
                       1 Opcodes/ICONST_1, 2 Opcodes/ICONST_2
                       3 Opcodes/ICONST_3,4 Opcodes/ICONST_4
@@ -109,20 +117,22 @@
                         2 Opcodes/FCONST_2}
                 'double {0 Opcodes/DCONST_0, 1 Opcodes/DCONST_1}
                 'boolean {true Opcodes/ICONST_1, false Opcodes/ICONST_0}}]
-    (if-let [insn (get-in consts [type value])]
-      (.visitInsn mv insn)
-      (.visitLdcInsn mv value))))
+    (when-not (= context :statement)
+      (if-let [insn (get-in consts [type value])]
+        (.visitInsn mv insn)
+        (.visitLdcInsn mv value)))))
 
-(defmethod emit-expr* :local [^MethodVisitor mv {:keys [type index]}]
+(defmethod emit-expr* :local [^MethodVisitor mv {:keys [type index context]}]
   (let [insn (case type
                (int short byte char) Opcodes/ILOAD
                long Opcodes/LLOAD
                float Opcodes/FLOAD
                double Opcodes/DLOAD
-               Opcodes/ARETURN)]
-    (.visitVarInsn mv insn index)))
+               Opcodes/ALOAD)]
+    (when-not (= context :statement)
+      (.visitVarInsn mv insn index))))
 
-(defmethod emit-expr* :add [^MethodVisitor mv {:keys [type lhs rhs]}]
+(defmethod emit-expr* :add [^MethodVisitor mv {:keys [type lhs rhs context]}]
   (let [insn (case type
                int Opcodes/IADD
                long Opcodes/LADD
@@ -130,9 +140,10 @@
                double Opcodes/DADD)]
     (emit-expr mv lhs)
     (emit-expr mv rhs)
-    (.visitInsn mv insn)))
+    (.visitInsn mv insn)
+    (drop-if-statement mv context)))
 
-(defmethod emit-expr* :sub [^MethodVisitor mv {:keys [type lhs rhs]}]
+(defmethod emit-expr* :sub [^MethodVisitor mv {:keys [type lhs rhs context]}]
   (let [insn (case type
                int Opcodes/ISUB
                long Opcodes/LSUB
@@ -140,9 +151,10 @@
                double Opcodes/DSUB)]
     (emit-expr mv lhs)
     (emit-expr mv rhs)
-    (.visitInsn mv insn)))
+    (.visitInsn mv insn)
+    (drop-if-statement mv context)))
 
-(defmethod emit-expr* :mul [^MethodVisitor mv {:keys [type lhs rhs]}]
+(defmethod emit-expr* :mul [^MethodVisitor mv {:keys [type lhs rhs context]}]
   (let [insn (case type
                int Opcodes/IMUL
                long Opcodes/LMUL
@@ -150,9 +162,10 @@
                double Opcodes/DMUL)]
     (emit-expr mv lhs)
     (emit-expr mv rhs)
-    (.visitInsn mv insn)))
+    (.visitInsn mv insn)
+    (drop-if-statement mv context)))
 
-(defmethod emit-expr* :div [^MethodVisitor mv {:keys [type lhs rhs]}]
+(defmethod emit-expr* :div [^MethodVisitor mv {:keys [type lhs rhs context]}]
   (let [insn (case type
                int Opcodes/IDIV
                long Opcodes/LDIV
@@ -160,32 +173,10 @@
                double Opcodes/DDIV)]
     (emit-expr mv lhs)
     (emit-expr mv rhs)
-    (.visitInsn mv insn)))
+    (.visitInsn mv insn)
+    (drop-if-statement mv context)))
 
-(defn emit-comparison-expr [mv expr]
-  (emit-expr mv {:op :if :type 'int :test expr
-                 :then (parse/parse-expr {} true)
-                 :else (parse/parse-expr {} false)}))
-
-(defmethod emit-expr* :eq [mv expr]
-  (emit-comparison-expr mv expr))
-
-(defmethod emit-expr* :ne [mv expr]
-  (emit-comparison-expr mv expr))
-
-(defmethod emit-expr* :lt [mv expr]
-  (emit-comparison-expr mv expr))
-
-(defmethod emit-expr* :gt [mv expr]
-  (emit-comparison-expr mv expr))
-
-(defmethod emit-expr* :le [mv expr]
-  (emit-comparison-expr mv expr))
-
-(defmethod emit-expr* :ge [mv expr]
-  (emit-comparison-expr mv expr))
-
-(defmethod emit-expr* :conversion [^MethodVisitor mv {:keys [type src]}]
+(defmethod emit-expr* :conversion [^MethodVisitor mv {:keys [type src context]}]
   (emit-expr mv src)
   (case type
     (byte char short)
@@ -198,7 +189,8 @@
                      byte Opcodes/I2B
                      char Opcodes/I2C
                      short Opcodes/I2S)]
-          (.visitInsn mv insn)))
+          (.visitInsn mv insn)
+          (drop-if-statement mv context)))
     (let [insn (case [(:type src) type]
                  [int    long  ] Opcodes/I2L
                  [int    float ] Opcodes/I2F
@@ -212,7 +204,8 @@
                  [double int   ] Opcodes/D2I
                  [double long  ] Opcodes/D2L
                  [double float ] Opcodes/D2F)]
-      (.visitInsn mv insn))))
+      (.visitInsn mv insn)
+      (drop-if-statement mv context))))
 
 (defn emit-store [^MethodVisitor mv {:keys [type index]}]
   (let [insn (case type
@@ -229,8 +222,13 @@
     (emit-store mv b))
   (emit-expr mv body))
 
-(defmethod emit-expr* :assignment [mv {:keys [lhs rhs]}]
+(defmethod emit-expr* :assignment [^MethodVisitor mv {:keys [lhs rhs context]}]
   (emit-expr mv rhs)
+  (when-not (= context :statement)
+    (let [insn (case (:type rhs)
+                 (long double) Opcodes/DUP2
+                 Opcodes/DUP)]
+      (.visitInsn mv insn)))
   (emit-store mv lhs))
 
 (defmethod emit-expr* :increment [^MethodVisitor mv {:keys [target by]}]
@@ -296,7 +294,7 @@
     (binding [*env* env]
       (f))))
 
-(defmethod emit-expr* :while [^MethodVisitor mv {:keys [cond body label]}]
+(defmethod emit-expr* :while [^MethodVisitor mv {:keys [cond body label context]}]
   (let [start-label (Label.)
         end-label (Label.)]
     (with-labels label start-label end-label
@@ -305,9 +303,11 @@
         (emit-conditional mv cond end-label)
         (emit-expr mv body)
         (.visitJumpInsn mv Opcodes/GOTO start-label)
-        (.visitLabel mv end-label)))))
+        (.visitLabel mv end-label)))
+    (when-not (= context :statement)
+      (.visitInsn mv Opcodes/ACONST_NULL))))
 
-(defmethod emit-expr* :for [^MethodVisitor mv {:keys [cond step body label]}]
+(defmethod emit-expr* :for [^MethodVisitor mv {:keys [cond step body label context]}]
   (let [start-label (Label.)
         continue-label (Label.)
         end-label (Label.)]
@@ -319,7 +319,9 @@
         (.visitLabel mv continue-label)
         (emit-expr mv step)
         (.visitJumpInsn mv Opcodes/GOTO start-label)
-        (.visitLabel mv end-label)))))
+        (.visitLabel mv end-label)))
+    (when-not (= context :statement)
+      (.visitInsn mv Opcodes/ACONST_NULL))))
 
 (defmethod emit-expr* :continue [^MethodVisitor mv {:keys [label]}]
   (let [^Label label (if label
