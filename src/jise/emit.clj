@@ -338,6 +338,22 @@
                        (:break-label *env*))]
     (.visitJumpInsn mv Opcodes/GOTO label)))
 
+(defmethod emit-expr* :new-array [^MethodVisitor mv {:keys [type length context]}]
+  (emit-expr mv length)
+  (let [elem-type (parse/element-type type)]
+    (if (parse/primitive-types elem-type)
+      (let [insn (case elem-type
+                   int Opcodes/T_INT
+                   short Opcodes/T_SHORT
+                   long Opcodes/T_LONG
+                   float Opcodes/T_FLOAT
+                   double Opcodes/T_DOUBLE
+                   char Opcodes/T_CHAR
+                   byte Opcodes/T_BYTE)]
+        (.visitIntInsn mv Opcodes/NEWARRAY insn))
+      (.visitTypeInsn mv Opcodes/ANEWARRAY (.getInternalName (->type elem-type)))))
+  (drop-if-statement mv context))
+
 (defmethod emit-expr* :array-access [^MethodVisitor mv {:keys [array index context]}]
   (emit-expr mv array)
   (emit-expr mv index)

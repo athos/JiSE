@@ -342,6 +342,21 @@
   (cond-> {:op :break}
     label (assoc :label label)))
 
+(defmethod parse-expr* 'new [cenv [_ type arg]]
+  (let [type' (tag->type type)]
+    (if (array-type? type')
+      (if (vector? arg)
+        (let [arr (gensym)]
+          (parse-expr cenv `(~'let [~arr (new ~type ~(count arg))]
+                             ~@(for [[i init] (map-indexed vector arg)]
+                                 `(~'aset ~arr ~i ~init))
+                             ~arr)))
+        {:op :new-array
+         :context (:context cenv)
+         :type type'
+         :length (parse-expr (with-context cenv :expression) arg)})
+      (throw (ex-info (str "Construction of type " type " not supported yet") {:type type})))))
+
 (defmethod parse-expr* 'aget [cenv [_ arr index]]
   (let [cenv' (with-context cenv :expression)
         arr (parse-expr cenv' arr)]
