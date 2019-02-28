@@ -37,7 +37,7 @@
 (defn emit-field [^ClassWriter cw {:keys [access name type value]}]
   (let [access (access-value access)
         desc (.getDescriptor (->type type))]
-   (doto (.visitField cw access name desc nil value)
+   (doto (.visitField cw access (munge name) desc nil value)
      (.visitEnd))))
 
 (defmulti emit-expr* (fn [mv expr] (:op expr)))
@@ -63,7 +63,7 @@
   (let [desc (->> (map (comp ->type :type) args)
                   (into-array Type)
                   (Type/getMethodDescriptor (->type return-type)))
-        mv (.visitMethod cw (access-value access) name desc nil nil)]
+        mv (.visitMethod cw (access-value access) (munge name) desc nil nil)]
     (doseq [arg args]
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)

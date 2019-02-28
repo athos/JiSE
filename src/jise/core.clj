@@ -9,6 +9,7 @@
     (-> (cond->> cname'
           (neg? (.indexOf cname' "."))
           (str (ns-name *ns*) \.))
+        (.replace \- \_)
         symbol
         (with-meta (meta cname)))))
 
