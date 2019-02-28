@@ -68,6 +68,8 @@
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)
     (emit-expr mv body)
+    (when (= return-type 'void)
+      (emit-return mv 'void))
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
