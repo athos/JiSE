@@ -3,12 +3,39 @@
   (:require [clojure.string :as str]))
 
 (def ^:const primitive-types
-  '#{int short long float double char boolean void})
+  '#{int short long float double char byte boolean void})
+
+(def ^:const primitive-array-types
+  '{ints [int]
+    shorts [short]
+    longs [long]
+    floats [float]
+    doubles [double]
+    chars [char]
+    bytes [byte]
+    booleans [boolean]})
+
+(defn array-type? [t]
+  (vector? t))
+
+(defn element-type [t]
+  (first t))
+
+(declare tag->type)
+
+(defn maybe-array-type [tag]
+  (and (array-type? tag)
+       (let [elem-type (element-type tag)
+             t (tag->type elem-type :default ::not-found)]
+         (when-not (= t ::not-found)
+           [t]))))
 
 (defn tag->type [tag & {:keys [default]}]
   (or (get primitive-types tag)
+      (get primitive-array-types tag)
       (when-let [c (and (symbol? tag) (resolve tag))]
         (when (class? c) c))
+      (maybe-array-type tag)
       default
       Object))
 
@@ -314,3 +341,22 @@
 (defmethod parse-expr* 'break [_ [_ label]]
   (cond-> {:op :break}
     label (assoc :label label)))
+
+(defmethod parse-expr* 'aget [cenv [_ arr index]]
+  (let [cenv' (with-context cenv :expression)
+        arr (parse-expr cenv' arr)]
+    {:op :array-access
+     :context (:context cenv)
+     :type (element-type (:type arr))
+     :array arr
+     :index (parse-expr cenv' index)}))
+
+(defmethod parse-expr* 'aset [cenv [_ arr index expr]]
+  (let [cenv' (with-context cenv :expression)
+        arr (parse-expr cenv' arr)]
+    {:op :array-update
+     :context (:context cenv)
+     :type (element-type (:type arr))
+     :array arr
+     :index (parse-expr cenv' index)
+     :expr (parse-expr cenv' expr)}))

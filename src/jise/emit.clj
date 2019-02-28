@@ -21,9 +21,10 @@
    'void Type/VOID_TYPE})
 
 (defn ^Type ->type [x]
-  (if (class? x)
-    (Type/getType ^Class x)
-    (primitive-types x)))
+  (cond (class? x) (Type/getType ^Class x)
+        (parse/array-type? x) (let [^Type elem-type (->type (parse/element-type x))]
+                                (Type/getType (str \[ (.getDescriptor elem-type))))
+        :else (primitive-types x)))
 
 (defn access-value [flags]
   (cond-> 0
@@ -218,13 +219,16 @@
     (emit-store mv b))
   (emit-expr mv body))
 
+(defn emit-dup [^MethodVisitor mv type]
+  (let [insn (case type
+               (long double) Opcodes/DUP2
+               Opcodes/DUP)]
+    (.visitInsn mv insn)))
+
 (defmethod emit-expr* :assignment [^MethodVisitor mv {:keys [lhs rhs context]}]
   (emit-expr mv rhs)
   (when-not (= context :statement)
-    (let [insn (case (:type rhs)
-                 (long double) Opcodes/DUP2
-                 Opcodes/DUP)]
-      (.visitInsn mv insn)))
+    (emit-dup mv (:type rhs)))
   (emit-store mv lhs))
 
 (defmethod emit-expr* :increment [^MethodVisitor mv {:keys [target by context]}]
@@ -333,3 +337,35 @@
                        (get-in *env* [:labels label :break-label])
                        (:break-label *env*))]
     (.visitJumpInsn mv Opcodes/GOTO label)))
+
+(defmethod emit-expr* :array-access [^MethodVisitor mv {:keys [array index context]}]
+  (emit-expr mv array)
+  (emit-expr mv index)
+  (let [insn (case (parse/element-type (:type array))
+               int Opcodes/IALOAD
+               short Opcodes/SALOAD
+               long Opcodes/LALOAD
+               float Opcodes/FALOAD
+               double Opcodes/DALOAD
+               char Opcodes/CALOAD
+               byte Opcodes/BALOAD
+               Opcodes/AALOAD)]
+    (.visitInsn mv insn)
+    (drop-if-statement mv context)))
+
+(defmethod emit-expr* :array-update [^MethodVisitor mv {:keys [array index expr context]}]
+  (emit-expr mv array)
+  (emit-expr mv index)
+  (emit-expr mv expr)
+  (when-not (= context :statement)
+    (emit-dup mv (:type expr)))
+  (let [insn (case (parse/element-type (:type array))
+               int Opcodes/IASTORE
+               short Opcodes/SASTORE
+               long Opcodes/LASTORE
+               float Opcodes/FASTORE
+               double Opcodes/DASTORE
+               char Opcodes/CASTORE
+               byte Opcodes/BASTORE
+               Opcodes/AASTORE)]
+    (.visitInsn mv insn)))
