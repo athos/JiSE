@@ -235,6 +235,9 @@
 (defmethod parse-expr* '- [cenv expr]
   (parse-arithmetic cenv expr :div))
 
+(defmethod parse-expr* '% [cenv expr]
+  (parse-arithmetic cenv expr :rem))
+
 (defn parse-comparison [cenv expr op]
   (if (:within-conditional? cenv)
     (assoc (parse-binary-op cenv expr op) :type 'boolean)

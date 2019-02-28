@@ -152,7 +152,11 @@
    :div {'int Opcodes/IDIV
          'long Opcodes/LDIV
          'float Opcodes/FDIV
-         'double Opcodes/DDIV}})
+         'double Opcodes/DDIV}
+   :rem {'int Opcodes/IREM
+         'long Opcodes/LREM
+         'float Opcodes/FREM
+         'double Opcodes/DREM}})
 
 (defn emit-arithmetic [^MethodVisitor mv {:keys [type lhs rhs context]} op]
   (let [insn (get-in arithmetic-insns [op type])]
@@ -172,6 +176,9 @@
 
 (defmethod emit-expr* :div [mv expr]
   (emit-arithmetic mv expr :div))
+
+(defmethod emit-expr* :rem [mv expr]
+  (emit-arithmetic mv expr :rem))
 
 (defmethod emit-expr* :conversion [^MethodVisitor mv {:keys [type src context]}]
   (emit-expr mv src)
