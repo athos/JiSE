@@ -9,17 +9,20 @@ JiSE is Clojure's embedded DSL for making it as easy (or maybe even easier?) to 
 
 ^:public
 (defclass C
-  ^:public ^int
-  (defm sumUpTo [^int n]
-    (let [^int sum 0]
-      (for [^int i 0, (< i n), (set! i (+ i 1))]
-        (set! sum (+ sum i)))
-      sum)))
+  ^:public ^{:tag [[int]]}
+  (defm multiplication-table [^int n]
+    (let [rows (new [[int]] n)]
+      (for [i 0 (< i n) (inc! i)]
+        (let [cols (new [int] n)]
+          (for [j 0 (< j n) (inc! j)]
+            (aset cols j (* (+ i 1) (+ j 1))))
+          (aset rows i cols)))
+      rows)))
 
 ;; you can use C as an ordinary Java class
 (def c (C.))
-(.sumUpTo c 10) ;=> 45
-(.sumUpTo c 100) ;=> 4950
+(.multiplication_table c 3)
+;=> [[1, 2, 3], [2, 4, 6], [3, 6, 9]]
 ```
 
 ## License
