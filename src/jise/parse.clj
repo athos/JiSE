@@ -200,12 +200,18 @@
                 (throw (ex-info msg {:decl decl})))))
           (recur decls ret))))))
 
-(defn parse-class [[_ cname & body :as class]]
+(defn parse-class [[_ cname maybe-supers & body :as class]]
   (let [modifiers (modifiers-of class)
-        {:keys [fields methods]} (parse-class-body body)
+        supers (map tag->type (if (vector? maybe-supers) maybe-supers []))
+        {[parent] false interfaces true} (group-by #(.isInterface ^Class %) supers)
+        {:keys [fields methods]} (-> body
+                                     (cond->> (empty? supers) (cons maybe-supers))
+                                     parse-class-body)
         cenv {}]
     {:name (str/replace (str cname) \. \/)
      :access (access-flags modifiers)
+     :parent (or parent Object)
+     :interfaces interfaces
      :fields (mapv parse-field fields)
      :methods (mapv (partial parse-method cenv) methods)}))
 

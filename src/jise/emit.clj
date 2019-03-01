@@ -73,14 +73,14 @@
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
-(defn emit-class [{:keys [name access fields methods]}]
+(defn emit-class [{:keys [name access parent interfaces fields methods]}]
   (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)]
     (.visit cw Opcodes/V1_5
             (access-value access)
             name
             nil
-            "java/lang/Object"
-            nil)
+            (.getInternalName (->type parent))
+            (into-array String (map #(.getInternalName (->type %)) interfaces)))
     (doseq [field fields]
       (emit-field cw field))
     (doto (.visitMethod cw Opcodes/ACC_PUBLIC "<init>" "()V" nil nil)
