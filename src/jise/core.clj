@@ -1,4 +1,5 @@
 (ns jise.core
+  (:refer-clojure :exclude [class])
   (:require [clojure.string :as str]
             [jise.emit :as emit]
             [jise.parse :as parse])
@@ -13,18 +14,28 @@
         symbol
         (with-meta (meta cname)))))
 
-(defmacro defclass [cname & body]
-  (let [cname (qualify-cname cname)
-        cname' (str cname)
-        bytecode (-> `(defclass ~cname ~@body)
-                     (with-meta (meta &form))
+(defn compile-class [form-meta cname body]
+  (let [qname (with-meta (qualify-cname cname) (meta cname))
+        qname' (str qname)
+        bytecode (-> `(defclass ~qname ~@body)
+                     (with-meta form-meta)
                      parse/parse-class
                      emit/emit-class)]
     (when *compile-files*
-      (Compiler/writeClassFile (str/replace cname' \. \/) bytecode))
-    (.defineClass ^DynamicClassLoader @Compiler/LOADER cname' bytecode nil)
-    `(do (import '~cname)
-         ~cname)))
+      (Compiler/writeClassFile (str/replace qname' \. \/) bytecode))
+    (.defineClass ^DynamicClassLoader @Compiler/LOADER qname' bytecode nil)
+    qname))
+
+(defmacro defclass [cname & body]
+  (let [qname (compile-class (meta &form) cname body)]
+    `(do (import '~qname)
+         ~qname)))
+
+(defmacro class [maybe-name & body]
+  (let [cname (if (symbol? maybe-name)
+                maybe-name
+                `C#)]
+    `(new ~(compile-class (meta &form) cname body))))
 
 (comment
 
