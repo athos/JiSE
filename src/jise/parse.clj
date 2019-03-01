@@ -39,6 +39,11 @@
       default
       Object))
 
+(defn symbol-without-ns [sym]
+  (if (= (namespace sym) "jise.core")
+    (symbol (name sym))
+    sym))
+
 (defn modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
 
@@ -95,7 +100,7 @@
 
 (declare parse-expr)
 
-(defmulti parse-expr* (fn [cenv expr] (first expr)))
+(defmulti parse-expr* (fn [cenv expr] (symbol-without-ns (first expr))))
 (defmethod parse-expr* :default [cenv expr]
   (let [v (resolve (first expr))]
     (if (some-> v meta :macro)
@@ -187,7 +192,7 @@
       ret
       (let [[decl & decls] decls]
         (if (seq? decl)
-          (case (first decl)
+          (case (symbol-without-ns (first decl))
             def (recur decls (update ret :fields conj decl))
             defm (recur decls (update ret :methods conj decl))
             do (recur (concat (rest decl) decls) ret)
