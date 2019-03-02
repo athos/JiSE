@@ -297,21 +297,25 @@
        :lhs lhs
        :rhs rhs})))
 
-(defmethod parse-expr* 'inc! [cenv [_ lname by]]
+(defmethod parse-expr* 'inc! [cenv [_ target by]]
   (let [by (or by 1)
-        {:keys [type] :as lname'} (parse-expr (with-context cenv :expression) lname)]
-    (if (and (= (wider-type (:type lname') 'int) 'int)
+        target' (parse-expr (with-context cenv :expression) target)]
+    (if (and (= (:op target') :local)
+             (= (wider-type (:type target') 'int) 'int)
              (pos-int? by))
-      (inherit-context {:op :increment, :target lname', :type type, :by by} cenv)
-      (parse-expr cenv `(set! ~lname (~'+ ~lname ~by))))))
+      (-> {:op :increment, :target target', :type (:type target'), :by by}
+          (inherit-context cenv))
+      (parse-expr cenv `(set! ~target (~'+ ~target ~by))))))
 
-(defmethod parse-expr* 'dec! [cenv [_ lname by]]
+(defmethod parse-expr* 'dec! [cenv [_ target by]]
   (let [by (or by 1)
-        {:keys [type] :as lname'} (parse-expr (with-context cenv :expression) lname)]
-    (if (and (= (wider-type (:type lname') 'int) 'int)
+        target' (parse-expr (with-context cenv :expression) target)]
+    (if (and (= (:op target') :local)
+             (= (wider-type (:type target') 'int) 'int)
              (pos-int? by))
-      (inherit-context {:op :increment, :target lname', :type type, :by (- by)} cenv)
-      (parse-expr cenv `(set! ~lname (~'- ~lname ~by))))))
+      (-> {:op :increment, :target target', :type (:type target'), :by (- by)}
+          (inherit-context cenv))
+      (parse-expr cenv `(set! ~target (~'- ~target ~by))))))
 
 (defmethod parse-expr* 'if [{:keys [context] :as cenv} [_ test then else]]
   (let [cenv' (cond-> cenv
