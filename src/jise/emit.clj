@@ -1,5 +1,6 @@
 (ns jise.emit
-  (:require [jise.parse :as parse])
+  (:require [jise.insns :as insns]
+            [jise.parse :as parse])
   (:import [clojure.asm ClassVisitor ClassWriter Label MethodVisitor Opcodes Type]
            [clojure.lang Compiler DynamicClassLoader]))
 
@@ -10,21 +11,11 @@
    :break-label nil
    :labels {}})
 
-(def primitive-types
-  {'int Type/INT_TYPE
-   'short Type/SHORT_TYPE
-   'long Type/LONG_TYPE
-   'float Type/FLOAT_TYPE
-   'double Type/DOUBLE_TYPE
-   'char Type/CHAR_TYPE
-   'boolean Type/BOOLEAN_TYPE
-   'void Type/VOID_TYPE})
-
 (defn ^Type ->type [x]
   (cond (class? x) (Type/getType ^Class x)
         (parse/array-type? x) (let [^Type elem-type (->type (parse/element-type x))]
                                 (Type/getType (str \[ (.getDescriptor elem-type))))
-        :else (primitive-types x)))
+        :else (insns/primitive-types x)))
 
 (defn access-value [flags]
   (cond-> 0
@@ -45,14 +36,7 @@
   (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
 
 (defn emit-return [^MethodVisitor mv type]
-  (let [insn (case type
-               (int short char byte boolean) Opcodes/IRETURN
-               long Opcodes/LRETURN
-               float Opcodes/FRETURN
-               double Opcodes/DRETURN
-               void Opcodes/RETURN
-               Opcodes/ARETURN)]
-    (.visitInsn mv insn)))
+  (.visitInsn mv (get insns/return-insns type Opcodes/ARETURN)))
 
 (defn emit-expr [^MethodVisitor mv expr]
   (emit-expr* mv expr)
@@ -111,57 +95,20 @@
     (.visitInsn mv Opcodes/ACONST_NULL)))
 
 (defmethod emit-expr* :literal [^MethodVisitor mv {:keys [type value context]}]
-  (let [consts {'int {-1 Opcodes/ICONST_M1, 0 Opcodes/ICONST_0
-                      1 Opcodes/ICONST_1, 2 Opcodes/ICONST_2
-                      3 Opcodes/ICONST_3,4 Opcodes/ICONST_4
-                      5 Opcodes/ICONST_5}
-                'long {0 Opcodes/LCONST_0, 1 Opcodes/LCONST_1}
-                'float {0 Opcodes/FCONST_0, 1 Opcodes/FCONST_1
-                        2 Opcodes/FCONST_2}
-                'double {0 Opcodes/DCONST_0, 1 Opcodes/DCONST_1}
-                'boolean {true Opcodes/ICONST_1, false Opcodes/ICONST_0}}]
-    (when-not (= context :statement)
-      (if-let [insn (get-in consts [type value])]
-        (.visitInsn mv insn)
-        (.visitLdcInsn mv value)))))
+  (when-not (= context :statement)
+    (if-let [insn (get-in insns/const-insns [type value])]
+      (.visitInsn mv insn)
+      (.visitLdcInsn mv value))))
 
 (defn emit-load [^MethodVisitor mv type index]
-  (let [insn (case type
-               (int short byte char) Opcodes/ILOAD
-               long Opcodes/LLOAD
-               float Opcodes/FLOAD
-               double Opcodes/DLOAD
-               Opcodes/ALOAD)]
-    (.visitVarInsn mv insn index)))
+  (.visitVarInsn mv (get insns/load-insns type Opcodes/ALOAD) index))
 
 (defmethod emit-expr* :local [mv {:keys [type index context]}]
   (when-not (= context :statement)
     (emit-load mv type index)))
 
-(def arithmetic-insns
-  {:add {'int Opcodes/IADD
-         'long Opcodes/LADD
-         'float Opcodes/FADD
-         'double Opcodes/DADD}
-   :sub {'int Opcodes/ISUB
-         'long Opcodes/LSUB
-         'float Opcodes/FSUB
-         'double Opcodes/DSUB}
-   :mul {'int Opcodes/IMUL
-         'long Opcodes/LMUL
-         'float Opcodes/FMUL
-         'double Opcodes/DMUL}
-   :div {'int Opcodes/IDIV
-         'long Opcodes/LDIV
-         'float Opcodes/FDIV
-         'double Opcodes/DDIV}
-   :rem {'int Opcodes/IREM
-         'long Opcodes/LREM
-         'float Opcodes/FREM
-         'double Opcodes/DREM}})
-
 (defn emit-arithmetic [^MethodVisitor mv {:keys [type lhs rhs context]} op]
-  (let [insn (get-in arithmetic-insns [op type])]
+  (let [insn (get-in insns/arithmetic-insns [op type])]
     (emit-expr mv lhs)
     (emit-expr mv rhs)
     (.visitInsn mv insn)
@@ -186,41 +133,14 @@
   (emit-expr mv src)
   (case type
     (byte char short)
-    (do (when-let [insn (case (:type src)
-                          long Opcodes/L2I
-                          float Opcodes/F2I
-                          double Opcodes/D2I)]
+    (do (when-let [insn (get-in insns/conversion-insns [(:type src) 'int])]
           (.visitInsn mv insn))
-        (let [insn (case type
-                     byte Opcodes/I2B
-                     char Opcodes/I2C
-                     short Opcodes/I2S)]
-          (.visitInsn mv insn)
-          (drop-if-statement mv context)))
-    (let [insn (case [(:type src) type]
-                 [int    long  ] Opcodes/I2L
-                 [int    float ] Opcodes/I2F
-                 [int    double] Opcodes/I2D
-                 [long   int   ] Opcodes/L2I
-                 [long   float ] Opcodes/L2F
-                 [long   double] Opcodes/L2D
-                 [float  int   ] Opcodes/F2I
-                 [float  long  ] Opcodes/F2L
-                 [float  double] Opcodes/F2D
-                 [double int   ] Opcodes/D2I
-                 [double long  ] Opcodes/D2L
-                 [double float ] Opcodes/D2F)]
-      (.visitInsn mv insn)
-      (drop-if-statement mv context))))
+        (.visitInsn mv (get-in insns/conversion-insns ['int type])))
+    (do (.visitInsn mv (get-in insns/conversion-insns [(:type src) type]))
+        (drop-if-statement mv context))))
 
 (defn emit-store [^MethodVisitor mv {:keys [type index]}]
-  (let [insn (case type
-               int Opcodes/ISTORE
-               long Opcodes/LSTORE
-               float Opcodes/FSTORE
-               double Opcodes/DSTORE
-               Opcodes/ASTORE)]
-    (.visitVarInsn mv insn index)))
+  (.visitVarInsn mv (get insns/store-insns type Opcodes/ASTORE) index))
 
 (defmethod emit-expr* :let [mv {:keys [bindings body]}]
   (doseq [{:keys [init] :as b} bindings]
@@ -252,20 +172,6 @@
       (emit-expr mv target))
     (.visitLabel mv break-label)))
 
-(def comparison-insns
-  {'int {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]
-         :lt [Opcodes/IF_ICMPGE], :gt [Opcodes/IF_ICMPLE]
-         :le [Opcodes/IF_ICMPGT], :ge [Opcodes/IF_ICMPLT]}
-   'long {:eq [Opcodes/LCMP Opcodes/IFNE], :ne [Opcodes/LCMP Opcodes/IFEQ]
-          :lt [Opcodes/LCMP Opcodes/IFGE], :gt [Opcodes/LCMP Opcodes/IFLE]
-          :le [Opcodes/LCMP Opcodes/IFGT], :ge [Opcodes/LCMP Opcodes/IFLT]}
-   'float {:eq [Opcodes/FCMPL Opcodes/IFNE], :ne [Opcodes/FCMPL Opcodes/IFEQ]
-           :lt [Opcodes/FCMPL Opcodes/IFGE], :gt [Opcodes/FCMPL Opcodes/IFLE]
-           :le [Opcodes/FCMPL Opcodes/IFGT], :ge [Opcodes/FCMPL Opcodes/IFLT]}
-   'double {:eq [Opcodes/DCMPL Opcodes/IFNE], :ne [Opcodes/DCMPL Opcodes/IFEQ]
-            :lt [Opcodes/DCMPL Opcodes/IFGE], :gt [Opcodes/DCMPL Opcodes/IFLE]
-            :le [Opcodes/DCMPL Opcodes/IFGT], :ge [Opcodes/DCMPL Opcodes/IFLT]}})
-
 (defn emit-conditional [^MethodVisitor mv cond label]
   (let [op (:op cond)]
     (case op
@@ -274,7 +180,7 @@
             t (:type lhs)]
         (emit-expr mv lhs)
         (emit-expr mv rhs)
-        (if-let [[insn1 insn2] (get-in comparison-insns [t op])]
+        (if-let [[insn1 insn2] (get-in insns/comparison-insns [t op])]
           (if insn2
             (do (.visitInsn mv insn1)
                 (.visitJumpInsn mv insn2 label))
@@ -366,16 +272,8 @@
 (defmethod emit-expr* :array-access [^MethodVisitor mv {:keys [array index context]}]
   (emit-expr mv array)
   (emit-expr mv index)
-  (let [insn (case (parse/element-type (:type array))
-               int Opcodes/IALOAD
-               short Opcodes/SALOAD
-               long Opcodes/LALOAD
-               float Opcodes/FALOAD
-               double Opcodes/DALOAD
-               char Opcodes/CALOAD
-               byte Opcodes/BALOAD
-               Opcodes/AALOAD)]
-    (.visitInsn mv insn)
+  (let [elem-type (parse/element-type (:type array))]
+    (.visitInsn mv (get insns/aload-insns elem-type Opcodes/AALOAD))
     (drop-if-statement mv context)))
 
 (defmethod emit-expr* :array-update [^MethodVisitor mv {:keys [array index expr context]}]
@@ -384,13 +282,5 @@
   (emit-expr mv expr)
   (when-not (= context :statement)
     (emit-dup mv (:type expr)))
-  (let [insn (case (parse/element-type (:type array))
-               int Opcodes/IASTORE
-               short Opcodes/SASTORE
-               long Opcodes/LASTORE
-               float Opcodes/FASTORE
-               double Opcodes/DASTORE
-               char Opcodes/CASTORE
-               byte Opcodes/BASTORE
-               Opcodes/AASTORE)]
-    (.visitInsn mv insn)))
+  (let [elem-type (parse/element-type (:type array))]
+    (.visitInsn mv (get insns/astore-insns elem-type Opcodes/AASTORE))))
