@@ -253,6 +253,13 @@
                        (:break-label *env*))]
     (.visitJumpInsn mv Opcodes/GOTO label)))
 
+(defmethod emit-expr* :field-access
+  [^MethodVisitor mv {:keys [type name class target context]}]
+  (emit-expr mv target)
+  (let [owner (.getInternalName (->type class))
+        desc (.getDescriptor (->type type))]
+    (.visitFieldInsn mv Opcodes/GETFIELD owner name desc)))
+
 (defmethod emit-expr* :new-array [^MethodVisitor mv {:keys [type length context]}]
   (emit-expr mv length)
   (let [elem-type (parse/element-type type)]

@@ -371,6 +371,19 @@
          :length (parse-expr (with-context cenv :expression) arg)})
       (throw (ex-info (str "Construction of type " type " not supported yet") {:type type})))))
 
+(defmethod parse-expr* '. [cenv [_ target property]]
+  (let [pname (name property)
+        target' (parse-expr (with-context cenv :expression) target)
+        ^Class c (:type target')]
+    (if-let [field (.getField c pname)]
+      {:op :field-access
+       :context (:context cenv)
+       :type (.getType field)
+       :class (.getDeclaringClass field)
+       :name pname
+       :target target'}
+      (throw (ex-info (str "No such field found: " pname) {:name pname})))))
+
 (defmethod parse-expr* 'aget [cenv [_ arr index]]
   (let [cenv' (with-context cenv :expression)
         arr (parse-expr cenv' arr)]
