@@ -154,10 +154,13 @@
                Opcodes/DUP)]
     (.visitInsn mv insn)))
 
+(defn dup-unless-statement [mv context type]
+  (when-not (= context :statement)
+    (emit-dup mv type)))
+
 (defmethod emit-expr* :assignment [^MethodVisitor mv {:keys [lhs rhs context]}]
   (emit-expr mv rhs)
-  (when-not (= context :statement)
-    (emit-dup mv (:type rhs)))
+  (dup-unless-statement mv context (:type rhs))
   (emit-store mv lhs))
 
 (defmethod emit-expr* :increment [^MethodVisitor mv {:keys [target by context]}]
@@ -287,7 +290,6 @@
   (emit-expr mv array)
   (emit-expr mv index)
   (emit-expr mv expr)
-  (when-not (= context :statement)
-    (emit-dup mv (:type expr)))
+  (dup-unless-statement mv context (:type expr))
   (let [elem-type (parse/element-type (:type array))]
     (.visitInsn mv (get insns/astore-insns elem-type Opcodes/AASTORE))))
