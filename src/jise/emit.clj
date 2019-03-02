@@ -261,7 +261,17 @@
   (emit-expr mv target)
   (let [owner (.getInternalName (->type class))
         desc (.getDescriptor (->type type))]
-    (.visitFieldInsn mv Opcodes/GETFIELD owner name desc)))
+    (.visitFieldInsn mv Opcodes/GETFIELD owner name desc)
+    (drop-if-statement mv context)))
+
+(defmethod emit-expr* :field-update
+  [^MethodVisitor mv {:keys [type name class target rhs context]}]
+  (emit-expr mv target)
+  (emit-expr mv rhs)
+  (dup-unless-statement mv context (:type rhs))
+  (let [owner (.getInternalName (->type class))
+        desc (.getDescriptor (->type type))]
+    (.visitFieldInsn mv Opcodes/PUTFIELD owner name desc)))
 
 (defmethod emit-expr* :new-array [^MethodVisitor mv {:keys [type length context]}]
   (emit-expr mv length)

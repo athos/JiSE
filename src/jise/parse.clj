@@ -279,14 +279,23 @@
      :bindings bindings'
      :body body'}))
 
-(defmethod parse-expr* 'set! [cenv [_ lname expr]]
+(defmethod parse-expr* 'set! [{:keys [context] :as cenv} [_ target expr]]
   (let [cenv' (with-context cenv :expression)
-        lhs (parse-expr cenv' lname)]
-    {:op :assignment
-     :type (:type lhs)
-     :context (:context cenv)
-     :lhs lhs
-     :rhs (parse-expr cenv' expr)}))
+        lhs (parse-expr cenv' target)
+        rhs (parse-expr cenv' expr)]
+    (if (= (:op lhs) :field-access)
+      {:op :field-update
+       :context context
+       :type (:type lhs)
+       :class (:class lhs)
+       :name (:name lhs)
+       :target (:target lhs)
+       :rhs rhs}
+      {:op :assignment
+       :context context
+       :type (:type lhs)
+       :lhs lhs
+       :rhs rhs})))
 
 (defmethod parse-expr* 'inc! [cenv [_ lname by]]
   (let [by (or by 1)
