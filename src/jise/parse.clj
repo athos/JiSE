@@ -120,12 +120,12 @@
 
 (defn parse-method [cenv [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
-        {:keys [access type]} (parse-modifiers modifiers :default-type 'void)
+        {:keys [access type]} (parse-modifiers modifiers :default-type t/VOID)
         init-lenv (if (:static access) {} {"this" 0})
         init-index (count init-lenv)
         [cenv' args'] (parse-bindings (assoc cenv :lenv init-lenv :next-index init-index)
                                       (interleave args (repeat nil)))
-        context (if (= type 'void) :statement :return)]
+        context (if (= type t/VOID) :statement :return)]
     {:name (str mname)
      :return-type type
      :args args'
