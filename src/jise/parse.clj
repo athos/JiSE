@@ -37,23 +37,20 @@
     (array-map :op :conversion :type t :src)))
 
 (defn macroexpand [form]
-  (let [v (resolve (first form))]
-    (if (some-> v meta :macro)
-      (let [expanded (macroexpand-1 form)]
-        (if (identical? expanded form)
-          form
-          (recur (cond-> expanded
-                   (instance? clojure.lang.IObj expanded)
-                   (vary-meta merge (meta form))))))
-      form)))
+  (let [expanded (macroexpand-1 form)]
+    (if (identical? expanded form)
+      form
+      (recur (cond-> expanded
+               (instance? clojure.lang.IObj expanded)
+               (vary-meta merge (meta form)))))))
 
 (declare parse-expr)
 
 (defmulti parse-expr* (fn [cenv expr] (symbol-without-ns (first expr))))
 (defmethod parse-expr* :default [cenv expr]
-  (let [v (resolve (first expr))]
-    (if (some-> v meta :macro)
-      (parse-expr cenv (macroexpand expr))
+  (let [expanded (macroexpand expr)]
+    (if-not (identical? expanded expr)
+      (parse-expr cenv expanded)
       (assert false "not supported yet"))))
 
 (defn with-context [x context]
