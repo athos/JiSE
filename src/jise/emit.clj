@@ -1,6 +1,6 @@
 (ns jise.emit
   (:require [jise.insns :as insns]
-            [jise.parse :as parse])
+            [jise.type :as type])
   (:import [clojure.asm ClassVisitor ClassWriter Label MethodVisitor Opcodes Type]
            [clojure.lang Compiler DynamicClassLoader]))
 
@@ -13,8 +13,8 @@
 
 (defn ^Type ->type [x]
   (cond (class? x) (Type/getType ^Class x)
-        (parse/array-type? x) (let [^Type elem-type (->type (parse/element-type x))]
-                                (Type/getType (str \[ (.getDescriptor elem-type))))
+        (type/array-type? x) (let [^Type elem-type (->type (type/element-type x))]
+                               (Type/getType (str \[ (.getDescriptor elem-type))))
         :else (insns/primitive-types x)))
 
 (defn access-value [flags]
@@ -275,8 +275,8 @@
 
 (defmethod emit-expr* :new-array [^MethodVisitor mv {:keys [type length context]}]
   (emit-expr mv length)
-  (let [elem-type (parse/element-type type)]
-    (if (parse/primitive-types elem-type)
+  (let [elem-type (type/element-type type)]
+    (if (type/primitive-types elem-type)
       (let [insn (case elem-type
                    int Opcodes/T_INT
                    short Opcodes/T_SHORT
@@ -292,7 +292,7 @@
 (defmethod emit-expr* :array-access [^MethodVisitor mv {:keys [array index context]}]
   (emit-expr mv array)
   (emit-expr mv index)
-  (let [elem-type (parse/element-type (:type array))]
+  (let [elem-type (type/element-type (:type array))]
     (.visitInsn mv (get insns/aload-insns elem-type Opcodes/AALOAD))
     (drop-if-statement mv context)))
 
@@ -301,5 +301,5 @@
   (emit-expr mv index)
   (emit-expr mv expr)
   (dup-unless-statement mv context (:type expr))
-  (let [elem-type (parse/element-type (:type array))]
+  (let [elem-type (type/element-type (:type array))]
     (.visitInsn mv (get insns/astore-insns elem-type Opcodes/AASTORE))))

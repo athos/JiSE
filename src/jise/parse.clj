@@ -1,43 +1,7 @@
 (ns jise.parse
   (:refer-clojure :exclude [macroexpand])
-  (:require [clojure.string :as str]))
-
-(def ^:const primitive-types
-  '#{int short long float double char byte boolean void})
-
-(def ^:const primitive-array-types
-  '{ints [int]
-    shorts [short]
-    longs [long]
-    floats [float]
-    doubles [double]
-    chars [char]
-    bytes [byte]
-    booleans [boolean]})
-
-(defn array-type? [t]
-  (vector? t))
-
-(defn element-type [t]
-  (first t))
-
-(declare tag->type)
-
-(defn maybe-array-type [tag]
-  (and (array-type? tag)
-       (let [elem-type (element-type tag)
-             t (tag->type elem-type :default ::not-found)]
-         (when-not (= t ::not-found)
-           [t]))))
-
-(defn tag->type [tag & {:keys [default]}]
-  (or (get primitive-types tag)
-      (get primitive-array-types tag)
-      (when-let [c (and (symbol? tag) (resolve tag))]
-        (when (class? c) c))
-      (maybe-array-type tag)
-      default
-      Object))
+  (:require [clojure.string :as str]
+            [jise.type :as t]))
 
 (defn symbol-without-ns [sym]
   (if (= (namespace sym) "jise.core")
@@ -56,16 +20,8 @@
     (:final modifiers) (conj :final)))
 
 (defn parse-modifiers [{:keys [tag] :as modifiers} & {:keys [default-type]}]
-  {:type (tag->type tag :default default-type)
+  {:type (t/tag->type tag :default default-type)
    :access (access-flags modifiers)})
-
-(defn object-type [obj]
-  (cond (boolean? obj) 'boolean
-        (char? obj) 'char
-        (int? obj) 'int
-        (float? obj) 'float
-        (string? obj) String
-        :else nil))
 
 (defn parse-field [[_ fname value :as field]]
   (let [modifiers (modifiers-of field)
@@ -74,13 +30,6 @@
              :type type
              :access access}
       (not (nil? value)) (assoc :value value))))
-
-(defn wider-type [t1 t2]
-  (let [ts (hash-set t1 t2)]
-    (or (ts 'double)
-        (ts 'float)
-        (ts 'long)
-        'int)))
 
 (defn apply-conversion [{:keys [type] :as x} t]
   (cond->> x
@@ -129,11 +78,15 @@
           (throw (ex-info (str "unknown variable found: " expr) {:variable expr})))
 
         :else
-        (if-let [t (object-type expr)]
+        (if-let [t (t/object-type expr)]
           (merge (inherit-context {:op :literal} cenv)
-                 (case t
-                   (byte short int long) {:type 'int :value (int expr)}
-                   (float double) {:type 'double :value (double expr)}
+                 (condp #(%1 %2) t
+                   #{t/BYTE t/SHORT t/INT t/LONG}
+                   {:type t/INT :value (int expr)}
+
+                   #{t/FLOAT t/DOUBLE}
+                   {:type t/DOUBLE :value (double expr)}
+
                    {:type t :value expr})))))
 
 (defn  parse-exprs [cenv body]
@@ -142,11 +95,6 @@
     {:op :do :type (:type last')
      :exprs (-> (mapv parse-expr (repeat cenv') (butlast body))
                 (conj last'))}))
-
-(defn type-category [t]
-  (case t
-    (long double) 2
-    1))
 
 (defn parse-binding [cenv lname init]
   (let [init' (some->> init (parse-expr (with-context cenv :expression)))
@@ -166,7 +114,7 @@
       (let [b (parse-binding cenv' lname init)
             cenv' (-> cenv'
                       (assoc-in [:lenv (:name b)] b)
-                      (update :next-index + (type-category (:type b))))]
+                      (update :next-index + (t/type-category (:type b))))]
         (recur bindings cenv' (conj ret b)))
       [(inherit-context cenv' cenv) ret])))
 
@@ -207,15 +155,16 @@
 
 (defn parse-class [[_ cname maybe-supers & body :as class]]
   (let [modifiers (modifiers-of class)
-        supers (map tag->type (if (vector? maybe-supers) maybe-supers []))
-        {[parent] false interfaces true} (group-by #(.isInterface ^Class %) supers)
+        supers (map t/tag->type (if (vector? maybe-supers) maybe-supers []))
+        {[parent] false
+         interfaces true} (group-by #(.isInterface (t/type-class %)) supers)
         {:keys [fields methods]} (-> body
                                      (cond->> (empty? supers) (cons maybe-supers))
                                      parse-class-body)
         cenv {}]
     {:name (str/replace (str cname) \. \/)
      :access (access-flags modifiers)
-     :parent (or parent Object)
+     :parent (or parent t/OBJECT)
      :interfaces interfaces
      :fields (mapv parse-field fields)
      :methods (mapv (partial parse-method cenv) methods)}))
@@ -224,7 +173,7 @@
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' x)
         rhs (parse-expr cenv' y)
-        t (wider-type (:type lhs) (:type rhs))]
+        t (t/wider-type (:type lhs) (:type rhs))]
     {:op op
      :context (:context cenv)
      :lhs (apply-conversion lhs t)
@@ -301,7 +250,7 @@
   (let [by (or by 1)
         target' (parse-expr (with-context cenv :expression) target)]
     (if (and (= (:op target') :local)
-             (= (wider-type (:type target') 'int) 'int)
+             (= (t/wider-type (:type target') 'int) 'int)
              (pos-int? by))
       (-> {:op :increment, :target target', :type (:type target'), :by by}
           (inherit-context cenv))
@@ -311,7 +260,7 @@
   (let [by (or by 1)
         target' (parse-expr (with-context cenv :expression) target)]
     (if (and (= (:op target') :local)
-             (= (wider-type (:type target') 'int) 'int)
+             (= (t/wider-type (:type target') 'int) 'int)
              (pos-int? by))
       (-> {:op :increment, :target target', :type (:type target'), :by (- by)}
           (inherit-context cenv))
@@ -370,8 +319,8 @@
     label (assoc :label label)))
 
 (defmethod parse-expr* 'new [cenv [_ type arg]]
-  (let [type' (tag->type type)]
-    (if (array-type? type')
+  (let [type' (t/tag->type type)]
+    (if (t/array-type? type')
       (if (vector? arg)
         (let [arr (gensym)]
           (parse-expr cenv `(~'let [~arr (new ~type ~(count arg))]
@@ -387,7 +336,7 @@
 (defmethod parse-expr* '. [cenv [_ target property]]
   (let [pname (name property)
         target' (parse-expr (with-context cenv :expression) target)
-        ^Class c (:type target')]
+        c (t/type-class (:type target'))]
     (if-let [field (.getField c pname)]
       {:op :field-access
        :context (:context cenv)
@@ -402,7 +351,7 @@
         arr (parse-expr cenv' arr)]
     {:op :array-access
      :context (:context cenv)
-     :type (element-type (:type arr))
+     :type (t/element-type (:type arr))
      :array arr
      :index (parse-expr cenv' index)}))
 
@@ -411,7 +360,7 @@
         arr (parse-expr cenv' arr)]
     {:op :array-update
      :context (:context cenv)
-     :type (element-type (:type arr))
+     :type (t/element-type (:type arr))
      :array arr
      :index (parse-expr cenv' index)
      :expr (parse-expr cenv' expr)}))
