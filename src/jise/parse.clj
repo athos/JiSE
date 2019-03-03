@@ -132,6 +132,15 @@
      :access access
      :body (parse-exprs (with-context cenv' context) body)}))
 
+(defn parse-supers [[maybe-supers & body]]
+  (let [supers (when (vector? maybe-supers) maybe-supers)
+        supers' (map t/tag->type supers)
+        {[parent] false
+         interfaces true} (group-by #(.isInterface (t/type-class %)) supers')]
+    {:parent (seq parent)
+     :interfaces interfaces
+     :body (cond->> body (nil? supers) (cons maybe-supers))}))
+
 (defn parse-class-body [body]
   (loop [decls body
          ret {:fields []
@@ -153,14 +162,10 @@
                 (throw (ex-info msg {:decl decl})))))
           (recur decls ret))))))
 
-(defn parse-class [[_ cname maybe-supers & body :as class]]
+(defn parse-class [[_ cname & body :as class]]
   (let [modifiers (modifiers-of class)
-        supers (map t/tag->type (if (vector? maybe-supers) maybe-supers []))
-        {[parent] false
-         interfaces true} (group-by #(.isInterface (t/type-class %)) supers)
-        {:keys [fields methods]} (-> body
-                                     (cond->> (empty? supers) (cons maybe-supers))
-                                     parse-class-body)
+        {:keys [parent interfaces body]} (parse-supers body)
+        {:keys [fields methods]} (parse-class-body body)
         cenv {}]
     {:name (str/replace (str cname) \. \/)
      :access (access-flags modifiers)
