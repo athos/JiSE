@@ -342,8 +342,8 @@
     (if-let [field (.getField c pname)]
       {:op :field-access
        :context (:context cenv)
-       :type (.getType field)
-       :class (.getDeclaringClass field)
+       :type (t/tag->type (.getType field))
+       :class (t/tag->type (.getDeclaringClass field))
        :name pname
        :target target'}
       (throw (ex-info (str "No such field found: " pname) {:name pname})))))

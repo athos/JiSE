@@ -59,6 +59,7 @@
   (or (primitive->type tag)
       (some-> (get primitive-array-types tag)
               (tag->type :default default))
+      (and (class? tag) (Type/getType ^Class tag))
       (when-let [c (and (symbol? tag) (resolve tag))]
         (when (class? c)
           (Type/getType c)))
