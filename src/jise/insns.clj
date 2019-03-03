@@ -1,124 +1,125 @@
 (ns jise.insns
+  (:require [jise.type :as t])
   (:import [clojure.asm Opcodes Type]))
 
 (def primitive-types
-  {'boolean Type/BOOLEAN_TYPE
-   'byte Type/BYTE_TYPE
-   'char Type/CHAR_TYPE
-   'short Type/SHORT_TYPE
-   'int Type/INT_TYPE
-   'long Type/LONG_TYPE
-   'float Type/FLOAT_TYPE
-   'double Type/DOUBLE_TYPE
-   'void Type/VOID_TYPE})
+  {t/BOOLEAN Type/BOOLEAN_TYPE
+   t/BYTE Type/BYTE_TYPE
+   t/CHAR Type/CHAR_TYPE
+   t/SHORT Type/SHORT_TYPE
+   t/INT Type/INT_TYPE
+   t/LONG Type/LONG_TYPE
+   t/FLOAT Type/FLOAT_TYPE
+   t/DOUBLE Type/DOUBLE_TYPE
+   t/VOID Type/VOID_TYPE})
 
 (def const-insns
-  {'boolean {true Opcodes/ICONST_1, false Opcodes/ICONST_0}
-   'int {-1 Opcodes/ICONST_M1, 0 Opcodes/ICONST_0
-         1 Opcodes/ICONST_1, 2 Opcodes/ICONST_2
-         3 Opcodes/ICONST_3,4 Opcodes/ICONST_4
-         5 Opcodes/ICONST_5}
-   'long {0 Opcodes/LCONST_0, 1 Opcodes/LCONST_1}
-   'float {0 Opcodes/FCONST_0, 1 Opcodes/FCONST_1
-           2 Opcodes/FCONST_2}
-   'double {0 Opcodes/DCONST_0, 1 Opcodes/DCONST_1}})
+  {t/BOOLEAN {true Opcodes/ICONST_1, false Opcodes/ICONST_0}
+   t/INT {-1 Opcodes/ICONST_M1, 0 Opcodes/ICONST_0
+          1 Opcodes/ICONST_1, 2 Opcodes/ICONST_2
+          3 Opcodes/ICONST_3,4 Opcodes/ICONST_4
+          5 Opcodes/ICONST_5}
+   t/LONG {0 Opcodes/LCONST_0, 1 Opcodes/LCONST_1}
+   t/FLOAT {0 Opcodes/FCONST_0, 1 Opcodes/FCONST_1
+            2 Opcodes/FCONST_2}
+   t/DOUBLE {0 Opcodes/DCONST_0, 1 Opcodes/DCONST_1}})
 
 (def return-insns
-  {'void Opcodes/RETURN
-   'boolean Opcodes/IRETURN
-   'byte Opcodes/IRETURN
-   'char Opcodes/IRETURN
-   'short Opcodes/IRETURN
-   'int Opcodes/IRETURN
-   'long Opcodes/LRETURN
-   'float Opcodes/FRETURN
-   'double Opcodes/DRETURN})
+  {t/VOID Opcodes/RETURN
+   t/BOOLEAN Opcodes/IRETURN
+   t/BYTE Opcodes/IRETURN
+   t/CHAR Opcodes/IRETURN
+   t/SHORT Opcodes/IRETURN
+   t/INT Opcodes/IRETURN
+   t/LONG Opcodes/LRETURN
+   t/FLOAT Opcodes/FRETURN
+   t/DOUBLE Opcodes/DRETURN})
 
 (def load-insns
-  {'boolean Opcodes/ILOAD
-   'byte Opcodes/ILOAD
-   'char Opcodes/ILOAD
-   'short Opcodes/ILOAD
-   'int Opcodes/ILOAD
-   'long Opcodes/LLOAD
-   'float Opcodes/FLOAD
-   'double Opcodes/DLOAD})
+  {t/BOOLEAN Opcodes/ILOAD
+   t/BYTE Opcodes/ILOAD
+   t/CHAR Opcodes/ILOAD
+   t/SHORT Opcodes/ILOAD
+   t/INT Opcodes/ILOAD
+   t/LONG Opcodes/LLOAD
+   t/FLOAT Opcodes/FLOAD
+   t/DOUBLE Opcodes/DLOAD})
 
 (def store-insns
-  {'int Opcodes/ISTORE
-   'long Opcodes/LSTORE
-   'float Opcodes/FSTORE
-   'double Opcodes/DSTORE})
+  {t/INT Opcodes/ISTORE
+   t/LONG Opcodes/LSTORE
+   t/FLOAT Opcodes/FSTORE
+   t/DOUBLE Opcodes/DSTORE})
 
 (def arithmetic-insns
-  {:add {'int Opcodes/IADD
-         'long Opcodes/LADD
-         'float Opcodes/FADD
-         'double Opcodes/DADD}
-   :sub {'int Opcodes/ISUB
-         'long Opcodes/LSUB
-         'float Opcodes/FSUB
-         'double Opcodes/DSUB}
-   :mul {'int Opcodes/IMUL
-         'long Opcodes/LMUL
-         'float Opcodes/FMUL
-         'double Opcodes/DMUL}
-   :div {'int Opcodes/IDIV
-         'long Opcodes/LDIV
-         'float Opcodes/FDIV
-         'double Opcodes/DDIV}
-   :rem {'int Opcodes/IREM
-         'long Opcodes/LREM
-         'float Opcodes/FREM
-         'double Opcodes/DREM}})
+  {t/INT {:add Opcodes/IADD
+          :sub Opcodes/ISUB
+          :mul Opcodes/IMUL
+          :div Opcodes/IDIV
+          :rem Opcodes/IREM}
+   t/LONG {:add Opcodes/LADD
+           :sub Opcodes/LSUB
+           :mul Opcodes/LMUL
+           :div Opcodes/LDIV
+           :rem Opcodes/LREM}
+   t/FLOAT {:add Opcodes/FADD
+            :sub Opcodes/FSUB
+            :mul Opcodes/FMUL
+            :div Opcodes/FDIV
+            :rem Opcodes/FREM}
+   t/DOUBLE {:add Opcodes/DADD
+             :sub Opcodes/DSUB
+             :mul Opcodes/DMUL
+             :div Opcodes/DDIV
+             :rem Opcodes/DREM}})
 
 (def comparison-insns
-  {'int {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]
-         :lt [Opcodes/IF_ICMPGE], :gt [Opcodes/IF_ICMPLE]
-         :le [Opcodes/IF_ICMPGT], :ge [Opcodes/IF_ICMPLT]}
-   'long {:eq [Opcodes/LCMP Opcodes/IFNE], :ne [Opcodes/LCMP Opcodes/IFEQ]
-          :lt [Opcodes/LCMP Opcodes/IFGE], :gt [Opcodes/LCMP Opcodes/IFLE]
-          :le [Opcodes/LCMP Opcodes/IFGT], :ge [Opcodes/LCMP Opcodes/IFLT]}
-   'float {:eq [Opcodes/FCMPL Opcodes/IFNE], :ne [Opcodes/FCMPL Opcodes/IFEQ]
-           :lt [Opcodes/FCMPL Opcodes/IFGE], :gt [Opcodes/FCMPL Opcodes/IFLE]
-           :le [Opcodes/FCMPL Opcodes/IFGT], :ge [Opcodes/FCMPL Opcodes/IFLT]}
-   'double {:eq [Opcodes/DCMPL Opcodes/IFNE], :ne [Opcodes/DCMPL Opcodes/IFEQ]
-            :lt [Opcodes/DCMPL Opcodes/IFGE], :gt [Opcodes/DCMPL Opcodes/IFLE]
-            :le [Opcodes/DCMPL Opcodes/IFGT], :ge [Opcodes/DCMPL Opcodes/IFLT]}})
+  {t/INT {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]
+          :lt [Opcodes/IF_ICMPGE], :gt [Opcodes/IF_ICMPLE]
+          :le [Opcodes/IF_ICMPGT], :ge [Opcodes/IF_ICMPLT]}
+   t/LONG {:eq [Opcodes/LCMP Opcodes/IFNE], :ne [Opcodes/LCMP Opcodes/IFEQ]
+           :lt [Opcodes/LCMP Opcodes/IFGE], :gt [Opcodes/LCMP Opcodes/IFLE]
+           :le [Opcodes/LCMP Opcodes/IFGT], :ge [Opcodes/LCMP Opcodes/IFLT]}
+   t/FLOAT {:eq [Opcodes/FCMPL Opcodes/IFNE], :ne [Opcodes/FCMPL Opcodes/IFEQ]
+            :lt [Opcodes/FCMPL Opcodes/IFGE], :gt [Opcodes/FCMPL Opcodes/IFLE]
+            :le [Opcodes/FCMPL Opcodes/IFGT], :ge [Opcodes/FCMPL Opcodes/IFLT]}
+   t/DOUBLE {:eq [Opcodes/DCMPL Opcodes/IFNE], :ne [Opcodes/DCMPL Opcodes/IFEQ]
+             :lt [Opcodes/DCMPL Opcodes/IFGE], :gt [Opcodes/DCMPL Opcodes/IFLE]
+             :le [Opcodes/DCMPL Opcodes/IFGT], :ge [Opcodes/DCMPL Opcodes/IFLT]}})
 
 (def conversion-insns
-  {'int {'byte Opcodes/I2B
-         'char Opcodes/I2C
-         'short Opcodes/I2S
-         'long Opcodes/I2L
-         'float Opcodes/I2F
-         'double Opcodes/I2D}
-   'long {'int Opcodes/L2I
-          'float Opcodes/L2F
-          'double Opcodes/L2D}
-   'float {'int Opcodes/F2I
-           'long Opcodes/F2L
-           'double Opcodes/F2D}
-   'double {'int Opcodes/D2I
-            'long Opcodes/D2L
-            'float Opcodes/D2F}})
+  {t/INT {t/BYTE Opcodes/I2B
+          t/CHAR Opcodes/I2C
+          t/SHORT Opcodes/I2S
+          t/LONG Opcodes/I2L
+          t/FLOAT Opcodes/I2F
+          t/DOUBLE Opcodes/I2D}
+   t/LONG {t/INT Opcodes/L2I
+           t/FLOAT Opcodes/L2F
+           t/DOUBLE Opcodes/L2D}
+   t/FLOAT {t/INT Opcodes/F2I
+            t/LONG Opcodes/F2L
+            t/DOUBLE Opcodes/F2D}
+   t/DOUBLE {t/INT Opcodes/D2I
+             t/LONG Opcodes/D2L
+             t/FLOAT Opcodes/D2F}})
 
 (def aload-insns
-  {'boolean Opcodes/BALOAD
-   'byte Opcodes/BALOAD
-   'char Opcodes/CALOAD
-   'short Opcodes/SALOAD
-   'int Opcodes/IALOAD
-   'long Opcodes/LALOAD
-   'float Opcodes/FALOAD
-   'double Opcodes/DALOAD})
+  {t/BOOLEAN Opcodes/BALOAD
+   t/BYTE Opcodes/BALOAD
+   t/CHAR Opcodes/CALOAD
+   t/SHORT Opcodes/SALOAD
+   t/INT Opcodes/IALOAD
+   t/LONG Opcodes/LALOAD
+   t/FLOAT Opcodes/FALOAD
+   t/DOUBLE Opcodes/DALOAD})
 
 (def astore-insns
-  {'boolean Opcodes/BASTORE
-   'byte Opcodes/BASTORE
-   'char Opcodes/CASTORE
-   'short Opcodes/SASTORE
-   'int Opcodes/IASTORE
-   'long Opcodes/LASTORE
-   'float Opcodes/FASTORE
-   'double Opcodes/DASTORE})
+  {t/BOOLEAN Opcodes/BASTORE
+   t/BYTE Opcodes/BASTORE
+   t/CHAR Opcodes/CASTORE
+   t/SHORT Opcodes/SASTORE
+   t/INT Opcodes/IASTORE
+   t/LONG Opcodes/LASTORE
+   t/FLOAT Opcodes/FASTORE
+   t/DOUBLE Opcodes/DASTORE})

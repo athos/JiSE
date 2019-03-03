@@ -11,12 +11,6 @@
    :break-label nil
    :labels {}})
 
-(defn ^Type ->type [x]
-  (cond (class? x) (Type/getType ^Class x)
-        (type/array-type? x) (let [^Type elem-type (->type (type/element-type x))]
-                               (Type/getType (str \[ (.getDescriptor elem-type))))
-        :else (insns/primitive-types x)))
-
 (defn access-value [flags]
   (cond-> 0
     (:static flags) (+ Opcodes/ACC_STATIC)
@@ -27,7 +21,7 @@
 
 (defn emit-field [^ClassWriter cw {:keys [access name type value]}]
   (let [access (access-value access)
-        desc (.getDescriptor (->type type))]
+        desc (.getDescriptor ^Type type)]
    (doto (.visitField cw access (munge name) desc nil value)
      (.visitEnd))))
 
@@ -44,16 +38,16 @@
     (emit-return mv (:type expr))))
 
 (defn emit-method [^ClassWriter cw {:keys [name access return-type args body]}]
-  (let [desc (->> (map (comp ->type :type) args)
+  (let [desc (->> (map :type args)
                   (into-array Type)
-                  (Type/getMethodDescriptor (->type return-type)))
+                  (Type/getMethodDescriptor return-type))
         mv (.visitMethod cw (access-value access) (munge name) desc nil nil)]
     (doseq [arg args]
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)
     (emit-expr mv body)
-    (when (= return-type 'void)
-      (emit-return mv 'void))
+    (when (= return-type type/VOID)
+      (emit-return mv type/VOID))
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
@@ -63,8 +57,8 @@
             (access-value access)
             name
             nil
-            (.getInternalName (->type parent))
-            (into-array String (map #(.getInternalName (->type %)) interfaces)))
+            (.getInternalName ^Type parent)
+            (into-array String (map #(.getInternalName ^Type %) interfaces)))
     (doseq [field fields]
       (emit-field cw field))
     (doto (.visitMethod cw Opcodes/ACC_PUBLIC "<init>" "()V" nil nil)
@@ -85,8 +79,8 @@
 
 (defn drop-if-statement [^MethodVisitor mv context]
   (when (= context :statement)
-    (let [insn (case type
-                 (long double) Opcodes/POP2
+    (let [insn (if (= (type/type-category type) 2)
+                 Opcodes/POP2
                  Opcodes/POP)]
       (.visitInsn mv insn))))
 
@@ -108,7 +102,7 @@
     (emit-load mv type index)))
 
 (defn emit-arithmetic [^MethodVisitor mv {:keys [type lhs rhs context]} op]
-  (let [insn (get-in insns/arithmetic-insns [op type])]
+  (let [insn (get-in insns/arithmetic-insns [type op])]
     (emit-expr mv lhs)
     (emit-expr mv rhs)
     (.visitInsn mv insn)
@@ -259,8 +253,8 @@
 (defmethod emit-expr* :field-access
   [^MethodVisitor mv {:keys [type name class target context]}]
   (emit-expr mv target)
-  (let [owner (.getInternalName (->type class))
-        desc (.getDescriptor (->type type))]
+  (let [owner (.getInternalName ^Type class)
+        desc (.getDescriptor ^Type type)]
     (.visitFieldInsn mv Opcodes/GETFIELD owner name desc)
     (drop-if-statement mv context)))
 
@@ -269,24 +263,27 @@
   (emit-expr mv target)
   (emit-expr mv rhs)
   (dup-unless-statement mv context (:type rhs))
-  (let [owner (.getInternalName (->type class))
-        desc (.getDescriptor (->type type))]
+  (let [owner (.getInternalName ^Type class)
+        desc (.getDescriptor ^Type type)]
     (.visitFieldInsn mv Opcodes/PUTFIELD owner name desc)))
+
+(def primitive-types
+  {type/BOOLEAN Opcodes/T_BOOLEAN
+   type/BYTE Opcodes/T_BYTE
+   type/CHAR Opcodes/T_CHAR
+   type/SHORT Opcodes/T_SHORT
+   type/INT Opcodes/T_INT
+   type/LONG Opcodes/T_LONG
+   type/FLOAT Opcodes/T_FLOAT
+   type/DOUBLE Opcodes/T_DOUBLE})
 
 (defmethod emit-expr* :new-array [^MethodVisitor mv {:keys [type length context]}]
   (emit-expr mv length)
   (let [elem-type (type/element-type type)]
-    (if (type/primitive-types elem-type)
-      (let [insn (case elem-type
-                   int Opcodes/T_INT
-                   short Opcodes/T_SHORT
-                   long Opcodes/T_LONG
-                   float Opcodes/T_FLOAT
-                   double Opcodes/T_DOUBLE
-                   char Opcodes/T_CHAR
-                   byte Opcodes/T_BYTE)]
-        (.visitIntInsn mv Opcodes/NEWARRAY insn))
-      (.visitTypeInsn mv Opcodes/ANEWARRAY (.getInternalName (->type elem-type)))))
+    (if (type/primitive-type? elem-type)
+      (let [t (primitive-types elem-type)]
+        (.visitIntInsn mv Opcodes/NEWARRAY t))
+      (.visitTypeInsn mv Opcodes/ANEWARRAY (.getInternalName elem-type))))
   (drop-if-statement mv context))
 
 (defmethod emit-expr* :array-access [^MethodVisitor mv {:keys [array index context]}]
