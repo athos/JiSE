@@ -271,6 +271,20 @@
         desc (.getDescriptor ^Type type)]
     (.visitFieldInsn mv Opcodes/PUTFIELD owner name desc)))
 
+(defmethod emit-expr* :method-invocation
+  [^MethodVisitor mv {:keys [type name class arg-types target args context]}]
+  (emit-expr mv target)
+  (doseq [arg args]
+    (emit-expr mv arg))
+  (let [method-type (Type/getMethodType ^Type type (into-array arg-types))]
+    (.visitMethodInsn mv Opcodes/INVOKEVIRTUAL
+                      (.getInternalName ^Type class)
+                      name
+                      (.getDescriptor method-type)
+                      false))
+  (when-not (= type t/VOID)
+    (drop-if-statement mv context)))
+
 (def primitive-types
   {t/BOOLEAN Opcodes/T_BOOLEAN
    t/BYTE Opcodes/T_BYTE

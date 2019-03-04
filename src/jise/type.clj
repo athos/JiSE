@@ -75,8 +75,22 @@
             :else nil)
       default))
 
+(def primitive-iname->class
+  {"Z" Boolean/TYPE
+   "B" Byte/TYPE
+   "C" Character/TYPE
+   "S" Short/TYPE
+   "I" Integer/TYPE
+   "J" Long/TYPE
+   "F" Float/TYPE
+   "D" Double/TYPE})
+
 (defn ^Class type->class [^Type t]
-  (Class/forName (.getClassName t)))
+  (let [iname (.getInternalName t)]
+    (if (str/starts-with? iname "[")
+      (Class/forName iname)
+      (or (primitive-iname->class iname)
+          (Class/forName (.getClassName t))))))
 
 (defn type->symbol [^Type t]
   (symbol (.getClassName t)))
@@ -107,3 +121,19 @@
       (let [f (.getField (type->class class) name)]
         {:class (tag->type cenv (.getDeclaringClass f))
          :type (tag->type cenv (.getType f))}))))
+
+(defn find-method [cenv ^Type class name arg-types]
+  ;; TODO: needs to search class hierarchy as well
+  (let [class-name (type->symbol class)
+        methods (get-in cenv [:classes class-name :methods name])]
+    (or (and (seq methods)
+             (-> (filter #(= (:arg-types %) arg-types) methods)
+                 first
+                 (assoc :class class)))
+        (let [target-class (type->class class)
+              arg-classes (into-array (map type->class arg-types))
+              m (.getMethod target-class name arg-classes)]
+          {:class (tag->type cenv (.getDeclaringClass m))
+           :arg-types (->> (.getParameterTypes m)
+                           (mapv (partial tag->type cenv)))
+           :return-type (tag->type cenv (.getReturnType m))}))))
