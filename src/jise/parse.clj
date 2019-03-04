@@ -216,7 +216,7 @@
 (defmethod parse-expr* '* [cenv expr]
   (parse-arithmetic cenv expr :mul))
 
-(defmethod parse-expr* '- [cenv expr]
+(defmethod parse-expr* '/ [cenv expr]
   (parse-arithmetic cenv expr :div))
 
 (defmethod parse-expr* '% [cenv expr]
