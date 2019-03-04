@@ -262,7 +262,11 @@
   [^MethodVisitor mv {:keys [type name class target rhs context]}]
   (emit-expr mv target)
   (emit-expr mv rhs)
-  (dup-unless-statement mv context (:type rhs))
+  (when-not (= context :statement)
+    (let [insn (if (= (t/type-category (:type rhs)) 2)
+                  Opcodes/DUP_X2
+                  Opcodes/DUP_X1)]
+      (.visitInsn mv insn)))
   (let [owner (.getInternalName ^Type class)
         desc (.getDescriptor ^Type type)]
     (.visitFieldInsn mv Opcodes/PUTFIELD owner name desc)))
