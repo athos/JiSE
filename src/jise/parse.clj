@@ -19,13 +19,13 @@
     (:private modifiers) (conj :private)
     (:final modifiers) (conj :final)))
 
-(defn parse-modifiers [{:keys [tag] :as modifiers} & {:keys [default-type]}]
-  {:type (t/tag->type tag :default default-type)
+(defn parse-modifiers [proto-cenv {:keys [tag] :as modifiers} & {:keys [default-type]}]
+  {:type (t/tag->type proto-cenv tag :default default-type)
    :access (access-flags modifiers)})
 
-(defn parse-field [[_ fname value :as field]]
+(defn parse-field [proto-cenv [_ fname value :as field]]
   (let [modifiers (modifiers-of field)
-        {:keys [access type]} (parse-modifiers modifiers)]
+        {:keys [access type]} (parse-modifiers proto-cenv modifiers)]
     (cond-> {:name (str fname)
              :type type
              :access access}
@@ -93,15 +93,19 @@
      :exprs (-> (mapv parse-expr (repeat cenv') (butlast body))
                 (conj last'))}))
 
+(defn parse-name [proto-cenv name & {:keys [default-type]}]
+  (let [{:keys [access type]} (parse-modifiers proto-cenv (meta name) :default-type default-type)]
+    {:name name
+     :type type
+     :access access}))
+
 (defn parse-binding [cenv lname init]
   (let [init' (some->> init (parse-expr (with-context cenv :expression)))
-        {:keys [access type]} (parse-modifiers (meta lname) :default-type (:type init'))
-        lname' (str lname)]
-    (cond-> {:name lname'
-             :type type
-             :access access
-             :index (:next-index cenv)}
-      init' (assoc :init init'))))
+        lname' (parse-name cenv lname :default-type (:type init'))]
+    (-> lname'
+        (update :name name)
+        (assoc :index (:next-index cenv))
+        (cond-> init' (assoc :init init')))))
 
 (defn parse-bindings [cenv bindings]
   (loop [[lname init & bindings] bindings
@@ -117,8 +121,10 @@
 
 (defn parse-method [cenv [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
-        {:keys [access type]} (parse-modifiers modifiers :default-type t/VOID)
-        init-lenv (if (:static access) {} {"this" 0})
+        {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
+        init-lenv (if (:static access)
+                    {}
+                    {"this" {:index 0 :type (t/tag->type cenv (:class-name cenv))}})
         init-index (count init-lenv)
         [cenv' args'] (parse-bindings (assoc cenv :lenv init-lenv :next-index init-index)
                                       (interleave args (repeat nil)))
@@ -129,11 +135,11 @@
      :access access
      :body (parse-exprs (with-context cenv' context) body)}))
 
-(defn parse-supers [[maybe-supers & body]]
+(defn parse-supers [proto-cenv [maybe-supers & body]]
   (let [supers (when (vector? maybe-supers) maybe-supers)
-        supers' (map t/tag->type supers)
+        supers' (map (partial t/tag->type proto-cenv) supers)
         {[parent] false
-         interfaces true} (group-by #(.isInterface (t/type-class %)) supers')]
+         interfaces true} (group-by #(.isInterface (t/type->class %)) supers')]
     {:parent (seq parent)
      :interfaces interfaces
      :body (cond->> body (nil? supers) (cons maybe-supers))}))
@@ -159,16 +165,32 @@
                 (throw (ex-info msg {:decl decl})))))
           (recur decls ret))))))
 
+(defn init-cenv [proto-cenv cname fields methods]
+  (let [fields' (into {} (map (fn [[_ name :as field]]
+                                (let [modifiers (modifiers-of field)
+                                      {:keys [type access]} (parse-modifiers proto-cenv modifiers)]
+                                  [(str name) {:type type :access access}])))
+                      fields)
+        methods' (into {} (map (fn [[_ name args :as method]]
+                                 (let [modifiers (modifiers-of method)
+                                       {:keys [type access]} (parse-modifiers proto-cenv modifiers)]
+                                   [(str name)
+                                    {:access access :return-type type
+                                     :arg-types (mapv #(:type (parse-name proto-cenv %)) args)}])))
+                       methods)]
+    (assoc-in proto-cenv [:classes cname] {:fields fields' :methods methods'})))
+
 (defn parse-class [[_ cname & body :as class]]
-  (let [modifiers (modifiers-of class)
-        {:keys [parent interfaces body]} (parse-supers body)
+  (let [alias (symbol (str/replace cname #"^.*\.([^.]+)" "$1"))
+        proto-cenv {:class-name cname :classes {} :aliases {alias cname}}
+        {:keys [parent interfaces body]} (parse-supers proto-cenv body)
         {:keys [fields methods]} (parse-class-body body)
-        cenv {}]
+        cenv (init-cenv proto-cenv cname fields methods)]
     {:name (str/replace (str cname) \. \/)
-     :access (access-flags modifiers)
+     :access (access-flags (modifiers-of class))
      :parent (or parent t/OBJECT)
      :interfaces interfaces
-     :fields (mapv parse-field fields)
+     :fields (mapv (partial parse-field cenv) fields)
      :methods (mapv (partial parse-method cenv) methods)}))
 
 (defn parse-binary-op [cenv [_ x y] op]
@@ -321,7 +343,7 @@
     label (assoc :label label)))
 
 (defmethod parse-expr* 'new [cenv [_ type arg]]
-  (let [type' (t/tag->type type)]
+  (let [type' (t/tag->type cenv type)]
     (if (t/array-type? type')
       (if (vector? arg)
         (let [arr (gensym)]
@@ -336,17 +358,15 @@
       (throw (ex-info (str "Construction of type " type " not supported yet") {:type type})))))
 
 (defmethod parse-expr* '. [cenv [_ target property]]
-  (let [pname (name property)
+  (let [pname (str/replace (name property) #"^-" "")
         target' (parse-expr (with-context cenv :expression) target)
-        c (t/type-class (:type target'))]
-    (if-let [field (.getField c pname)]
-      {:op :field-access
-       :context (:context cenv)
-       :type (t/tag->type (.getType field))
-       :class (t/tag->type (.getDeclaringClass field))
-       :name pname
-       :target target'}
-      (throw (ex-info (str "No such field found: " pname) {:name pname})))))
+        field (t/find-field cenv (:type target') pname)]
+    {:op :field-access
+     :context (:context cenv)
+     :type (:type field)
+     :class (:class field)
+     :name pname
+     :target target'}))
 
 (defmethod parse-expr* 'aget [cenv [_ arr index]]
   (let [cenv' (with-context cenv :expression)

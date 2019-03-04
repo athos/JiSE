@@ -2,6 +2,8 @@
   (:require [clojure.string :as str])
   (:import [clojure.asm Opcodes Type]))
 
+(set! *warn-on-reflection* true)
+
 (def BOOLEAN Type/BOOLEAN_TYPE)
 (def BYTE Type/BYTE_TYPE)
 (def CHAR Type/CHAR_TYPE)
@@ -48,27 +50,36 @@
 
 (declare tag->type)
 
-(defn maybe-array-type [tag]
-  (and (vector? tag)
-       (let [elem-type (first tag)
-             t (tag->type elem-type :default ::not-found)]
-         (when-not (= t ::not-found)
-           (array-type t)))))
+(defn tag->array-type [cenv tag]
+  (let [elem-type (first tag)
+        t (tag->type cenv elem-type :default ::not-found)]
+    (when-not (= t ::not-found)
+      (array-type t))))
 
-(defn ^Type tag->type [tag & {:keys [default]}]
-  (or (primitive->type tag)
-      (some-> (get primitive-array-types tag)
-              (tag->type :default default))
-      (and (class? tag) (Type/getType ^Class tag))
-      (when-let [c (and (symbol? tag) (resolve tag))]
-        (when (class? c)
-          (Type/getType c)))
-      (maybe-array-type tag)
-      default
-      OBJECT))
+(defn find-in-cenv [cenv tag]
+  (if-let [alias (get (:aliases cenv) tag)]
+    (recur cenv alias)
+    (when (contains? (:classes cenv) tag)
+      (Type/getType (str \L (str/replace (str tag) \. \/) \;)))))
 
-(defn ^Class type-class [^Type t]
+(defn ^Type tag->type [cenv tag & {:keys [default] :or {default OBJECT}}]
+  (or (cond (symbol? tag) (or (primitive->type tag)
+                              (some-> (get primitive-array-types tag)
+                                      (#(tag->type cenv % :default default)))
+                              (find-in-cenv cenv tag)
+                              (when-let [c (resolve tag)]
+                                (when (class? c)
+                                  (Type/getType ^Class c))))
+            (class? tag) (Type/getType ^Class tag)
+            (vector? tag) (tag->array-type cenv tag)
+            :else nil)
+      default))
+
+(defn ^Class type->class [^Type t]
   (Class/forName (.getClassName t)))
+
+(defn type->symbol [^Type t]
+  (symbol (.getClassName t)))
 
 (defn ^Type object-type [obj]
   (cond (boolean? obj) BOOLEAN
@@ -87,3 +98,12 @@
 
 (defn type-category [t]
   (if (#{LONG DOUBLE} t) 2 1))
+
+(defn find-field [cenv ^Type class name]
+  (let [class-name (type->symbol class)]
+    ;; TODO: needs to search class hierarchy as well
+    (if-let [f (get-in cenv [:classes class-name :fields name])]
+      {:class class :type (:type f)}
+      (let [f (.getField (type->class class) name)]
+        {:class (tag->type cenv (.getDeclaringClass f))
+         :type (tag->type cenv (.getType f))}))))
