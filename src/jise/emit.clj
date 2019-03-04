@@ -1,6 +1,6 @@
 (ns jise.emit
   (:require [jise.insns :as insns]
-            [jise.type :as type])
+            [jise.type :as t])
   (:import [clojure.asm ClassVisitor ClassWriter Label MethodVisitor Opcodes Type]
            [clojure.lang Compiler DynamicClassLoader]))
 
@@ -46,8 +46,8 @@
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)
     (emit-expr mv body)
-    (when (= return-type type/VOID)
-      (emit-return mv type/VOID))
+    (when (= return-type t/VOID)
+      (emit-return mv t/VOID))
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
@@ -79,7 +79,7 @@
 
 (defn drop-if-statement [^MethodVisitor mv context]
   (when (= context :statement)
-    (let [insn (if (= (type/type-category type) 2)
+    (let [insn (if (= (t/type-category type) 2)
                  Opcodes/POP2
                  Opcodes/POP)]
       (.visitInsn mv insn))))
@@ -268,19 +268,19 @@
     (.visitFieldInsn mv Opcodes/PUTFIELD owner name desc)))
 
 (def primitive-types
-  {type/BOOLEAN Opcodes/T_BOOLEAN
-   type/BYTE Opcodes/T_BYTE
-   type/CHAR Opcodes/T_CHAR
-   type/SHORT Opcodes/T_SHORT
-   type/INT Opcodes/T_INT
-   type/LONG Opcodes/T_LONG
-   type/FLOAT Opcodes/T_FLOAT
-   type/DOUBLE Opcodes/T_DOUBLE})
+  {t/BOOLEAN Opcodes/T_BOOLEAN
+   t/BYTE Opcodes/T_BYTE
+   t/CHAR Opcodes/T_CHAR
+   t/SHORT Opcodes/T_SHORT
+   t/INT Opcodes/T_INT
+   t/LONG Opcodes/T_LONG
+   t/FLOAT Opcodes/T_FLOAT
+   t/DOUBLE Opcodes/T_DOUBLE})
 
 (defmethod emit-expr* :new-array [^MethodVisitor mv {:keys [type length context]}]
   (emit-expr mv length)
-  (let [elem-type (type/element-type type)]
-    (if (type/primitive-type? elem-type)
+  (let [elem-type (t/element-type type)]
+    (if (t/primitive-type? elem-type)
       (let [t (primitive-types elem-type)]
         (.visitIntInsn mv Opcodes/NEWARRAY t))
       (.visitTypeInsn mv Opcodes/ANEWARRAY (.getInternalName elem-type))))
@@ -289,7 +289,7 @@
 (defmethod emit-expr* :array-access [^MethodVisitor mv {:keys [array index context]}]
   (emit-expr mv array)
   (emit-expr mv index)
-  (let [elem-type (type/element-type (:type array))]
+  (let [elem-type (t/element-type (:type array))]
     (.visitInsn mv (get insns/aload-insns elem-type Opcodes/AALOAD))
     (drop-if-statement mv context)))
 
@@ -298,5 +298,5 @@
   (emit-expr mv index)
   (emit-expr mv expr)
   (dup-unless-statement mv context (:type expr))
-  (let [elem-type (type/element-type (:type array))]
+  (let [elem-type (t/element-type (:type array))]
     (.visitInsn mv (get insns/astore-insns elem-type Opcodes/AASTORE))))
