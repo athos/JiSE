@@ -142,7 +142,7 @@
                  first
                  (assoc :class class)))
         (let [target-class (type->class class)
-              arg-classes (into-array (map type->class arg-types))
+              arg-classes (into-array Class (map type->class arg-types))
               m (.getMethod target-class name arg-classes)]
           {:class (tag->type cenv (.getDeclaringClass m))
            :arg-types (->> (.getParameterTypes m)
