@@ -59,32 +59,35 @@
 (defn inherit-context [x {:keys [context]}]
   (with-context x context))
 
+(defn parse-symbol [cenv sym]
+  (if-let [{:keys [index type]} ((:lenv cenv) (name sym))]
+    (inherit-context {:op :local :index index :type type} cenv)
+    (throw (ex-info (str "unknown variable found: " sym) {:variable sym}))))
+
+(defn parse-seq [cenv expr]
+  (let [expr' (parse-expr* cenv expr)]
+    (if-let [label (:label (meta expr))]
+      {:op :labeled :label label :target expr'}
+      expr')))
+
+(defn parse-literal [cenv v]
+  (if (nil? v)
+    (inherit-context {:op :null} cenv)
+    (if-let [t (t/object-type v)]
+      (merge (inherit-context {:op :literal} cenv)
+             (condp #(%1 %2) t
+               #{t/BYTE t/SHORT t/INT t/LONG}
+               {:type t/INT :value (int v)}
+
+               #{t/FLOAT t/DOUBLE}
+               {:type t/DOUBLE :value (double v)}
+
+               {:type t :value v})))))
+
 (defn parse-expr [cenv expr]
-  (cond (seq? expr)
-        (let [expr' (parse-expr* cenv expr)]
-          (if-let [label (:label (meta expr))]
-            {:op :labeled :label label :target expr'}
-            expr'))
-
-        (nil? expr)
-        (inherit-context {:op :null} cenv)
-
-        (symbol? expr)
-        (if-let [{:keys [index type]} ((:lenv cenv) (name expr))]
-          (inherit-context {:op :local :index index :type type} cenv)
-          (throw (ex-info (str "unknown variable found: " expr) {:variable expr})))
-
-        :else
-        (if-let [t (t/object-type expr)]
-          (merge (inherit-context {:op :literal} cenv)
-                 (condp #(%1 %2) t
-                   #{t/BYTE t/SHORT t/INT t/LONG}
-                   {:type t/INT :value (int expr)}
-
-                   #{t/FLOAT t/DOUBLE}
-                   {:type t/DOUBLE :value (double expr)}
-
-                   {:type t :value expr})))))
+  (cond (symbol? expr) (parse-symbol cenv expr)
+        (seq? expr) (parse-seq cenv expr)
+        :else (parse-literal cenv expr)))
 
 (defn  parse-exprs [cenv body]
   (let [cenv' (with-context cenv :statement)
