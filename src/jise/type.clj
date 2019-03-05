@@ -1,6 +1,7 @@
 (ns jise.type
   (:require [clojure.string :as str])
-  (:import [clojure.asm Opcodes Type]))
+  (:import [clojure.asm Opcodes Type]
+           [java.lang.reflect Modifier]))
 
 (set! *warn-on-reflection* true)
 
@@ -113,6 +114,15 @@
 (defn type-category [t]
   (if (#{LONG DOUBLE} t) 2 1))
 
+(defn modifiers->access-flags [ms]
+  (cond-> #{}
+    (Modifier/isAbstract ms) (conj :abstract)
+    (Modifier/isFinal ms) (conj :final)
+    (Modifier/isPrivate ms) (conj :private)
+    (Modifier/isProtected ms) (conj :protected)
+    (Modifier/isPublic ms) (conj :public)
+    (Modifier/isStatic ms) (conj :static)))
+
 (defn find-field [cenv ^Type class name]
   (let [class-name (type->symbol class)]
     ;; TODO: needs to search class hierarchy as well
@@ -120,7 +130,8 @@
       {:class class :type (:type f)}
       (let [f (.getField (type->class class) name)]
         {:class (tag->type cenv (.getDeclaringClass f))
-         :type (tag->type cenv (.getType f))}))))
+         :type (tag->type cenv (.getType f))
+         :access (modifiers->access-flags (.getModifiers f))}))))
 
 (defn find-method [cenv ^Type class name arg-types]
   ;; TODO: needs to search class hierarchy as well
@@ -136,4 +147,5 @@
           {:class (tag->type cenv (.getDeclaringClass m))
            :arg-types (->> (.getParameterTypes m)
                            (mapv (partial tag->type cenv)))
-           :return-type (tag->type cenv (.getReturnType m))}))))
+           :return-type (tag->type cenv (.getReturnType m))
+           :access (modifiers->access-flags (.getModifiers m))}))))

@@ -252,36 +252,41 @@
 
 (defmethod emit-expr* :field-access
   [^MethodVisitor mv {:keys [type name class target context]}]
-  (emit-expr mv target)
-  (let [owner (.getInternalName ^Type class)
+  (when target
+    (emit-expr mv target))
+  (let [insn (if target Opcodes/GETFIELD Opcodes/GETSTATIC)
+        owner (.getInternalName ^Type class)
         desc (.getDescriptor ^Type type)]
-    (.visitFieldInsn mv Opcodes/GETFIELD owner name desc)
+    (.visitFieldInsn mv insn owner name desc)
     (drop-if-statement mv context)))
 
 (defmethod emit-expr* :field-update
   [^MethodVisitor mv {:keys [type name class target rhs context]}]
-  (emit-expr mv target)
+  (when target
+    (emit-expr mv target))
   (emit-expr mv rhs)
   (when-not (= context :statement)
-    (let [insn (if (= (t/type-category (:type rhs)) 2)
-                  Opcodes/DUP_X2
-                  Opcodes/DUP_X1)]
-      (.visitInsn mv insn)))
-  (let [owner (.getInternalName ^Type class)
+    (let [t (:type rhs)]
+      (if target
+        (let [insn (if (= (t/type-category t) 2) Opcodes/DUP_X2 Opcodes/DUP_X1)]
+          (.visitInsn mv insn))
+        (dup-unless-statement mv context t))))
+  (let [insn (if target Opcodes/PUTFIELD Opcodes/PUTSTATIC)
+        owner (.getInternalName ^Type class)
         desc (.getDescriptor ^Type type)]
-    (.visitFieldInsn mv Opcodes/PUTFIELD owner name desc)))
+    (.visitFieldInsn mv insn owner name desc)))
 
 (defmethod emit-expr* :method-invocation
   [^MethodVisitor mv {:keys [type name class arg-types target args context]}]
-  (emit-expr mv target)
+  (when target
+    (emit-expr mv target))
   (doseq [arg args]
     (emit-expr mv arg))
-  (let [method-type (Type/getMethodType ^Type type (into-array arg-types))]
-    (.visitMethodInsn mv Opcodes/INVOKEVIRTUAL
-                      (.getInternalName ^Type class)
-                      name
-                      (.getDescriptor method-type)
-                      false))
+  (let [method-type (Type/getMethodType ^Type type (into-array arg-types))
+        insn (if target Opcodes/INVOKEVIRTUAL Opcodes/INVOKESTATIC)
+        iname (.getInternalName ^Type class)
+        desc (.getDescriptor method-type)]
+    (.visitMethodInsn mv insn iname name desc false))
   (when-not (= type t/VOID)
     (drop-if-statement mv context)))
 
