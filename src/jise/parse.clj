@@ -63,9 +63,11 @@
   ((:lenv cenv) (name sym)))
 
 (defn parse-symbol [cenv sym]
-  (if-let [{:keys [index type]} (find-lname cenv sym)]
-    (inherit-context {:op :local :index index :type type} cenv)
-    (throw (ex-info (str "unknown variable found: " sym) {:variable sym}))))
+  (if-let [cname (namespace sym)]
+    (parse-expr cenv (with-meta `(. ~(symbol cname) ~(symbol (str \- (name sym)))) (meta sym)))
+    (if-let [{:keys [index type]} (find-lname cenv sym)]
+      (inherit-context {:op :local :index index :type type} cenv)
+      (throw (ex-info (str "unknown variable found: " sym) {:variable sym})))))
 
 (defn parse-seq [cenv expr]
   (let [expr' (parse-expr* cenv expr)]
@@ -363,31 +365,35 @@
          :length (parse-expr (with-context cenv :expression) arg)})
       (throw (ex-info (str "Construction of type " type " not supported yet") {:type type})))))
 
-(defmethod parse-expr* '. [cenv [_ target property & maybe-args]]
-  (let [cenv' (with-context cenv :expression)
-        target' (when (or (not (symbol? target)) (find-lname cenv target))
-                  (parse-expr cenv' target))
-        target-type (or (:type target') (t/tag->type cenv target))
-        pname (name property)]
-    (if (str/starts-with? pname "-")
-      (let [pname' (subs pname 1)
-            field (t/find-field cenv target-type pname')]
-        (cond-> {:op :field-access
-                 :context (:context cenv)
-                 :type (:type field)
-                 :class (:class field)
-                 :name pname'}
-          target' (assoc :target target')))
-      (let [args' (map (partial parse-expr cenv') maybe-args)
-            method (t/find-method cenv target-type pname (map :type args'))]
-        (cond-> {:op :method-invocation
-                 :context (:context cenv)
-                 :type (:return-type method)
-                 :arg-types (:arg-types method)
-                 :class (:class method)
-                 :name pname
-                 :args args'}
-          target' (assoc :target target'))))))
+(defmethod parse-expr* '. [cenv [_ target property & maybe-args :as expr]]
+  (if (and (seq? property) (nil? maybe-args))
+    (parse-expr cenv `(. ~target ~@property))
+    (let [cenv' (with-context cenv :expression)
+          target' (when (or (not (symbol? target))
+                            (namespace target)
+                            (find-lname cenv target))
+                    (parse-expr cenv' target))
+          target-type (or (:type target') (t/tag->type cenv target))
+          pname (name property)]
+      (if (str/starts-with? pname "-")
+        (let [pname' (subs pname 1)
+              field (t/find-field cenv target-type pname')]
+          (cond-> {:op :field-access
+                   :context (:context cenv)
+                   :type (:type field)
+                   :class (:class field)
+                   :name pname'}
+            target' (assoc :target target')))
+        (let [args' (map (partial parse-expr cenv') maybe-args)
+              method (t/find-method cenv target-type pname (map :type args'))]
+          (cond-> {:op :method-invocation
+                   :context (:context cenv)
+                   :type (:return-type method)
+                   :arg-types (:arg-types method)
+                   :class (:class method)
+                   :name pname
+                   :args args'}
+            target' (assoc :target target')))))))
 
 (defmethod parse-expr* 'aget [cenv [_ arr index]]
   (let [cenv' (with-context cenv :expression)
