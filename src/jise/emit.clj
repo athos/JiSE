@@ -37,21 +37,28 @@
   (when (= (:context expr) :return)
     (emit-return mv (:type expr))))
 
-(defn emit-method [^ClassWriter cw {:keys [name access return-type args body]}]
+(defn emit-method [^ClassWriter cw ctor? {:keys [name access return-type args body]}]
   (let [desc (->> (map :type args)
                   (into-array Type)
                   (Type/getMethodDescriptor return-type))
-        mv (.visitMethod cw (access-value access) (munge name) desc nil nil)]
+        mname (if ctor? "<init>" (munge name))
+        mv (.visitMethod cw (access-value access) mname desc nil nil)]
     (doseq [arg args]
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)
+    (when ctor?
+      (.visitVarInsn mv Opcodes/ALOAD 0)
+      (.visitMethodInsn mv Opcodes/INVOKESPECIAL
+                        (.getInternalName ^Type t/OBJECT)
+                        "<init>"
+                        (Type/getMethodDescriptor t/VOID (into-array Type []))))
     (emit-expr mv body)
     (when (= return-type t/VOID)
       (emit-return mv t/VOID))
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
-(defn emit-class [{:keys [name access parent interfaces fields methods]}]
+(defn emit-class [{:keys [name access parent interfaces ctors fields methods]}]
   (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)]
     (.visit cw Opcodes/V1_5
             (access-value access)
@@ -68,8 +75,10 @@
       (.visitInsn Opcodes/RETURN)
       (.visitMaxs 1 1)
       (.visitEnd))
+    (doseq [ctor ctors]
+      (emit-method cw true ctor))
     (doseq [method methods]
-      (emit-method cw method))
+      (emit-method cw false method))
     (.visitEnd cw)
     (.toByteArray cw)))
 

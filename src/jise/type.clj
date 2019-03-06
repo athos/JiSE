@@ -151,9 +151,14 @@
            :access (modifiers->access-flags (.getModifiers m))}))))
 
 (defn find-ctor [cenv ^Type class arg-types]
-  (let [target-class (type->class class)
-        arg-classes (into-array Class (map type->class arg-types))
-        ctor (.getConstructor target-class arg-classes)]
-    {:arg-types (->> (.getParameterTypes ctor)
-                     (mapv (partial tag->type cenv)))
-     :access (modifiers->access-flags (.getModifiers ctor))}))
+  (let [class-name (type->symbol class)
+        ctors (get-in cenv [:classes class-name :ctors])]
+    (or (some->> (seq ctors)
+                 (filter #(= (:arg-types %) arg-types))
+                 first)
+        (let [target-class (type->class class)
+              arg-classes (into-array Class (map type->class arg-types))
+              ctor (.getConstructor target-class arg-classes)]
+          {:arg-types (->> (.getParameterTypes ctor)
+                           (mapv (partial tag->type cenv)))
+           :access (modifiers->access-flags (.getModifiers ctor))}))))

@@ -127,7 +127,7 @@
         (recur bindings cenv' (conj ret b)))
       [(inherit-context cenv' cenv) ret])))
 
-(defn parse-method [cenv [_ mname args & body :as method]]
+(defn parse-method [cenv ctor? [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
         {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
         init-lenv (if (:static access)
@@ -136,12 +136,13 @@
         init-index (count init-lenv)
         [cenv' args'] (parse-bindings (assoc cenv :lenv init-lenv :next-index init-index)
                                       (interleave args (repeat nil)))
-        context (if (= type t/VOID) :statement :return)]
-    {:name (str mname)
-     :return-type type
-     :args args'
-     :access access
-     :body (parse-exprs (with-context cenv' context) body)}))
+        return-type (if ctor? t/VOID type)
+        context (if (= return-type t/VOID) :statement :return)]
+    (cond-> {:return-type return-type
+             :args args'
+             :access access
+             :body (parse-exprs (with-context cenv' context) body)}
+      (not ctor?) (assoc :name (str mname)))))
 
 (defn parse-supers [proto-cenv [maybe-supers & body]]
   (let [supers (when (vector? maybe-supers) maybe-supers)
@@ -152,33 +153,45 @@
      :interfaces interfaces
      :body (cond->> body (nil? supers) (cons maybe-supers))}))
 
-(defn parse-class-body [body]
-  (loop [decls body
-         ret {:fields []
-              :methods []}]
-    (if (empty? decls)
-      ret
-      (let [[decl & decls] decls]
-        (if (seq? decl)
-          (case (symbol-without-ns (first decl))
-            def (recur decls (update ret :fields conj decl))
-            defm (recur decls (update ret :methods conj decl))
-            do (recur (concat (rest decl) decls) ret)
-            (if-let [v (resolve (first decl))]
-              (if (:macro (meta v))
-                (recur (cons (macroexpand decl) decls) ret)
-                (let [msg (str "unknown type of declaration found: " (first decl))]
-                  (throw (ex-info msg {:decl decl}))))
-              (let [msg (str "unknown type of declaration found: " (first decl))]
-                (throw (ex-info msg {:decl decl})))))
-          (recur decls ret))))))
+(defn class-alias [cname]
+  (symbol (str/replace cname #"^.*\.([^.]+)" "$1")))
 
-(defn init-cenv [proto-cenv cname fields methods]
+(defn parse-class-body [cname body]
+  (let [alias (class-alias cname)]
+    (loop [decls body
+           ret {:ctors [], :fields [], :methods []}]
+      (if (empty? decls)
+        ret
+        (let [[decl & decls] decls]
+          (if (seq? decl)
+            (case (symbol-without-ns (first decl))
+              def (recur decls (update ret :fields conj decl))
+              defm (let [[_ name] decl]
+                     (recur decls
+                            (if (= name alias)
+                              (update ret :ctors conj decl)
+                              (update ret :methods conj decl))))
+              do (recur (concat (rest decl) decls) ret)
+              (if-let [v (resolve (first decl))]
+                (if (:macro (meta v))
+                  (recur (cons (macroexpand decl) decls) ret)
+                  (let [msg (str "unknown type of declaration found: " (first decl))]
+                    (throw (ex-info msg {:decl decl}))))
+                (let [msg (str "unknown type of declaration found: " (first decl))]
+                  (throw (ex-info msg {:decl decl})))))
+            (recur decls ret)))))))
+
+(defn init-cenv [proto-cenv cname fields ctors methods]
   (let [fields' (into {} (map (fn [[_ name :as field]]
                                 (let [modifiers (modifiers-of field)
                                       {:keys [type access]} (parse-modifiers proto-cenv modifiers)]
                                   [(str name) {:type type :access access}])))
                       fields)
+        ctors' (reduce (fn [cs [_ _ args :as ctor]]
+                         (let [access (access-flags (modifiers-of ctor))
+                               arg-types (mapv #(:type (parse-name proto-cenv %)) args)]
+                           (conj cs {:access access :arg-types arg-types})))
+                       [] ctors)
         methods' (reduce (fn [m [_ name args :as method]]
                            (let [modifiers (modifiers-of method)
                                  {:keys [type access]} (parse-modifiers proto-cenv modifiers
@@ -187,20 +200,22 @@
                                      {:access access :return-type type
                                       :arg-types (mapv #(:type (parse-name proto-cenv %)) args)})))
                          {} methods)]
-    (assoc-in proto-cenv [:classes cname] {:fields fields' :methods methods'})))
+    (assoc-in proto-cenv [:classes cname] {:fields fields' :ctors ctors' :methods methods'})))
 
 (defn parse-class [[_ cname & body :as class]]
-  (let [alias (symbol (str/replace cname #"^.*\.([^.]+)" "$1"))
-        proto-cenv {:class-name cname :classes {} :aliases {alias cname}}
+  (let [alias (class-alias cname)
+        proto-cenv {:class-name cname :classes {}
+                    :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
         {:keys [parent interfaces body]} (parse-supers proto-cenv body)
-        {:keys [fields methods]} (parse-class-body body)
-        cenv (init-cenv proto-cenv cname fields methods)]
+        {:keys [ctors fields methods]} (parse-class-body cname body)
+        cenv (init-cenv proto-cenv cname fields ctors methods)]
     {:name (str/replace (str cname) \. \/)
      :access (access-flags (modifiers-of class))
      :parent (or parent t/OBJECT)
      :interfaces interfaces
+     :ctors (mapv (partial parse-method cenv true) ctors)
      :fields (mapv (partial parse-field cenv) fields)
-     :methods (mapv (partial parse-method cenv) methods)}))
+     :methods (mapv (partial parse-method cenv false) methods)}))
 
 (defn parse-binary-op [cenv [_ x y] op]
   (let [cenv' (with-context cenv :expression)
