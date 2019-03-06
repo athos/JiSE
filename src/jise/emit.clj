@@ -282,7 +282,7 @@
     (emit-expr mv target))
   (doseq [arg args]
     (emit-expr mv arg))
-  (let [method-type (Type/getMethodType ^Type type (into-array arg-types))
+  (let [method-type (Type/getMethodType ^Type type (into-array Type arg-types))
         insn (if target Opcodes/INVOKEVIRTUAL Opcodes/INVOKESTATIC)
         iname (.getInternalName ^Type class)
         desc (.getDescriptor method-type)]

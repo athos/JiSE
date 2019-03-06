@@ -181,7 +181,8 @@
                       fields)
         methods' (reduce (fn [m [_ name args :as method]]
                            (let [modifiers (modifiers-of method)
-                                 {:keys [type access]} (parse-modifiers proto-cenv modifiers)]
+                                 {:keys [type access]} (parse-modifiers proto-cenv modifiers
+                                                                        :default-type t/VOID)]
                              (update m (str name) (fnil conj [])
                                      {:access access :return-type type
                                       :arg-types (mapv #(:type (parse-name proto-cenv %)) args)})))
