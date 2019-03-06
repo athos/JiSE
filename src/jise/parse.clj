@@ -307,7 +307,7 @@
   (let [by (or by 1)
         target' (parse-expr (with-context cenv :expression) target)]
     (if (and (= (:op target') :local)
-             (= (t/wider-type (:type target') 'int) 'int)
+             (= (t/wider-type (:type target') t/INT) t/INT)
              (pos-int? by))
       (-> {:op :increment, :target target', :type (:type target'), :by by}
           (inherit-context cenv))
@@ -317,7 +317,7 @@
   (let [by (or by 1)
         target' (parse-expr (with-context cenv :expression) target)]
     (if (and (= (:op target') :local)
-             (= (t/wider-type (:type target') 'int) 'int)
+             (= (t/wider-type (:type target') t/INT) t/INT)
              (pos-int? by))
       (-> {:op :increment, :target target', :type (:type target'), :by (- by)}
           (inherit-context cenv))
