@@ -7,22 +7,50 @@ JiSE is Clojure's embedded DSL for making it as easy (or maybe even easier?) to 
 ```clojure
 (require '[jise.core :refer [defclass]])
 
-^:public
-(defclass C
-  ^:public ^{:tag [[int]]}
-  (defm multiplication-table [^int n]
-    (let [rows (new [[int]] n)]
-      (for [i 0 (< i n) (inc! i)]
-        (let [cols (new [int] n)]
-          (for [j 0 (< j n) (inc! j)]
-            (aset cols j (* (+ i 1) (+ j 1))))
-          (aset rows i cols)))
-      rows)))
 
-;; you can use C as an ordinary Java class
-(def c (C.))
-(.multiplication_table c 3)
-;=> [[1, 2, 3], [2, 4, 6], [3, 6, 9]]
+^:public
+(defclass Counter
+  ^:private
+  (def ^int c)
+  ^:public
+  (defm Counter [^int c]
+    (set! (.-c this) c))
+  ^:public ^int
+  (defm inc []
+    (inc! (.-c this))))
+
+;; You can use the defined class (`Counter`) as an ordinary Java class
+(def c (Counter. 10))
+(.inc c) ;=> 11
+(.inc c) ;=> 12
+(.inc c) ;=> 13
+
+;; Also, you can even write quite imperative code easily as follows:
+
+^:public
+(defclass Qsort
+  ^:public ^:static
+  (defm qsort [^{:tag [int]} xs ^int left ^int right]
+    (when (< left right)
+      (let [p (aget xs (/ (+ left right) 2))
+            l left
+            r right]
+        (while (<= l r)
+          (while (< (aget xs l) p) (inc! l))
+          (while (> (aget xs r) p) (dec! r))
+          (when (<= l r)
+            (let [tmp (aget xs l)]
+              (aset xs l (aget xs r))
+              (aset xs r tmp)
+              (inc! l)
+              (dec! r))))
+        (Qsort/qsort xs left r)
+        (Qsort/qsort xs l right)))))
+
+(def arr (int-array [3 1 4 1 5 9 2]))
+(Qsort/qsort arr 0 (dec (count arr)))
+(seq arr)
+;=> (1 1 2 3 4 5 9)
 ```
 
 ## License
