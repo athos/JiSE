@@ -49,11 +49,23 @@
         (.flush out))))
 
   ^:public
-  (defclass C
-    ^:public ^String
-    (def x nil)
-    ^:public ^boolean
-    (defm isZero [^int x]
-      (if (== x 0) true false)))
+  (defclass Qsort
+    ^:public ^:static
+    (defm qsort [^{:tag [int]} xs ^int left ^int right]
+      (when (< left right)
+        (let [p (aget xs (/ (+ left right) 2))
+              l left
+              r right]
+          (while (<= l r)
+            (while (< (aget xs l) p) (inc! l))
+            (while (> (aget xs r) p) (dec! r))
+            (when (<= l r)
+              (let [tmp (aget xs l)]
+                (aset xs l (aget xs r))
+                (aset xs r tmp)
+                (inc! l)
+                (dec! r))))
+          (Qsort/qsort xs left r)
+          (Qsort/qsort xs l right)))))
 
  )
