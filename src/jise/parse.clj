@@ -390,6 +390,7 @@
           (cond-> {:op :method-invocation
                    :context (:context cenv)
                    :type (:return-type method)
+                   :access (:access method)
                    :arg-types (:arg-types method)
                    :class (:class method)
                    :name pname
