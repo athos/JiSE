@@ -356,8 +356,9 @@
     ;; Enhanced for-loop (only for arrays for the time being)
     (let [[lname array] args
           form' `(~'let [array# ~array
+                         len# (.-length array#)
                          ~lname (~'aget array# 0)]
-                  (~'for [i# 0 (~'< i# (.-length array#)) (~'inc! i#)]
+                  (~'for [i# 0 (~'< i# len#) (~'inc! i#)]
                    (set! ~lname (~'aget array# i#))
                    ~@body))]
       (parse-expr cenv (with-meta form' (meta form))))
