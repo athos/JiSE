@@ -351,21 +351,31 @@
              :body (parse-exprs (with-context cenv :statement) body)}
       label (assoc :label label))))
 
-(defmethod parse-expr* 'for [cenv [_ [lname init cond step] & body :as expr]]
-  (let [[cenv' bindings'] (parse-bindings cenv [lname init])
-        label (extract-label expr)]
-    {:op :let
-     :bindings bindings'
-     :body
-     (cond-> {:op :for
-              :context (:context cenv)
-              :cond (parse-expr (-> cenv'
-                                    (with-context :expression)
-                                    (assoc :within-conditional? true))
-                                cond)
-              :step (parse-expr (with-context cenv' :statement) step)
-              :body (parse-exprs (with-context cenv' :statement) body)}
-       label (assoc :label label))}))
+(defmethod parse-expr* 'for [cenv [_ args & body :as form]]
+  (if (= (count args) 2)
+    ;; Enhanced for-loop (only for arrays for the time being)
+    (let [[lname array] args
+          form' `(~'let [array# ~array
+                         ~lname (~'aget array# 0)]
+                  (~'for [i# 0 (~'< i# (.-length array#)) (~'inc! i#)]
+                   (set! ~lname (~'aget array# i#))
+                   ~@body))]
+      (parse-expr cenv (with-meta form' (meta form))))
+    (let [[lname init cond step] args
+          [cenv' bindings'] (parse-bindings cenv [lname init])
+          label (extract-label form)]
+      {:op :let
+       :bindings bindings'
+       :body
+       (cond-> {:op :for
+                :context (:context cenv)
+                :cond (parse-expr (-> cenv'
+                                      (with-context :expression)
+                                      (assoc :within-conditional? true))
+                                  cond)
+                :step (parse-expr (with-context cenv' :statement) step)
+                :body (parse-exprs (with-context cenv' :statement) body)}
+         label (assoc :label label))})))
 
 (defmethod parse-expr* 'continue [_ [_ label]]
   (cond-> {:op :continue}
