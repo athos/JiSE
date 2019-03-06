@@ -37,12 +37,14 @@
     (array-map :op :conversion :type t :src)))
 
 (defn macroexpand [form]
-  (let [expanded (macroexpand-1 form)]
-    (if (identical? expanded form)
-      form
-      (recur (cond-> expanded
-               (instance? clojure.lang.IObj expanded)
-               (vary-meta merge (meta form)))))))
+  (if-let [[op & args] (and (seq? form) (symbol? (first form)) (namespace (first form)) form)]
+    (with-meta `(. ~(symbol (namespace op)) ~(symbol (name op)) ~@args) (meta form))
+    (let [expanded (macroexpand-1 form)]
+      (if (identical? expanded form)
+        form
+        (recur (cond-> expanded
+                 (instance? clojure.lang.IObj expanded)
+                 (vary-meta merge (meta form))))))))
 
 (declare parse-expr)
 
