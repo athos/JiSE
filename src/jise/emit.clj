@@ -68,13 +68,6 @@
             (into-array String (map #(.getInternalName ^Type %) interfaces)))
     (doseq [field fields]
       (emit-field cw field))
-    (doto (.visitMethod cw Opcodes/ACC_PUBLIC "<init>" "()V" nil nil)
-      (.visitCode)
-      (.visitVarInsn Opcodes/ALOAD 0)
-      (.visitMethodInsn Opcodes/INVOKESPECIAL "java/lang/Object" "<init>" "()V")
-      (.visitInsn Opcodes/RETURN)
-      (.visitMaxs 1 1)
-      (.visitEnd))
     (doseq [ctor ctors]
       (emit-method cw true ctor))
     (doseq [method methods]

@@ -210,12 +210,16 @@
                     :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
         {:keys [parent interfaces body]} (parse-supers proto-cenv body)
         {:keys [ctors fields methods]} (parse-class-body cname body)
-        cenv (init-cenv proto-cenv cname fields ctors methods)]
+        ctors' (if (empty? ctors)
+                 [(with-meta `(~'defm ~alias [])
+                    (select-keys (modifiers-of class) [:public :protected :private]))]
+                 ctors)
+        cenv (init-cenv proto-cenv cname fields ctors' methods)]
     {:name (str/replace (str cname) \. \/)
      :access (access-flags (modifiers-of class))
      :parent (or parent t/OBJECT)
      :interfaces interfaces
-     :ctors (mapv (partial parse-method cenv true) ctors)
+     :ctors (mapv (partial parse-method cenv true) ctors')
      :fields (mapv (partial parse-field cenv) fields)
      :methods (mapv (partial parse-method cenv false) methods)}))
 
