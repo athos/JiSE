@@ -410,14 +410,19 @@
           target-type (or (:type target') (t/tag->type cenv target))
           pname (name property)]
       (if (str/starts-with? pname "-")
-        (let [pname' (subs pname 1)
-              field (t/find-field cenv target-type pname')]
-          (cond-> {:op :field-access
-                   :context (:context cenv)
-                   :type (:type field)
-                   :class (:class field)
-                   :name pname'}
-            target' (assoc :target target')))
+        (if (and (t/array-type? (:type target')) (= pname "-length"))
+          {:op :array-length
+           :context (:context cenv)
+           :type t/INT
+           :array target'}
+          (let [pname' (subs pname 1)
+                field (t/find-field cenv target-type pname')]
+            (cond-> {:op :field-access
+                     :context (:context cenv)
+                     :type (:type field)
+                     :class (:class field)
+                     :name pname'}
+              target' (assoc :target target'))))
         (let [args' (map (partial parse-expr cenv') maybe-args)
               method (t/find-method cenv target-type pname (map :type args'))]
           (cond-> {:op :method-invocation

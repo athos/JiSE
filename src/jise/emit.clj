@@ -324,6 +324,11 @@
       (.visitTypeInsn mv Opcodes/ANEWARRAY (.getInternalName elem-type))))
   (drop-if-statement mv context))
 
+(defmethod emit-expr* :array-length [^MethodVisitor mv {:keys [array context]}]
+  (emit-expr mv array)
+  (.visitInsn mv Opcodes/ARRAYLENGTH)
+  (drop-if-statement mv context))
+
 (defmethod emit-expr* :array-access [^MethodVisitor mv {:keys [array index context]}]
   (emit-expr mv array)
   (emit-expr mv index)
