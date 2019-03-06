@@ -289,18 +289,19 @@
     (.visitFieldInsn mv insn owner name desc)))
 
 (defmethod emit-expr* :method-invocation
-  [^MethodVisitor mv {:keys [type name access class arg-types target args context]}]
+  [^MethodVisitor mv {:keys [interface? type name access class arg-types target args context]}]
   (when target
     (emit-expr mv target))
   (doseq [arg args]
     (emit-expr mv arg))
   (let [method-type (Type/getMethodType ^Type type (into-array Type arg-types))
         insn (cond (:private access) Opcodes/INVOKESPECIAL
+                   interface? Opcodes/INVOKEINTERFACE
                    target Opcodes/INVOKEVIRTUAL
                    :else Opcodes/INVOKESTATIC)
         iname (.getInternalName ^Type class)
         desc (.getDescriptor method-type)]
-    (.visitMethodInsn mv insn iname name desc false))
+    (.visitMethodInsn mv insn iname name desc interface?))
   (when-not (= type t/VOID)
     (drop-if-statement mv context)))
 

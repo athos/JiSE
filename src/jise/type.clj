@@ -145,6 +145,7 @@
               arg-classes (into-array Class (map type->class arg-types))
               m (.getMethod target-class name arg-classes)]
           {:class (tag->type cenv (.getDeclaringClass m))
+           :interface? (.isInterface target-class)
            :arg-types (->> (.getParameterTypes m)
                            (mapv (partial tag->type cenv)))
            :return-type (tag->type cenv (.getReturnType m))

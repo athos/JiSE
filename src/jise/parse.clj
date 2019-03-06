@@ -422,6 +422,7 @@
               method (t/find-method cenv target-type pname (map :type args'))]
           (cond-> {:op :method-invocation
                    :context (:context cenv)
+                   :interface? (:interface? method false)
                    :type (:return-type method)
                    :access (:access method)
                    :arg-types (:arg-types method)
