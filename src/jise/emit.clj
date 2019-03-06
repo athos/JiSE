@@ -250,6 +250,16 @@
                        (:break-label *env*))]
     (.visitJumpInsn mv Opcodes/GOTO label)))
 
+(defmethod emit-expr* :new [^MethodVisitor mv {:keys [type access arg-types args context]}]
+  (let [method-type (Type/getMethodType t/VOID (into-array Type arg-types))
+        iname (.getInternalName ^Type type)
+        desc (.getDescriptor ^Type method-type)]
+    (.visitTypeInsn mv Opcodes/NEW iname)
+    (dup-unless-statement mv context type)
+    (doseq [arg args]
+      (emit-expr mv arg))
+    (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
+
 (defmethod emit-expr* :field-access
   [^MethodVisitor mv {:keys [type name class target context]}]
   (when target

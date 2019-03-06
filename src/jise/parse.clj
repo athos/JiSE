@@ -351,20 +351,29 @@
   (cond-> {:op :break}
     label (assoc :label label)))
 
-(defmethod parse-expr* 'new [cenv [_ type arg]]
+(defmethod parse-expr* 'new [cenv [_ type & args]]
   (let [type' (t/tag->type cenv type)]
     (if (t/array-type? type')
-      (if (vector? arg)
-        (let [arr (gensym)]
-          (parse-expr cenv `(~'let [~arr (new ~type ~(count arg))]
-                             ~@(for [[i init] (map-indexed vector arg)]
+      (if (vector? (first args))
+        (let [elems (first args)
+              arr (gensym)]
+          (parse-expr cenv `(~'let [~arr (new ~type ~(count elems))]
+                             ~@(for [[i init] (map-indexed vector elems)]
                                  `(~'aset ~arr ~i ~init))
                              ~arr)))
         {:op :new-array
          :context (:context cenv)
          :type type'
-         :length (parse-expr (with-context cenv :expression) arg)})
-      (throw (ex-info (str "Construction of type " type " not supported yet") {:type type})))))
+         :length (parse-expr (with-context cenv :expression) (first args))})
+      (let [cenv' (with-context cenv :expression)
+            args' (map (partial parse-expr cenv') args)
+            ctor (t/find-ctor cenv type' (map :type args'))]
+        {:op :new
+         :context (:context cenv)
+         :type type'
+         :access (:access ctor)
+         :arg-types (:arg-types ctor)
+         :args args'}))))
 
 (defmethod parse-expr* '. [cenv [_ target property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))

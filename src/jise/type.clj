@@ -149,3 +149,11 @@
                            (mapv (partial tag->type cenv)))
            :return-type (tag->type cenv (.getReturnType m))
            :access (modifiers->access-flags (.getModifiers m))}))))
+
+(defn find-ctor [cenv ^Type class arg-types]
+  (let [target-class (type->class class)
+        arg-classes (into-array Class (map type->class arg-types))
+        ctor (.getConstructor target-class arg-classes)]
+    {:arg-types (->> (.getParameterTypes ctor)
+                     (mapv (partial tag->type cenv)))
+     :access (modifiers->access-flags (.getModifiers ctor))}))
