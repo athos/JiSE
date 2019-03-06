@@ -271,6 +271,9 @@
 (defmethod parse-expr* '>= [cenv expr]
   (parse-comparison cenv expr :ge))
 
+(defmethod parse-expr* 'do [cenv [_ & body]]
+  (parse-exprs cenv body))
+
 (defmethod parse-expr* 'let [cenv [_ bindings & body]]
   (let [[cenv' bindings'] (parse-bindings cenv bindings)
         body' (parse-exprs cenv' body)]
