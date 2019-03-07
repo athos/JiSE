@@ -81,10 +81,10 @@
 
 (defn drop-if-statement [^MethodVisitor mv context]
   (when (= context :statement)
-    (let [insn (if (= (t/type-category type) 2)
+    (let [opcode (if (= (t/type-category type) 2)
                  Opcodes/POP2
                  Opcodes/POP)]
-      (.visitInsn mv insn))))
+      (.visitInsn mv opcode))))
 
 (defmethod emit-expr* :null [^MethodVisitor mv {:keys [context]}]
   (when-not (= context :statement)
@@ -92,8 +92,8 @@
 
 (defmethod emit-expr* :literal [^MethodVisitor mv {:keys [type value context]}]
   (when-not (= context :statement)
-    (if-let [insn (get-in insns/const-insns [type value])]
-      (.visitInsn mv insn)
+    (if-let [opcode (get-in insns/const-insns [type value])]
+      (.visitInsn mv opcode)
       (.visitLdcInsn mv value))))
 
 (defn emit-load [^MethodVisitor mv type index]
@@ -104,10 +104,10 @@
     (emit-load mv type index)))
 
 (defn emit-arithmetic [^MethodVisitor mv {:keys [type lhs rhs context]} op]
-  (let [insn (get-in insns/arithmetic-insns [type op])]
+  (let [opcode (get-in insns/arithmetic-insns [type op])]
     (emit-expr mv lhs)
     (emit-expr mv rhs)
-    (.visitInsn mv insn)
+    (.visitInsn mv opcode)
     (drop-if-statement mv context)))
 
 (defmethod emit-expr* :add [mv expr]
@@ -129,8 +129,8 @@
   (emit-expr mv src)
   (case type
     (byte char short)
-    (do (when-let [insn (get-in insns/conversion-insns [(:type src) 'int])]
-          (.visitInsn mv insn))
+    (do (when-let [opcode (get-in insns/conversion-insns [(:type src) 'int])]
+          (.visitInsn mv opcode))
         (.visitInsn mv (get-in insns/conversion-insns ['int type])))
     (do (.visitInsn mv (get-in insns/conversion-insns [(:type src) type]))
         (drop-if-statement mv context))))
@@ -145,10 +145,10 @@
   (emit-expr mv body))
 
 (defn emit-dup [^MethodVisitor mv type]
-  (let [insn (case type
+  (let [opcode (case type
                (long double) Opcodes/DUP2
                Opcodes/DUP)]
-    (.visitInsn mv insn)))
+    (.visitInsn mv opcode)))
 
 (defn dup-unless-statement [mv context type]
   (when-not (= context :statement)
@@ -179,15 +179,15 @@
             t (:type lhs)]
         (emit-expr mv lhs)
         (emit-expr mv rhs)
-        (if-let [[insn1 insn2] (get-in insns/comparison-insns [t op])]
-          (if insn2
-            (do (.visitInsn mv insn1)
-                (.visitJumpInsn mv insn2 label))
-            (.visitJumpInsn mv insn1 label))
-          (let [insn (case op
+        (if-let [[opcode1 opcode2] (get-in insns/comparison-insns [t op])]
+          (if opcode2
+            (do (.visitInsn mv opcode1)
+                (.visitJumpInsn mv opcode2 label))
+            (.visitJumpInsn mv opcode1 label))
+          (let [opcode (case op
                        :eq Opcodes/IF_ACMPNE
                        :ne Opcodes/IF_ACMPEQ)]
-            (.visitJumpInsn mv insn label))))
+            (.visitJumpInsn mv opcode label))))
       (let [msg (str "not supported conditional: " op)]
         (throw (ex-info msg {:op op}))))))
 
@@ -266,10 +266,10 @@
   [^MethodVisitor mv {:keys [type name class target context]}]
   (when target
     (emit-expr mv target))
-  (let [insn (if target Opcodes/GETFIELD Opcodes/GETSTATIC)
+  (let [opcode (if target Opcodes/GETFIELD Opcodes/GETSTATIC)
         owner (.getInternalName ^Type class)
         desc (.getDescriptor ^Type type)]
-    (.visitFieldInsn mv insn owner name desc)
+    (.visitFieldInsn mv opcode owner name desc)
     (drop-if-statement mv context)))
 
 (defmethod emit-expr* :field-update
@@ -280,13 +280,13 @@
   (when-not (= context :statement)
     (let [t (:type rhs)]
       (if target
-        (let [insn (if (= (t/type-category t) 2) Opcodes/DUP_X2 Opcodes/DUP_X1)]
-          (.visitInsn mv insn))
+        (let [opcode (if (= (t/type-category t) 2) Opcodes/DUP_X2 Opcodes/DUP_X1)]
+          (.visitInsn mv opcode))
         (dup-unless-statement mv context t))))
-  (let [insn (if target Opcodes/PUTFIELD Opcodes/PUTSTATIC)
+  (let [opcode (if target Opcodes/PUTFIELD Opcodes/PUTSTATIC)
         owner (.getInternalName ^Type class)
         desc (.getDescriptor ^Type type)]
-    (.visitFieldInsn mv insn owner name desc)))
+    (.visitFieldInsn mv opcode owner name desc)))
 
 (defmethod emit-expr* :method-invocation
   [^MethodVisitor mv {:keys [interface? type name access class arg-types target args context]}]
@@ -295,13 +295,13 @@
   (doseq [arg args]
     (emit-expr mv arg))
   (let [method-type (Type/getMethodType ^Type type (into-array Type arg-types))
-        insn (cond (:private access) Opcodes/INVOKESPECIAL
+        opcode (cond (:private access) Opcodes/INVOKESPECIAL
                    interface? Opcodes/INVOKEINTERFACE
                    target Opcodes/INVOKEVIRTUAL
                    :else Opcodes/INVOKESTATIC)
         iname (.getInternalName ^Type class)
         desc (.getDescriptor method-type)]
-    (.visitMethodInsn mv insn iname name desc interface?))
+    (.visitMethodInsn mv opcode iname name desc interface?))
   (when-not (= type t/VOID)
     (drop-if-statement mv context)))
 
