@@ -129,9 +129,9 @@
   (emit-expr mv src)
   (case type
     (byte char short)
-    (do (when-let [opcode (get-in insns/conversion-insns [(:type src) 'int])]
+    (do (when-let [opcode (get-in insns/conversion-insns [(:type src) t/INT])]
           (.visitInsn mv opcode))
-        (.visitInsn mv (get-in insns/conversion-insns ['int type])))
+        (.visitInsn mv (get-in insns/conversion-insns [t/INT type])))
     (do (.visitInsn mv (get-in insns/conversion-insns [(:type src) type]))
         (drop-if-statement mv context))))
 
