@@ -60,8 +60,8 @@
 
 (defn emit-class [{:keys [name access parent interfaces ctors fields methods]}]
   (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)]
-    (.visit cw Opcodes/V1_5
-            (access-value access)
+    (.visit cw Opcodes/V1_8
+            (+ (access-value access) Opcodes/ACC_SUPER)
             name
             nil
             (.getInternalName ^Type parent)
