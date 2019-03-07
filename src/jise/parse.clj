@@ -324,18 +324,21 @@
       (parse-expr cenv `(set! ~target (~'- ~target ~by))))))
 
 (defmethod parse-expr* 'if [{:keys [context] :as cenv} [_ test then else]]
-  (let [cenv' (cond-> cenv
-                (not= context :statement)
-                (assoc :context :expression))
-        test' (parse-expr (-> cenv
-                              (with-context :expression)
-                              (assoc :within-conditional? true))
-                          test)
-        then' (parse-expr cenv' then)
-        else' (some->> else (parse-expr cenv'))]
-    (cond-> {:op :if, :context context, :test test', :then then'}
-      else' (assoc :else else')
-      (not= context :statement) (assoc :type (:type then')))))
+  (cond (true? test) (parse-expr cenv then)
+        (false? test) (parse-expr cenv else)
+        :else
+        (let [cenv' (cond-> cenv
+                      (not= context :statement)
+                      (assoc :context :expression))
+              test' (parse-expr (-> cenv
+                                    (with-context :expression)
+                                    (assoc :within-conditional? true))
+                                test)
+              then' (parse-expr cenv' then)
+              else' (some->> else (parse-expr cenv'))]
+          (cond-> {:op :if, :context context, :test test', :then then'}
+            else' (assoc :else else')
+            (not= context :statement) (assoc :type (:type then'))))))
 
 (defn extract-label [expr]
   (:label (meta expr)))
