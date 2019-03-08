@@ -31,10 +31,14 @@
              :access access}
       (not (nil? value)) (assoc :value value))))
 
-(defn apply-conversion [{:keys [type] :as x} t]
-  (cond->> x
-    (not= t type)
-    (array-map :op :conversion :type t :src)))
+(defn apply-conversions [conversions src]
+  (reduce (fn [src {:keys [conversion to]}]
+            {:op conversion
+             :context (:context src)
+             :type to
+             :src (assoc src :context :expression)})
+          src
+          conversions))
 
 (defn macroexpand [form]
   (let [expanded (macroexpand-1 form)]
@@ -227,11 +231,11 @@
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' x)
         rhs (parse-expr cenv' y)
-        t (t/wider-type (:type lhs) (:type rhs))]
+        [cl cr] (t/binary-numeric-promotion (:type lhs) (:type rhs))]
     {:op op
      :context (:context cenv)
-     :lhs (apply-conversion lhs t)
-     :rhs (apply-conversion rhs t)}))
+     :lhs (apply-conversions cl lhs)
+     :rhs (apply-conversions cr rhs)}))
 
 (defn parse-arithmetic [cenv expr op]
   (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op)]
@@ -307,7 +311,8 @@
   (let [by (or by 1)
         target' (parse-expr (with-context cenv :expression) target)]
     (if (and (= (:op target') :local)
-             (= (t/wider-type (:type target') t/INT) t/INT)
+             (when-let [{:keys [to]} (t/widening-primitive-conversion (:type target') t/INT)]
+               (= to t/INT))
              (pos-int? by))
       (-> {:op :increment, :target target', :type (:type target'), :by by}
           (inherit-context cenv))
@@ -317,7 +322,8 @@
   (let [by (or by 1)
         target' (parse-expr (with-context cenv :expression) target)]
     (if (and (= (:op target') :local)
-             (= (t/wider-type (:type target') t/INT) t/INT)
+             (when-let [{:keys [to]} (t/widening-primitive-conversion (:type target') t/INT)]
+               (= to t/INT))
              (pos-int? by))
       (-> {:op :increment, :target target', :type (:type target'), :by (- by)}
           (inherit-context cenv))

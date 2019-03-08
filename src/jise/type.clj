@@ -17,6 +17,15 @@
 (def OBJECT (Type/getType Object))
 (def STRING (Type/getType String))
 
+(def BOOLEAN_CLASS (Type/getType Boolean))
+(def BYTE_CLASS (Type/getType Byte))
+(def CHARACTER_CLASS (Type/getType Character))
+(def SHORT_CLASS (Type/getType Short))
+(def INTEGER_CLASS (Type/getType Integer))
+(def LONG_CLASS (Type/getType Long))
+(def FLOAT_CLASS (Type/getType Float))
+(def DOUBLE_CLASS (Type/getType Double))
+
 (def primitive->type
   {'boolean BOOLEAN
    'byte BYTE
@@ -29,6 +38,9 @@
    'void VOID})
 
 (def primitive-type? (set (vals primitive->type)))
+
+(def integral-type? #{BYTE CHAR SHORT INT LONG})
+(def numeric-type? (conj integral-type? FLOAT DOUBLE))
 
 (def ^:const primitive-array-types
   '{ints [int]
@@ -104,13 +116,6 @@
         (string? obj) STRING
         :else nil))
 
-(defn ^Type wider-type [t1 t2]
-  (let [ts (hash-set t1 t2)]
-    (or (ts DOUBLE)
-        (ts FLOAT)
-        (ts LONG)
-        INT)))
-
 (defn type-category [t]
   (if (#{LONG DOUBLE} t) 2 1))
 
@@ -122,6 +127,65 @@
     (Modifier/isProtected ms) (conj :protected)
     (Modifier/isPublic ms) (conj :public)
     (Modifier/isStatic ms) (conj :static)))
+
+(def wider-primitive-types
+  {BYTE #{SHORT INT LONG FLOAT}
+   SHORT #{INT LONG FLOAT DOUBLE}
+   CHAR #{INT LONG FLOAT DOUBLE}
+   INT #{LONG FLOAT DOUBLE}
+   LONG #{FLOAT DOUBLE}
+   FLOAT #{DOUBLE}})
+
+(def narrower-primitive-types
+  {SHORT #{BYTE CHAR}
+   CHAR #{BYTE SHORT}
+   INT #{BYTE SHORT CHAR}
+   LONG #{BYTE SHORT CHAR INT}
+   FLOAT #{BYTE SHORT CHAR INT LONG}
+   DOUBLE #{BYTE SHORT CHAR INT LONG FLOAT}})
+
+(defn widening-primitive-conversion [from to]
+  (when (get-in wider-primitive-types [from to])
+    {:conversion :widening-primitive :from from :to to}))
+
+(defn narrowing-primitive-conversion [from to]
+  (when (get-in narrower-primitive-types [from to])
+    {:conversion :narrowing-primitive :from from :to to}))
+
+(def boxed-types
+  {BOOLEAN BOOLEAN_CLASS
+   BYTE BYTE_CLASS
+   CHAR CHARACTER_CLASS
+   SHORT SHORT_CLASS
+   INT INTEGER_CLASS
+   LONG LONG_CLASS
+   FLOAT FLOAT_CLASS
+   DOUBLE DOUBLE_CLASS})
+
+(def unboxed-types
+  (into {} (map (fn [[k v]] [v k])) boxed-types))
+
+(defn boxing-conversion [t]
+  (when-let [t' (boxed-types t)]
+    {:conversion :boxing :from t :to t'}))
+
+(defn unboxing-conversion [t]
+  (when-let [t' (unboxed-types t)]
+    {:conversion :unboxing :from t :to t'}))
+
+(defn binary-numeric-promotion [t1 t2]
+  (let [unbox1 (unboxing-conversion t1)
+        unbox2 (unboxing-conversion t2)
+        t1' (or (:to unbox1) t1)
+        t2' (or (:to unbox2) t2)]
+    (when (and (numeric-type? t1') (numeric-type? t2'))
+      (let [widened (or (some (hash-set t1' t2') [DOUBLE FLOAT LONG]) INT)
+            f (fn [t unbox]
+                (let [widen (widening-primitive-conversion t widened)]
+                  (cond-> []
+                    unbox (conj unbox)
+                    widen (conj widen))))]
+        [(f t1' unbox1) (f t2' unbox2)]))))
 
 (defn find-field [cenv ^Type class name]
   (let [class-name (type->symbol class)]
