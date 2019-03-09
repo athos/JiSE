@@ -87,19 +87,21 @@
              :lt [Opcodes/DCMPL Opcodes/IFGE], :gt [Opcodes/DCMPL Opcodes/IFLE]
              :le [Opcodes/DCMPL Opcodes/IFGT], :ge [Opcodes/DCMPL Opcodes/IFLT]}})
 
-(def conversion-insns
-  {t/INT {t/BYTE Opcodes/I2B
-          t/CHAR Opcodes/I2C
-          t/SHORT Opcodes/I2S
-          t/LONG Opcodes/I2L
+(def widening-insns
+  {t/INT {t/LONG Opcodes/I2L
           t/FLOAT Opcodes/I2F
           t/DOUBLE Opcodes/I2D}
-   t/LONG {t/INT Opcodes/L2I
-           t/FLOAT Opcodes/L2F
+   t/LONG {t/FLOAT Opcodes/L2F
            t/DOUBLE Opcodes/L2D}
+   t/FLOAT {t/DOUBLE Opcodes/F2D}})
+
+(def narrowing-insns
+  {t/INT {t/BYTE Opcodes/I2B
+          t/CHAR Opcodes/I2C
+          t/SHORT Opcodes/I2S}
+   t/LONG {t/INT Opcodes/L2I}
    t/FLOAT {t/INT Opcodes/F2I
-            t/LONG Opcodes/F2L
-            t/DOUBLE Opcodes/F2D}
+            t/LONG Opcodes/F2L}
    t/DOUBLE {t/INT Opcodes/D2I
              t/LONG Opcodes/D2L
              t/FLOAT Opcodes/D2F}})

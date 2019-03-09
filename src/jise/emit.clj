@@ -125,15 +125,54 @@
 (defmethod emit-expr* :rem [mv expr]
   (emit-arithmetic mv expr :rem))
 
-(defmethod emit-expr* :conversion [^MethodVisitor mv {:keys [type src context]}]
+(defmethod emit-expr* :widening-primitive [^MethodVisitor mv {:keys [type src context]}]
+  (emit-expr mv src)
+  (when-let [opcode (get-in insns/widening-insns)]
+    (.visitInsn mv opcode))
+  (drop-if-statement mv context))
+
+(defmethod emit-expr* :narrowing-primite [^MethodVisitor mv {:keys [type src context]}]
   (emit-expr mv src)
   (case type
     (byte char short)
-    (do (when-let [opcode (get-in insns/conversion-insns [(:type src) t/INT])]
+    (do (when-let [opcode (get-in insns/narrowing-insns [(:type src) t/INT])]
           (.visitInsn mv opcode))
-        (.visitInsn mv (get-in insns/conversion-insns [t/INT type])))
-    (do (.visitInsn mv (get-in insns/conversion-insns [(:type src) type]))
-        (drop-if-statement mv context))))
+        (.visitInsn mv (get-in insns/narrowing-insns [t/INT type])))
+    (.visitInsn mv (get-in insns/narrowing-insns [(:type src) type])))
+  (drop-if-statement mv context))
+
+(defmethod emit-expr* :boxing [mv {:keys [type src context]}]
+  (emit-expr mv {:op :method-invocation
+                 :context context
+                 :class type
+                 :interface? false
+                 :type type
+                 :access #{:public :static}
+                 :arg-types [(:type src)]
+                 :name "valueOf"
+                 :args [src]}))
+
+(def unboxing-method-names
+  {t/BOOLEAN "booleanValue"
+   t/BYTE "byteValue"
+   t/CHAR "charValue"
+   t/SHORT "shortValue"
+   t/INT "intValue"
+   t/LONG "longValue"
+   t/FLOAT "floatValue"
+   t/DOUBLE "doubleValue"})
+
+(defmethod emit-expr* :unboxing [mv {:keys [type src context]}]
+  (emit-expr mv {:op :method-invocation
+                 :context context
+                 :class (:type src)
+                 :interface? false
+                 :type type
+                 :access #{:public}
+                 :arg-types []
+                 :name (unboxing-method-names type)
+                 :target src
+                 :args []}))
 
 (defn emit-store [^MethodVisitor mv {:keys [type index]}]
   (.visitVarInsn mv (get insns/store-insns type Opcodes/ASTORE) index))
