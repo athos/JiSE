@@ -96,9 +96,15 @@
                {:type t :value v})))))
 
 (defn parse-expr [cenv expr]
-  (cond (symbol? expr) (parse-symbol cenv expr)
-        (seq? expr) (parse-seq cenv expr)
-        :else (parse-literal cenv expr)))
+  (let [expr' (cond (symbol? expr) (parse-symbol cenv expr)
+                    (seq? expr) (parse-seq cenv expr)
+                    :else (parse-literal cenv expr))]
+    (or (when (and (= (:context expr') :return)
+                   (not= (:type expr') (:return-type cenv)))
+          (when-let [cs (seq (t/assignment-conversion (:type expr') (:return-type cenv)))]
+            (-> (apply-conversions cs (assoc expr' :context :expression))
+                (assoc :context :return))))
+        expr')))
 
 (defn  parse-exprs [cenv body]
   (let [cenv' (with-context cenv :statement)
@@ -149,7 +155,10 @@
     (cond-> {:return-type return-type
              :args args'
              :access access
-             :body (parse-exprs (with-context cenv' context) body)}
+             :body (parse-exprs (-> cenv'
+                                    (assoc :return-type return-type)
+                                    (with-context context))
+                                body)}
       (not ctor?) (assoc :name (str mname)))))
 
 (defn parse-supers [proto-cenv [maybe-supers & body]]
