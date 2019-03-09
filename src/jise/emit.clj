@@ -127,7 +127,7 @@
 
 (defmethod emit-expr* :widening-primitive [^MethodVisitor mv {:keys [type src context]}]
   (emit-expr mv src)
-  (when-let [opcode (get-in insns/widening-insns)]
+  (when-let [opcode (get-in insns/widening-insns [(:type src) type])]
     (.visitInsn mv opcode))
   (drop-if-statement mv context))
 

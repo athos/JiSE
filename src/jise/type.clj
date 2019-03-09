@@ -196,11 +196,11 @@
     (case [(primitive-type? from) (primitive-type? to)]
       [true  true ] (widening-primitive-conversion from to)
       [true  false] (let [box (boxing-conversion from)]
-                      (or (and (= (:to box) from) [box])
+                      (or (and (= (:to box) to) [box])
                           (when-let [widen (widening-reference-conversion (:to box) to)]
                             [box widen])))
       [false true ] (let [unbox (unboxing-conversion from)]
-                      (or (and (= (:to unbox) from) [unbox])
+                      (or (and (= (:to unbox) to) [unbox])
                           (when-let [widen (widening-primitive-conversion (:to unbox) to)]
                             [unbox widen])))
       [false false] (widening-reference-conversion from to))))
