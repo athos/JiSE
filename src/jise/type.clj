@@ -37,7 +37,8 @@
    'double DOUBLE
    'void VOID})
 
-(def primitive-type? (set (vals primitive->type)))
+(def primitive-type?
+  (comp boolean (set (vals primitive->type))))
 
 (def integral-type? #{BYTE CHAR SHORT INT LONG})
 (def numeric-type? (conj integral-type? FLOAT DOUBLE))
@@ -104,6 +105,13 @@
       (Class/forName iname)
       (or (primitive-iname->class iname)
           (Class/forName (.getClassName t))))))
+
+(defn super-type? [t1 t2]
+  (when (and (not (primitive-type? t1))
+             (not (primitive-type? t2)))
+    (let [c1 (type->class t1)
+          c2 (type->class t2)]
+      (contains? (supers c2) c1))))
 
 (defn type->symbol [^Type t]
   (symbol (.getClassName t)))
@@ -172,6 +180,30 @@
 (defn unboxing-conversion [t]
   (when-let [t' (unboxed-types t)]
     {:conversion :unboxing :from t :to t'}))
+
+(defn widening-reference-conversion [from to]
+  (when (super-type? to from)
+    {:conversion :widening-reference :from from :to to}))
+
+(defn narrowing-reference-conversion [from to]
+  ;; FIXME: there are tons of rules to allow narrowing reference conversion
+  (when-not (super-type? to from)
+    {:conversion :narrowing-reference :from from :to to}))
+
+(defn assignment-conversion [from to]
+  (if (= from to)
+    []
+    (case [(primitive-type? from) (primitive-type? to)]
+      [true  true ] (widening-primitive-conversion from to)
+      [true  false] (let [box (boxing-conversion from)]
+                      (or (and (= (:to box) from) [box])
+                          (when-let [widen (widening-reference-conversion (:to box) to)]
+                            [box widen])))
+      [false true ] (let [unbox (unboxing-conversion from)]
+                      (or (and (= (:to unbox) from) [unbox])
+                          (when-let [widen (widening-primitive-conversion (:to unbox) to)]
+                            [unbox widen])))
+      [false false] (widening-reference-conversion from to))))
 
 (defn binary-numeric-promotion [t1 t2]
   (let [unbox1 (unboxing-conversion t1)

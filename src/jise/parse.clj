@@ -115,7 +115,9 @@
 
 (defn parse-binding [cenv lname init]
   (let [init' (some->> init (parse-expr (with-context cenv :expression)))
-        lname' (parse-name cenv lname :default-type (:type init'))]
+        lname' (parse-name cenv lname :default-type (:type init'))
+        init' (when-let [cs (and init' (t/assignment-conversion (:type init') (:type lname')))]
+                (apply-conversions cs init'))]
     (-> lname'
         (update :name name)
         (assoc :index (:next-index cenv))
@@ -292,20 +294,22 @@
 (defmethod parse-expr* 'set! [{:keys [context] :as cenv} [_ target expr]]
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' target)
-        rhs (parse-expr cenv' expr)]
+        rhs (parse-expr cenv' expr)
+        cs (t/assignment-conversion (:type rhs) (:type lhs))
+        rhs' (apply-conversions cs rhs)]
     (if (= (:op lhs) :field-access)
       (cond-> {:op :field-update
                :context context
                :type (:type lhs)
                :class (:class lhs)
                :name (:name lhs)
-               :rhs rhs}
+               :rhs rhs'}
         (:target lhs) (assoc :target (:target lhs)))
       {:op :assignment
        :context context
        :type (:type lhs)
        :lhs lhs
-       :rhs rhs})))
+       :rhs rhs'})))
 
 (defmethod parse-expr* 'inc! [cenv [_ target by]]
   (let [by (or by 1)

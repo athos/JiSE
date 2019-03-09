@@ -174,6 +174,13 @@
                  :target src
                  :args []}))
 
+(defmethod emit-expr* :widening-reference [mv {:keys [src]}]
+  (emit-expr mv src))
+
+(defmethod emit-expr* :narrowing-reference [mv {:keys [type src context]}]
+  (emit-expr mv src)
+  (.visitTypeInsn mv Opcodes/CHECKCAST (.getInternalName ^Type type)))
+
 (defn emit-store [^MethodVisitor mv {:keys [type index]}]
   (.visitVarInsn mv (get insns/store-insns type Opcodes/ASTORE) index))
 
