@@ -186,7 +186,7 @@
 (defmethod emit-expr* :widening-reference [mv {:keys [src]}]
   (emit-expr mv src))
 
-(defmethod emit-expr* :narrowing-reference [mv {:keys [type src context]}]
+(defmethod emit-expr* :narrowing-reference [^MethodVisitor mv {:keys [type src context]}]
   (emit-expr mv src)
   (.visitTypeInsn mv Opcodes/CHECKCAST (.getInternalName ^Type type)))
 
