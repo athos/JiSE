@@ -207,6 +207,29 @@
       [false false] (when-let [c (widening-reference-conversion from to)]
                       [c]))))
 
+(defn casting-conversion [from to]
+  (if (= from to)
+    []
+    (case [(primitive-type? from) (primitive-type? to)]
+      [true  true ] (when-let [c (or (widening-primitive-conversion from to)
+                                     (narrowing-primitive-conversion from to))]
+                      [c])
+      [true  false] (let [box (boxing-conversion from)]
+                      (or (and (= (:to box) to) [box])
+                          (when-let [widen (widening-reference-conversion (:to box) to)]
+                            [box widen])))
+      [false true ] (if (= from t/OBJECT)
+                      (let [box (boxing-conversion to)]
+                        [{:conversion :narrowing-reference :form from :to (:to box)}
+                         {:conversion :unboxing :from (:to box) :to (:from box)}])
+                      (let [unbox (unboxing-conversion from)]
+                        (or (and (= (:to unbox) to) [unbox])
+                            (when-let [widen (widening-primitive-conversion (:to unbox) to)]
+                              [unbox widen]))))
+      [false false] (when-let [c (or (widening-reference-conversion from to)
+                                     (narrowing-reference-conversion from to))]
+                      [c]))))
+
 (defn unary-numeric-promotion [t]
   (condp contains? t
     #{BYTE_CLASS SHORT_CLASS CHARACTER_CLASS}

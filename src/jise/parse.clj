@@ -122,8 +122,9 @@
 (defn parse-binding [cenv lname init]
   (let [init' (some->> init (parse-expr (with-context cenv :expression)))
         lname' (parse-name cenv lname :default-type (:type init'))
-        init' (when-let [cs (and init' (t/assignment-conversion (:type init') (:type lname')))]
-                (apply-conversions cs init'))]
+        init' (if-let [cs (and init' (t/casting-conversion (:type init') (:type lname')))]
+                (apply-conversions cs init')
+                init')]
     (-> lname'
         (update :name name)
         (assoc :index (:next-index cenv))
