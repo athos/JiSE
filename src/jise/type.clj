@@ -205,6 +205,24 @@
                             [unbox widen])))
       [false false] (widening-reference-conversion from to))))
 
+(defn unary-numeric-promotion [t]
+  (condp contains? t
+    #{BYTE_CLASS SHORT_CLASS CHARACTER_CLASS}
+    (let [unbox (unboxing-conversion t)
+          widen (widening-primitive-conversion (:to unbox) INT)]
+      [unbox widen])
+
+    #{INTEGER_CLASS LONG_CLASS FLOAT_CLASS DOUBLE_CLASS}
+    [(unboxing-conversion t)]
+
+    #{BYTE SHORT CHAR}
+    [(widening-primitive-conversion t INT)]
+
+    #{INT LONG}
+    []
+
+    nil))
+
 (defn binary-numeric-promotion [t1 t2]
   (let [unbox1 (unboxing-conversion t1)
         unbox2 (unboxing-conversion t2)

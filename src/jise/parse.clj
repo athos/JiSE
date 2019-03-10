@@ -276,6 +276,32 @@
 (defmethod parse-expr* 'xor [cenv expr]
   (parse-arithmetic cenv expr :bitwise-xor))
 
+(defn parse-shift [cenv [_ x y] op]
+  (let [cenv' (with-context cenv :expression)
+        lhs (parse-expr cenv' x)
+        rhs (parse-expr cenv' y)
+        cl (t/unary-numeric-promotion (:type lhs))
+        cr (t/unary-numeric-promotion (:type rhs))
+        lhs' (apply-conversions cl lhs)
+        rhs' (apply-conversions cr rhs)
+        rhs' (cond->> rhs'
+               (= (:type rhs') t/LONG)
+               (apply-conversions [(t/narrowing-primitive-conversion t/LONG t/INT)]))]
+    {:op op
+     :context (:context cenv)
+     :type (:type lhs')
+     :lhs lhs'
+     :rhs rhs'}))
+
+(defmethod parse-expr* '<< [cenv expr]
+  (parse-shift cenv expr :shift-left))
+
+(defmethod parse-expr* '>> [cenv expr]
+  (parse-shift cenv expr :shift-right))
+
+(defmethod parse-expr* '>>> [cenv expr]
+  (parse-shift cenv expr :logical-shift-right))
+
 (defn parse-comparison [cenv expr op]
   (if (:within-conditional? cenv)
     (assoc (parse-binary-op cenv expr op) :type 'boolean)

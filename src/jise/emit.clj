@@ -134,6 +134,15 @@
 (defmethod emit-expr* :bitwise-xor [mv expr]
   (emit-arithmetic mv expr :bitwise-xor))
 
+(defmethod emit-expr* :shift-left [mv expr]
+  (emit-arithmetic mv expr :shift-left))
+
+(defmethod emit-expr* :shift-right [mv expr]
+  (emit-arithmetic mv expr :shift-right))
+
+(defmethod emit-expr* :logical-shift-right [mv expr]
+  (emit-arithmetic mv expr :logical-shift-right))
+
 (defmethod emit-expr* :widening-primitive [^MethodVisitor mv {:keys [type src context]}]
   (emit-expr mv src)
   (when-let [opcode (get-in insns/widening-insns [(:type src) type])]

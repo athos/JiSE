@@ -59,7 +59,10 @@
           :rem Opcodes/IREM
           :bitwise-and Opcodes/IAND
           :bitwise-or Opcodes/IOR
-          :bitwise-xor Opcodes/IXOR}
+          :bitwise-xor Opcodes/IXOR
+          :shift-left Opcodes/ISHL
+          :shift-right Opcodes/ISHR
+          :logical-shift-right Opcodes/IUSHR}
    t/LONG {:add Opcodes/LADD
            :sub Opcodes/LSUB
            :mul Opcodes/LMUL
@@ -67,7 +70,10 @@
            :rem Opcodes/LREM
            :bitwise-and Opcodes/LAND
            :bitwise-or Opcodes/LOR
-           :bitwise-xor Opcodes/LXOR}
+           :bitwise-xor Opcodes/LXOR
+           :shift-left Opcodes/LSHL
+           :shift-right Opcodes/LSHR
+           :logical-shift-right Opcodes/LUSHR}
    t/FLOAT {:add Opcodes/FADD
             :sub Opcodes/FSUB
             :mul Opcodes/FMUL
