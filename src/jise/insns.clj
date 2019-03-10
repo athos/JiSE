@@ -46,7 +46,11 @@
    t/DOUBLE Opcodes/DLOAD})
 
 (def store-insns
-  {t/INT Opcodes/ISTORE
+  {t/BOOLEAN Opcodes/ISTORE
+   t/BYTE Opcodes/ISTORE
+   t/CHAR Opcodes/ISTORE
+   t/SHORT Opcodes/ISTORE
+   t/INT Opcodes/ISTORE
    t/LONG Opcodes/LSTORE
    t/FLOAT Opcodes/FSTORE
    t/DOUBLE Opcodes/DSTORE})
