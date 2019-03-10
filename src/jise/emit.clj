@@ -90,9 +90,12 @@
   (when-not (= context :statement)
     (.visitInsn mv Opcodes/ACONST_NULL)))
 
+(defn primitive-type [type]
+  (if (#{t/BYTE t/CHAR t/SHORT} type) t/INT type))
+
 (defmethod emit-expr* :literal [^MethodVisitor mv {:keys [type value context]}]
   (when-not (= context :statement)
-    (if-let [opcode (get-in insns/const-insns [type value])]
+    (if-let [opcode (get-in insns/const-insns [(primitive-type type) value])]
       (.visitInsn mv opcode)
       (cond (and (#{t/BYTE t/SHORT t/CHAR t/INT} type)
                  (<= Byte/MIN_VALUE (long value) Byte/MAX_VALUE))
