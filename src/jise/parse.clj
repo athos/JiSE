@@ -267,6 +267,15 @@
 (defmethod parse-expr* '% [cenv expr]
   (parse-arithmetic cenv expr :rem))
 
+(defmethod parse-expr* '& [cenv expr]
+  (parse-arithmetic cenv expr :bitwise-and))
+
+(defmethod parse-expr* '| [cenv expr]
+  (parse-arithmetic cenv expr :bitwise-or))
+
+(defmethod parse-expr* 'xor [cenv expr]
+  (parse-arithmetic cenv expr :bitwise-xor))
+
 (defn parse-comparison [cenv expr op]
   (if (:within-conditional? cenv)
     (assoc (parse-binary-op cenv expr op) :type 'boolean)

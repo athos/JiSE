@@ -125,6 +125,15 @@
 (defmethod emit-expr* :rem [mv expr]
   (emit-arithmetic mv expr :rem))
 
+(defmethod emit-expr* :bitwise-and [mv expr]
+  (emit-arithmetic mv expr :bitwise-and))
+
+(defmethod emit-expr* :bitwise-or [mv expr]
+  (emit-arithmetic mv expr :bitwise-or))
+
+(defmethod emit-expr* :bitwise-xor [mv expr]
+  (emit-arithmetic mv expr :bitwise-xor))
+
 (defmethod emit-expr* :widening-primitive [^MethodVisitor mv {:keys [type src context]}]
   (emit-expr mv src)
   (when-let [opcode (get-in insns/widening-insns [(:type src) type])]

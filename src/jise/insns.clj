@@ -56,12 +56,18 @@
           :sub Opcodes/ISUB
           :mul Opcodes/IMUL
           :div Opcodes/IDIV
-          :rem Opcodes/IREM}
+          :rem Opcodes/IREM
+          :bitwise-and Opcodes/IAND
+          :bitwise-or Opcodes/IOR
+          :bitwise-xor Opcodes/IXOR}
    t/LONG {:add Opcodes/LADD
            :sub Opcodes/LSUB
            :mul Opcodes/LMUL
            :div Opcodes/LDIV
-           :rem Opcodes/LREM}
+           :rem Opcodes/LREM
+           :bitwise-and Opcodes/LAND
+           :bitwise-or Opcodes/LOR
+           :bitwise-xor Opcodes/LXOR}
    t/FLOAT {:add Opcodes/FADD
             :sub Opcodes/FSUB
             :mul Opcodes/FMUL
