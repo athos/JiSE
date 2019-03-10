@@ -94,7 +94,19 @@
   (when-not (= context :statement)
     (if-let [opcode (get-in insns/const-insns [type value])]
       (.visitInsn mv opcode)
-      (.visitLdcInsn mv value))))
+      (cond (and (#{t/BYTE t/SHORT t/CHAR t/INT} type)
+                 (<= Byte/MIN_VALUE (long value) Byte/MAX_VALUE))
+            (.visitIntInsn mv Opcodes/BIPUSH (int value))
+
+            (and (#{t/SHORT t/INT} type)
+                 (<= Short/MIN_VALUE (long value) Short/MAX_VALUE))
+            (.visitIntInsn mv Opcodes/SIPUSH (int value))
+
+            :else (let [v (condp = type
+                            t/INT (int value)
+                            t/FLOAT (float value)
+                            value)]
+                    (.visitLdcInsn mv v))))))
 
 (defn emit-load [^MethodVisitor mv type index]
   (.visitVarInsn mv (get insns/load-insns type Opcodes/ALOAD) index))
@@ -144,20 +156,23 @@
   (emit-arithmetic mv expr :logical-shift-right))
 
 (defmethod emit-expr* :widening-primitive [^MethodVisitor mv {:keys [type src context]}]
-  (emit-expr mv src)
-  (when-let [opcode (get-in insns/widening-insns [(:type src) type])]
-    (.visitInsn mv opcode))
-  (drop-if-statement mv context))
+  (if (and (= (:op src) :literal) (= type t/LONG))
+    (emit-expr mv (assoc src :context context :type type))
+    (do (emit-expr mv src)
+        (when-let [opcode (get-in insns/widening-insns [(:type src) type])]
+          (.visitInsn mv opcode))
+        (drop-if-statement mv context))))
 
 (defmethod emit-expr* :narrowing-primitive [^MethodVisitor mv {:keys [type src context]}]
-  (emit-expr mv src)
-  (case type
-    (byte char short)
-    (do (when-let [opcode (get-in insns/narrowing-insns [(:type src) t/INT])]
-          (.visitInsn mv opcode))
-        (.visitInsn mv (get-in insns/narrowing-insns [t/INT type])))
-    (.visitInsn mv (get-in insns/narrowing-insns [(:type src) type])))
-  (drop-if-statement mv context))
+  (if (and (= (:op src) :literal) (#{t/BYTE t/SHORT t/CHAR} type))
+    (emit-expr mv (assoc src :context context :type type))
+    (do (case type
+          (byte char short)
+          (do (when-let [opcode (get-in insns/narrowing-insns [(:type src) t/INT])]
+                (.visitInsn mv opcode))
+              (.visitInsn mv (get-in insns/narrowing-insns [t/INT type])))
+          (.visitInsn mv (get-in insns/narrowing-insns [(:type src) type])))
+        (drop-if-statement mv context))))
 
 (defmethod emit-expr* :boxing [mv {:keys [type src context]}]
   (emit-expr mv {:op :method-invocation

@@ -88,10 +88,10 @@
       (merge (inherit-context {:op :literal} cenv)
              (condp #(%1 %2) t
                #{t/BYTE t/SHORT t/INT t/LONG}
-               {:type t/INT :value (int v)}
+               {:type t/INT :value v}
 
                #{t/FLOAT t/DOUBLE}
-               {:type t/DOUBLE :value (double v)}
+               {:type t/DOUBLE :value v}
 
                {:type t :value v})))))
 
