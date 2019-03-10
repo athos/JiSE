@@ -194,7 +194,8 @@
   (if (= from to)
     []
     (case [(primitive-type? from) (primitive-type? to)]
-      [true  true ] (widening-primitive-conversion from to)
+      [true  true ] (when-let [c (widening-primitive-conversion from to)]
+                      [c])
       [true  false] (let [box (boxing-conversion from)]
                       (or (and (= (:to box) to) [box])
                           (when-let [widen (widening-reference-conversion (:to box) to)]
@@ -203,7 +204,8 @@
                       (or (and (= (:to unbox) to) [unbox])
                           (when-let [widen (widening-primitive-conversion (:to unbox) to)]
                             [unbox widen])))
-      [false false] (widening-reference-conversion from to))))
+      [false false] (when-let [c (widening-reference-conversion from to)]
+                      [c]))))
 
 (defn unary-numeric-promotion [t]
   (condp contains? t
