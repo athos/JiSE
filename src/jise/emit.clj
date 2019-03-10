@@ -140,7 +140,7 @@
     (.visitInsn mv opcode))
   (drop-if-statement mv context))
 
-(defmethod emit-expr* :narrowing-primite [^MethodVisitor mv {:keys [type src context]}]
+(defmethod emit-expr* :narrowing-primitive [^MethodVisitor mv {:keys [type src context]}]
   (emit-expr mv src)
   (case type
     (byte char short)
