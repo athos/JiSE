@@ -76,7 +76,7 @@
     (when (contains? (:classes cenv) tag)
       (Type/getType (str \L (str/replace (str tag) \. \/) \;)))))
 
-(defn ^Type tag->type [cenv tag & {:keys [default] :or {default OBJECT}}]
+(defn ^Type tag->type [cenv tag & {:keys [default]}]
   (or (cond (symbol? tag) (or (primitive->type tag)
                               (some-> (get primitive-array-types tag)
                                       (#(tag->type cenv % :default default)))
@@ -87,7 +87,8 @@
             (class? tag) (Type/getType ^Class tag)
             (vector? tag) (tag->array-type cenv tag)
             :else nil)
-      default))
+      default
+      OBJECT))
 
 (def primitive-iname->class
   {"Z" Boolean/TYPE
@@ -218,7 +219,7 @@
                       (or (and (= (:to box) to) [box])
                           (when-let [widen (widening-reference-conversion (:to box) to)]
                             [box widen])))
-      [false true ] (if (= from t/OBJECT)
+      [false true ] (if (= from OBJECT)
                       (let [box (boxing-conversion to)]
                         [{:conversion :narrowing-reference :form from :to (:to box)}
                          {:conversion :unboxing :from (:to box) :to (:from box)}])
