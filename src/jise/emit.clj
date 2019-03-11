@@ -281,6 +281,9 @@
                        :eq Opcodes/IF_ACMPNE
                        :ne Opcodes/IF_ACMPEQ)]
             (.visitJumpInsn mv opcode label))))
+      (:method-invocation :instance?)
+      (do (emit-expr mv cond)
+          (.visitJumpInsn mv Opcodes/IFEQ label))
       (let [msg (str "not supported conditional: " op)]
         (throw (ex-info msg {:op op}))))))
 
