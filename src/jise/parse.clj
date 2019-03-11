@@ -253,29 +253,47 @@
   (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op)]
     (assoc ret :type (:type lhs))))
 
-(defmethod parse-expr* '+ [cenv expr]
-  (parse-arithmetic cenv expr :add))
+(defn coerce-to-primitive [cenv [_ x]]
+  (let [x' (parse-expr cenv x)]
+    (apply-conversions (t/unary-numeric-promotion (:type x')) x')))
 
-(defmethod parse-expr* '- [cenv expr]
-  (parse-arithmetic cenv expr :sub))
+(defn fold-binary-op [[op x y & more :as expr]]
+  (if more
+    (recur (with-meta `(~op (~op ~x ~y) ~@more) (meta expr)))
+    expr))
 
-(defmethod parse-expr* '* [cenv expr]
-  (parse-arithmetic cenv expr :mul))
+(defmethod parse-expr* '+ [cenv [_ x y & more :as expr]]
+  (cond more (parse-expr cenv (fold-binary-op expr))
+        y (parse-arithmetic cenv expr :add)
+        x (coerce-to-primitive cenv expr)
+        :else (parse-expr cenv 0)))
 
-(defmethod parse-expr* '/ [cenv expr]
-  (parse-arithmetic cenv expr :div))
+(defmethod parse-expr* '- [cenv [_ x y & more :as expr]]
+  (cond more (parse-expr cenv (fold-binary-op expr))
+        y (parse-arithmetic cenv expr :sub)))
+
+(defmethod parse-expr* '* [cenv [_ x y & more :as expr]]
+  (cond more (parse-expr cenv (fold-binary-op expr))
+        y (parse-arithmetic cenv expr :mul)
+        x (coerce-to-primitive cenv expr)
+        :else (parse-expr cenv 1)))
+
+(defmethod parse-expr* '/ [cenv [_ x y & more :as expr]]
+  (cond more (parse-expr cenv (fold-binary-op expr))
+        y (parse-arithmetic cenv expr :div)
+        :else (parse-expr cenv (with-meta `(~'/ 1 ~x) (meta expr)))))
 
 (defmethod parse-expr* '% [cenv expr]
   (parse-arithmetic cenv expr :rem))
 
 (defmethod parse-expr* '& [cenv expr]
-  (parse-arithmetic cenv expr :bitwise-and))
+  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-and))
 
 (defmethod parse-expr* '| [cenv expr]
-  (parse-arithmetic cenv expr :bitwise-or))
+  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-or))
 
 (defmethod parse-expr* 'xor [cenv expr]
-  (parse-arithmetic cenv expr :bitwise-xor))
+  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-xor))
 
 (defn parse-shift [cenv [_ x y] op]
   (let [cenv' (with-context cenv :expression)
