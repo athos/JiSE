@@ -479,7 +479,7 @@
           target-type (or (:type target') (t/tag->type cenv target))
           pname (name property)]
       (if (str/starts-with? pname "-")
-        (if (and (t/array-type? (:type target')) (= pname "-length"))
+        (if (and (t/array-type? target-type) (= pname "-length"))
           {:op :array-length
            :context (:context cenv)
            :type t/INT
