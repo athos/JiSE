@@ -169,7 +169,8 @@
 (defmethod emit-expr* :narrowing-primitive [^MethodVisitor mv {:keys [type src context]}]
   (if (and (= (:op src) :literal) (#{t/BYTE t/SHORT t/CHAR} type))
     (emit-expr mv (assoc src :context context :type type))
-    (do (case type
+    (do (emit-expr mv src)
+        (case type
           (byte char short)
           (do (when-let [opcode (get-in insns/narrowing-insns [(:type src) t/INT])]
                 (.visitInsn mv opcode))
