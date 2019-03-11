@@ -364,12 +364,15 @@
 (defmethod parse-expr* 'do [cenv [_ & body]]
   (parse-exprs cenv body))
 
-(defmethod parse-expr* 'let [cenv [_ bindings & body]]
+(defmethod parse-expr* 'let* [cenv [_ bindings & body]]
   (let [[cenv' bindings'] (parse-bindings cenv bindings)
         body' (parse-exprs cenv' body)]
     {:op :let :type (:type body')
      :bindings bindings'
      :body body'}))
+
+(defmethod parse-expr* 'let [cenv expr]
+  (parse-expr cenv (with-meta `(let* ~@(rest expr)) (meta expr))))
 
 (defmethod parse-expr* 'set! [{:keys [context] :as cenv} [_ target expr]]
   (let [cenv' (with-context cenv :expression)
