@@ -354,6 +354,13 @@
 (defmethod parse-expr* '>= [cenv expr]
   (parse-comparison cenv expr :ge))
 
+(defmethod parse-expr* 'instance? [cenv [_ c x]]
+  {:op :instance?
+   :context (:context cenv)
+   :type t/BOOLEAN
+   :class (t/tag->type cenv c)
+   :operand (parse-expr (with-context cenv :expression) x)})
+
 (defmethod parse-expr* 'do [cenv [_ & body]]
   (parse-exprs cenv body))
 

@@ -223,6 +223,11 @@
   (emit-expr mv src)
   (.visitTypeInsn mv Opcodes/CHECKCAST (.getInternalName ^Type type)))
 
+(defmethod emit-expr* :instance? [^MethodVisitor mv {:keys [class operand context]}]
+  (emit-expr mv operand)
+  (.visitTypeInsn mv Opcodes/INSTANCEOF (.getInternalName ^Type class))
+  (drop-if-statement mv context))
+
 (defn emit-store [^MethodVisitor mv {:keys [type index]}]
   (.visitVarInsn mv (get insns/store-insns type Opcodes/ASTORE) index))
 
