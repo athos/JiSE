@@ -239,6 +239,15 @@
      :fields (mapv (partial parse-field cenv) fields)
      :methods (mapv (partial parse-method cenv false) methods)}))
 
+(defn parse-unary-op [cenv [_ x] op]
+  (let [cenv' (with-context cenv :expression)
+        x' (parse-expr cenv' x)
+        cs (t/unary-numeric-promotion (:type x'))]
+    {:op op
+     :context (:context cenv)
+     :type (:type x')
+     :operand (apply-conversions cs x')}))
+
 (defn parse-binary-op [cenv [_ x y] op]
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' x)
@@ -270,7 +279,8 @@
 
 (defmethod parse-expr* '- [cenv [_ x y & more :as expr]]
   (cond more (parse-expr cenv (fold-binary-op expr))
-        y (parse-arithmetic cenv expr :sub)))
+        y (parse-arithmetic cenv expr :sub)
+        x (parse-unary-op cenv expr :neg)))
 
 (defmethod parse-expr* '* [cenv [_ x y & more :as expr]]
   (cond more (parse-expr cenv (fold-binary-op expr))

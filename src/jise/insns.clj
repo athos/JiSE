@@ -89,6 +89,12 @@
              :div Opcodes/DDIV
              :rem Opcodes/DREM}})
 
+(def negation-insns
+  {t/INT Opcodes/INEG
+   t/LONG Opcodes/LNEG
+   t/FLOAT Opcodes/FNEG
+   t/DOUBLE Opcodes/DNEG})
+
 (def comparison-insns
   {t/INT {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]
           :lt [Opcodes/IF_ICMPGE], :gt [Opcodes/IF_ICMPLE]

@@ -140,6 +140,11 @@
 (defmethod emit-expr* :rem [mv expr]
   (emit-arithmetic mv expr :rem))
 
+(defmethod emit-expr* :neg [^MethodVisitor mv {:keys [type operand context]}]
+  (emit-expr mv operand)
+  (.visitInsn mv (get insns/negation-insns type))
+  (drop-if-statement mv context))
+
 (defmethod emit-expr* :bitwise-and [mv expr]
   (emit-arithmetic mv expr :bitwise-and))
 
