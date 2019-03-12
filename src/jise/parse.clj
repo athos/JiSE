@@ -361,6 +361,36 @@
 (defmethod parse-expr* '>= [cenv expr]
   (parse-comparison cenv expr :ge))
 
+(defn parse-cast [cenv type x]
+  (let [x' (parse-expr cenv x)
+        cs (t/casting-conversion (:type x') type)]
+    (apply-conversions cs x')))
+
+(defmethod parse-expr* 'byte [cenv [_ x]]
+  (parse-cast cenv t/BYTE x))
+
+(defmethod parse-expr* 'char [cenv [_ x]]
+  (parse-cast cenv t/CHAR x))
+
+(defmethod parse-expr* 'short [cenv [_ x]]
+  (parse-cast cenv t/SHORT x))
+
+(defmethod parse-expr* 'int [cenv [_ x]]
+  (parse-cast cenv t/INT x))
+
+(defmethod parse-expr* 'long [cenv [_ x]]
+  (parse-cast cenv t/LONG x))
+
+(defmethod parse-expr* 'float [cenv [_ x]]
+  (parse-cast cenv t/FLOAT x))
+
+(defmethod parse-expr* 'double [cenv [_ x]]
+  (parse-cast cenv t/DOUBLE x))
+
+(defmethod parse-expr* 'cast [cenv [_ t x]]
+  (let [t' (t/tag->type cenv t)]
+    (parse-cast cenv t' x)))
+
 (defmethod parse-expr* 'instance? [cenv [_ c x]]
   {:op :instance?
    :context (context-of cenv)
