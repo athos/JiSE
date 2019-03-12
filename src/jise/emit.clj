@@ -29,6 +29,12 @@
 (defmethod emit-expr* :default [_ expr]
   (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
 
+(defn emit-line [^MethodVisitor mv line]
+  (when line
+    (let [here (Label.)]
+      (.visitLabel mv here)
+      (.visitLineNumber mv line here))))
+
 (defn emit-return [^MethodVisitor mv type]
   (.visitInsn mv (get insns/return-insns type Opcodes/ARETURN)))
 
@@ -118,10 +124,11 @@
   (when-not (= context :statement)
     (emit-load mv type index)))
 
-(defn emit-arithmetic [^MethodVisitor mv {:keys [type lhs rhs context]} op]
+(defn emit-arithmetic [^MethodVisitor mv {:keys [type lhs rhs context line]} op]
   (let [opcode (get-in insns/arithmetic-insns [type op])]
     (emit-expr mv lhs)
     (emit-expr mv rhs)
+    (emit-line mv line)
     (.visitInsn mv opcode)
     (drop-if-statement mv context)))
 
@@ -140,8 +147,9 @@
 (defmethod emit-expr* :rem [mv expr]
   (emit-arithmetic mv expr :rem))
 
-(defmethod emit-expr* :neg [^MethodVisitor mv {:keys [type operand context]}]
+(defmethod emit-expr* :neg [^MethodVisitor mv {:keys [type operand context line]}]
   (emit-expr mv operand)
+  (emit-line mv line)
   (.visitInsn mv (get insns/negation-insns type))
   (drop-if-statement mv context))
 
@@ -223,15 +231,17 @@
   (emit-expr mv src)
   (.visitTypeInsn mv Opcodes/CHECKCAST (.getInternalName ^Type type)))
 
-(defmethod emit-expr* :instance? [^MethodVisitor mv {:keys [class operand context]}]
+(defmethod emit-expr* :instance? [^MethodVisitor mv {:keys [class operand context line]}]
   (emit-expr mv operand)
+  (emit-line mv line)
   (.visitTypeInsn mv Opcodes/INSTANCEOF (.getInternalName ^Type class))
   (drop-if-statement mv context))
 
 (defn emit-store [^MethodVisitor mv {:keys [type index]}]
   (.visitVarInsn mv (get insns/store-insns type Opcodes/ASTORE) index))
 
-(defmethod emit-expr* :let [mv {:keys [bindings body]}]
+(defmethod emit-expr* :let [mv {:keys [bindings body line]}]
+  (emit-line mv line)
   (doseq [{:keys [init] :as b} bindings]
     (emit-expr mv init)
     (emit-store mv b))
@@ -247,13 +257,15 @@
   (when-not (= context :statement)
     (emit-dup mv type)))
 
-(defmethod emit-expr* :assignment [^MethodVisitor mv {:keys [lhs rhs context]}]
+(defmethod emit-expr* :assignment [^MethodVisitor mv {:keys [lhs rhs context line]}]
   (emit-expr mv rhs)
   (dup-unless-statement mv context (:type rhs))
+  (emit-line mv line)
   (emit-store mv lhs))
 
-(defmethod emit-expr* :increment [^MethodVisitor mv {:keys [target by context]}]
+(defmethod emit-expr* :increment [^MethodVisitor mv {:keys [target by context line]}]
   (let [{:keys [type index]} target]
+    (emit-line mv line)
     (.visitIincInsn mv index by)
     (when-not (= context :statement)
       (emit-load mv type index))))
@@ -287,9 +299,10 @@
       (let [msg (str "not supported conditional: " op)]
         (throw (ex-info msg {:op op}))))))
 
-(defmethod emit-expr* :if [^MethodVisitor mv {:keys [test then else]}]
+(defmethod emit-expr* :if [^MethodVisitor mv {:keys [test then else line]}]
   (let [end-label (Label.)
         else-label (if else (Label.) end-label)]
+    (emit-line mv line)
     (emit-conditional mv test else-label)
     (emit-expr mv then)
     (when else
@@ -307,12 +320,13 @@
     (binding [*env* env]
       (f))))
 
-(defmethod emit-expr* :while [^MethodVisitor mv {:keys [cond body label context]}]
+(defmethod emit-expr* :while [^MethodVisitor mv {:keys [cond body label context line]}]
   (let [start-label (Label.)
         end-label (Label.)]
     (with-labels label start-label end-label
       (fn []
         (.visitLabel mv start-label)
+        (emit-line mv line)
         (emit-conditional mv cond end-label)
         (emit-expr mv body)
         (.visitJumpInsn mv Opcodes/GOTO start-label)
@@ -348,10 +362,11 @@
                        (:break-label *env*))]
     (.visitJumpInsn mv Opcodes/GOTO label)))
 
-(defmethod emit-expr* :new [^MethodVisitor mv {:keys [type access arg-types args context]}]
+(defmethod emit-expr* :new [^MethodVisitor mv {:keys [type access arg-types args context line]}]
   (let [method-type (Type/getMethodType t/VOID (into-array Type arg-types))
         iname (.getInternalName ^Type type)
         desc (.getDescriptor ^Type method-type)]
+    (emit-line mv line)
     (.visitTypeInsn mv Opcodes/NEW iname)
     (dup-unless-statement mv context type)
     (doseq [arg args]
@@ -359,17 +374,18 @@
     (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
 
 (defmethod emit-expr* :field-access
-  [^MethodVisitor mv {:keys [type name class target context]}]
+  [^MethodVisitor mv {:keys [type name class target context line]}]
   (when target
     (emit-expr mv target))
   (let [opcode (if target Opcodes/GETFIELD Opcodes/GETSTATIC)
         owner (.getInternalName ^Type class)
         desc (.getDescriptor ^Type type)]
+    (emit-line mv line)
     (.visitFieldInsn mv opcode owner name desc)
     (drop-if-statement mv context)))
 
 (defmethod emit-expr* :field-update
-  [^MethodVisitor mv {:keys [type name class target rhs context]}]
+  [^MethodVisitor mv {:keys [type name class target rhs context line]}]
   (when target
     (emit-expr mv target))
   (emit-expr mv rhs)
@@ -382,10 +398,11 @@
   (let [opcode (if target Opcodes/PUTFIELD Opcodes/PUTSTATIC)
         owner (.getInternalName ^Type class)
         desc (.getDescriptor ^Type type)]
+    (emit-line mv line)
     (.visitFieldInsn mv opcode owner name desc)))
 
 (defmethod emit-expr* :method-invocation
-  [^MethodVisitor mv {:keys [interface? type name access class arg-types target args context]}]
+  [^MethodVisitor mv {:keys [interface? type name access class arg-types target args context line]}]
   (when target
     (emit-expr mv target))
   (doseq [arg args]
@@ -397,6 +414,7 @@
                    :else Opcodes/INVOKESTATIC)
         iname (.getInternalName ^Type class)
         desc (.getDescriptor method-type)]
+    (emit-line mv line)
     (.visitMethodInsn mv opcode iname name desc interface?))
   (when-not (= type t/VOID)
     (drop-if-statement mv context)))
@@ -411,8 +429,9 @@
    t/FLOAT Opcodes/T_FLOAT
    t/DOUBLE Opcodes/T_DOUBLE})
 
-(defmethod emit-expr* :new-array [^MethodVisitor mv {:keys [type length context]}]
+(defmethod emit-expr* :new-array [^MethodVisitor mv {:keys [type length context line]}]
   (emit-expr mv length)
+  (emit-line mv line)
   (let [elem-type (t/element-type type)]
     (if (t/primitive-type? elem-type)
       (let [t (primitive-types elem-type)]
@@ -420,22 +439,25 @@
       (.visitTypeInsn mv Opcodes/ANEWARRAY (.getInternalName elem-type))))
   (drop-if-statement mv context))
 
-(defmethod emit-expr* :array-length [^MethodVisitor mv {:keys [array context]}]
+(defmethod emit-expr* :array-length [^MethodVisitor mv {:keys [array context line]}]
   (emit-expr mv array)
+  (emit-line mv line)
   (.visitInsn mv Opcodes/ARRAYLENGTH)
   (drop-if-statement mv context))
 
-(defmethod emit-expr* :array-access [^MethodVisitor mv {:keys [array index context]}]
+(defmethod emit-expr* :array-access [^MethodVisitor mv {:keys [array index context line]}]
   (emit-expr mv array)
   (emit-expr mv index)
+  (emit-line mv line)
   (let [elem-type (t/element-type (:type array))]
     (.visitInsn mv (get insns/aload-insns elem-type Opcodes/AALOAD))
     (drop-if-statement mv context)))
 
-(defmethod emit-expr* :array-update [^MethodVisitor mv {:keys [array index expr context]}]
+(defmethod emit-expr* :array-update [^MethodVisitor mv {:keys [array index expr context line]}]
   (emit-expr mv array)
   (emit-expr mv index)
   (emit-expr mv expr)
   (dup-unless-statement mv context (:type expr))
+  (emit-line mv line)
   (let [elem-type (t/element-type (:type array))]
     (.visitInsn mv (get insns/astore-insns elem-type Opcodes/AASTORE))))

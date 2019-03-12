@@ -81,7 +81,10 @@
       (throw (ex-info (str "unknown variable found: " sym) {:variable sym})))))
 
 (defn parse-seq [cenv expr]
-  (let [expr' (parse-expr* cenv expr)]
+  (as-> (parse-expr* cenv expr) expr'
+    (if-let [line (:line (meta expr))]
+      (assoc expr' :line line)
+      expr')
     (if-let [label (:label (meta expr))]
       {:op :labeled :label label :target expr'}
       expr')))
