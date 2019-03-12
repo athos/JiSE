@@ -453,11 +453,17 @@
           (inherit-context cenv))
       (parse-expr cenv `(set! ~target (~'- ~target ~by))))))
 
+(defn unbox-if-possible [x]
+  (if-let [unbox (t/unboxing-conversion (:type x))]
+    (apply-conversions [unbox] x)
+    x))
+
 (defmethod parse-expr* 'if [cenv [_ test then else]]
   (cond (true? test) (parse-expr cenv then)
         (false? test) (parse-expr cenv else)
         :else
-        (let [test' (parse-expr (with-context cenv :conditional) test)
+        (let [test' (-> (parse-expr (with-context cenv :conditional) test)
+                        unbox-if-possible)
               statement? (= (context-of cenv) :statement)
               cenv' (cond-> cenv (not statement?) (assoc :context :expression))
               then' (parse-expr cenv' then)
@@ -473,7 +479,8 @@
   (let [label (extract-label expr)]
     (cond-> {:op :while
              :context (context-of cenv)
-             :cond (parse-expr (with-context cenv :conditional) cond)
+             :cond (-> (parse-expr (with-context cenv :conditional) cond)
+                       unbox-if-possible)
              :body (parse-exprs (with-context cenv :statement) body)}
       label (assoc :label label))))
 
@@ -501,7 +508,8 @@
        :body
        (cond-> {:op :for
                 :context (context-of cenv)
-                :cond (parse-expr (with-context cenv' :conditional) cond)
+                :cond (-> (parse-expr (with-context cenv' :conditional) cond)
+                          unbox-if-possible)
                 :step (parse-expr (with-context cenv' :statement) step)
                 :body (parse-exprs (with-context cenv' :statement) body)}
          label (assoc :label label))})))
