@@ -440,7 +440,7 @@
     (if (and (= (:op target') :local)
              (when-let [{:keys [to]} (t/widening-primitive-conversion (:type target') t/INT)]
                (= to t/INT))
-             (pos-int? by))
+             (<= 0 by Byte/MAX_VALUE))
       (-> {:op :increment, :target target', :type (:type target'), :by by}
           (inherit-context cenv))
       (parse-expr cenv `(set! ~target (~'+ ~target ~by))))))
@@ -451,7 +451,7 @@
     (if (and (= (:op target') :local)
              (when-let [{:keys [to]} (t/widening-primitive-conversion (:type target') t/INT)]
                (= to t/INT))
-             (pos-int? by))
+             (<= 0 by (- Byte/MIN_VALUE)))
       (-> {:op :increment, :target target', :type (:type target'), :by (- by)}
           (inherit-context cenv))
       (parse-expr cenv `(set! ~target (~'- ~target ~by))))))
