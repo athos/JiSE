@@ -112,18 +112,23 @@
 (defn type->symbol [^Type t]
   (symbol (.getClassName t)))
 
-(defn super-type? [cenv t1 t2]
-  (when (and (not (primitive-type? t1))
-             (not (primitive-type? t2)))
-    (or (= t1 OBJECT)
-        (loop [t t2]
-          (if-let [{:keys [parent interfaces]} (get-in cenv [:classes (type->symbol t)])]
-            (cond (or (= parent t1) (contains? interfaces t1)) true
-                  (= parent OBJECT) false
-                  :else (recur parent))
-            (when-let [c (type->class t)]
-              (when-let [c1 (type->class t1)]
-                (contains? (supers c) c1))))))))
+(defn super? [cenv t1 t2]
+  (or (= t1 OBJECT)
+      (= t2 nil)
+      (and (array-type? t2)
+           (or (#{OBJECT (Type/getType Cloneable) (Type/getType java.io.Serializable)} t1)
+               (let [et (element-type t2)]
+                 (and (not (primitive-type? et))
+                      (array-type? t1)
+                      (super? cenv (element-type t1) et)))))
+      (loop [t t2]
+        (if-let [{:keys [parent interfaces]} (get-in cenv [:classes (type->symbol t)])]
+          (cond (or (= parent t1) (contains? interfaces t1)) true
+                (= parent OBJECT) false
+                :else (recur parent))
+          (when-let [c (type->class t)]
+            (when-let [c1 (type->class t1)]
+              (contains? (supers c) c1)))))))
 
 (defn ^Type object-type [obj]
   (cond (boolean? obj) BOOLEAN
@@ -191,12 +196,16 @@
     {:conversion :unboxing :from t :to t'}))
 
 (defn widening-reference-conversion [cenv from to]
-  (when (super-type? cenv to from)
+  (when (and (not (primitive-type? from))
+             (not (primitive-type? to))
+             (super? cenv to from))
     {:conversion :widening-reference :from from :to to}))
 
 (defn narrowing-reference-conversion [cenv from to]
   ;; FIXME: there are tons of rules to allow narrowing reference conversion
-  (when-not (super-type? cenv to from)
+  (when (and (not (primitive-type? from))
+             (not (primitive-type? to))
+             (not (super? cenv to from)))
     {:conversion :narrowing-reference :from from :to to}))
 
 (defn assignment-conversion [cenv from to]
