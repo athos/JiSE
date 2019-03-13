@@ -65,9 +65,8 @@
 (declare tag->type)
 
 (defn tag->array-type [cenv tag]
-  (let [elem-type (first tag)
-        t (tag->type cenv elem-type :default ::not-found)]
-    (when-not (= t ::not-found)
+  (let [elem-type (first tag)]
+    (when-let [t (tag->type cenv elem-type)]
       (array-type t))))
 
 (defn find-in-cenv [cenv tag]
@@ -76,19 +75,16 @@
     (when (contains? (:classes cenv) tag)
       (Type/getType (str \L (str/replace (str tag) \. \/) \;)))))
 
-(defn ^Type tag->type [cenv tag & {:keys [default]}]
-  (or (cond (symbol? tag) (or (primitive->type tag)
-                              (some-> (get primitive-array-types tag)
-                                      (#(tag->type cenv % :default default)))
-                              (find-in-cenv cenv tag)
-                              (when-let [c (resolve tag)]
-                                (when (class? c)
-                                  (Type/getType ^Class c))))
-            (class? tag) (Type/getType ^Class tag)
-            (vector? tag) (tag->array-type cenv tag)
-            :else nil)
-      default
-      OBJECT))
+(defn ^Type tag->type [cenv tag]
+  (cond (symbol? tag) (or (primitive->type tag)
+                          (some->> (get primitive-array-types tag) (tag->type cenv))
+                          (find-in-cenv cenv tag)
+                          (when-let [c (resolve tag)]
+                            (when (class? c)
+                              (Type/getType ^Class c))))
+        (class? tag) (Type/getType ^Class tag)
+        (vector? tag) (tag->array-type cenv tag)
+        :else nil))
 
 (def primitive-iname->class
   {"Z" Boolean/TYPE

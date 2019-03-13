@@ -20,7 +20,9 @@
     (:final modifiers) (conj :final)))
 
 (defn parse-modifiers [proto-cenv {:keys [tag] :as modifiers} & {:keys [default-type]}]
-  {:type (t/tag->type proto-cenv tag :default default-type)
+  {:type (if (nil? tag)
+           (or default-type t/OBJECT)
+           (t/tag->type proto-cenv tag))
    :access (access-flags modifiers)})
 
 (defn parse-field [proto-cenv [_ fname value :as field]]
