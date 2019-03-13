@@ -105,17 +105,25 @@
     (if (str/starts-with? iname "[")
       (Class/forName iname)
       (or (primitive-iname->class iname)
-          (Class/forName (.getClassName t))))))
-
-(defn super-type? [t1 t2]
-  (when (and (not (primitive-type? t1))
-             (not (primitive-type? t2)))
-    (let [c1 (type->class t1)
-          c2 (type->class t2)]
-      (contains? (supers c2) c1))))
+          (try
+            (Class/forName (.getClassName t))
+            (catch ClassNotFoundException _))))))
 
 (defn type->symbol [^Type t]
   (symbol (.getClassName t)))
+
+(defn super-type? [cenv t1 t2]
+  (when (and (not (primitive-type? t1))
+             (not (primitive-type? t2)))
+    (or (= t1 OBJECT)
+        (loop [t t2]
+          (if-let [{:keys [parent interfaces]} (get-in cenv [:classes (type->symbol t)])]
+            (cond (or (= parent t1) (contains? interfaces t1)) true
+                  (= parent OBJECT) false
+                  :else (recur parent))
+            (when-let [c (type->class t)]
+              (when-let [c1 (type->class t1)]
+                (contains? (supers c) c1))))))))
 
 (defn ^Type object-type [obj]
   (cond (boolean? obj) BOOLEAN
@@ -182,16 +190,16 @@
   (when-let [t' (unboxed-types t)]
     {:conversion :unboxing :from t :to t'}))
 
-(defn widening-reference-conversion [from to]
-  (when (super-type? to from)
+(defn widening-reference-conversion [cenv from to]
+  (when (super-type? cenv to from)
     {:conversion :widening-reference :from from :to to}))
 
-(defn narrowing-reference-conversion [from to]
+(defn narrowing-reference-conversion [cenv from to]
   ;; FIXME: there are tons of rules to allow narrowing reference conversion
-  (when-not (super-type? to from)
+  (when-not (super-type? cenv to from)
     {:conversion :narrowing-reference :from from :to to}))
 
-(defn assignment-conversion [from to]
+(defn assignment-conversion [cenv from to]
   (if (= from to)
     []
     (case [(primitive-type? from) (primitive-type? to)]
@@ -199,16 +207,16 @@
                       [c])
       [true  false] (let [box (boxing-conversion from)]
                       (or (and (= (:to box) to) [box])
-                          (when-let [widen (widening-reference-conversion (:to box) to)]
+                          (when-let [widen (widening-reference-conversion cenv (:to box) to)]
                             [box widen])))
       [false true ] (let [unbox (unboxing-conversion from)]
                       (or (and (= (:to unbox) to) [unbox])
                           (when-let [widen (widening-primitive-conversion (:to unbox) to)]
                             [unbox widen])))
-      [false false] (when-let [c (widening-reference-conversion from to)]
+      [false false] (when-let [c (widening-reference-conversion cenv from to)]
                       [c]))))
 
-(defn casting-conversion [from to]
+(defn casting-conversion [cenv from to]
   (if (= from to)
     []
     (case [(primitive-type? from) (primitive-type? to)]
@@ -217,7 +225,7 @@
                       [c])
       [true  false] (let [box (boxing-conversion from)]
                       (or (and (= (:to box) to) [box])
-                          (when-let [widen (widening-reference-conversion (:to box) to)]
+                          (when-let [widen (widening-reference-conversion cenv (:to box) to)]
                             [box widen])))
       [false true ] (if (= from OBJECT)
                       (let [box (boxing-conversion to)]
@@ -227,8 +235,8 @@
                         (or (and (= (:to unbox) to) [unbox])
                             (when-let [widen (widening-primitive-conversion (:to unbox) to)]
                               [unbox widen]))))
-      [false false] (when-let [c (or (widening-reference-conversion from to)
-                                     (narrowing-reference-conversion from to))]
+      [false false] (when-let [c (or (widening-reference-conversion cenv from to)
+                                     (narrowing-reference-conversion cenv from to))]
                       [c]))))
 
 (defn unary-numeric-promotion [t]

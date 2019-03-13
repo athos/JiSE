@@ -109,7 +109,7 @@
                     :else (parse-literal cenv expr))]
     (or (when (and (= (:context expr') :return)
                    (not= (:type expr') (:return-type cenv)))
-          (when-let [cs (seq (t/assignment-conversion (:type expr') (:return-type cenv)))]
+          (when-let [cs (seq (t/assignment-conversion cenv (:type expr') (:return-type cenv)))]
             (-> (apply-conversions cs (assoc expr' :context :expression))
                 (assoc :context :return))))
         expr')))
@@ -130,7 +130,7 @@
 (defn parse-binding [cenv lname init]
   (let [init' (some->> init (parse-expr (with-context cenv :expression)))
         lname' (parse-name cenv lname :default-type (:type init'))
-        init' (if-let [cs (and init' (t/casting-conversion (:type init') (:type lname')))]
+        init' (if-let [cs (and init' (t/casting-conversion cenv (:type init') (:type lname')))]
                 (apply-conversions cs init')
                 init')]
     (-> lname'
@@ -207,7 +207,7 @@
                   (throw (ex-info msg {:decl decl})))))
             (recur decls ret)))))))
 
-(defn init-cenv [proto-cenv cname fields ctors methods]
+(defn init-cenv [proto-cenv cname parent interfaces fields ctors methods]
   (let [fields' (into {} (map (fn [[_ name :as field]]
                                 (let [modifiers (modifiers-of field)
                                       {:keys [type access]} (parse-modifiers proto-cenv modifiers)]
@@ -225,8 +225,10 @@
                              (update m (str name) (fnil conj [])
                                      {:access access :return-type type
                                       :arg-types (mapv #(:type (parse-name proto-cenv %)) args)})))
-                         {} methods)]
-    (assoc-in proto-cenv [:classes cname] {:fields fields' :ctors ctors' :methods methods'})))
+                         {} methods)
+        class-entry  {:parent parent :interfaces (set interfaces)
+                      :fields fields' :ctors ctors' :methods methods'}]
+    (assoc-in proto-cenv [:classes cname] class-entry)))
 
 (defn parse-class [[_ cname & body :as class]]
   (let [alias (class-alias cname)
@@ -238,7 +240,7 @@
                  [(with-meta `(~'defm ~alias [])
                     (select-keys (modifiers-of class) [:public :protected :private]))]
                  ctors)
-        cenv (init-cenv proto-cenv cname fields ctors' methods)]
+        cenv (init-cenv proto-cenv cname parent interfaces fields ctors' methods)]
     {:name (str/replace (str cname) \. \/)
      :access (access-flags (modifiers-of class))
      :parent (or parent t/OBJECT)
@@ -366,7 +368,7 @@
 
 (defn parse-cast [cenv type x]
   (let [x' (parse-expr cenv x)
-        cs (t/casting-conversion (:type x') type)]
+        cs (t/casting-conversion cenv (:type x') type)]
     (apply-conversions cs x')))
 
 (defmethod parse-expr* 'byte [cenv [_ x]]
@@ -418,7 +420,7 @@
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' target)
         rhs (parse-expr cenv' expr)
-        cs (t/assignment-conversion (:type rhs) (:type lhs))
+        cs (t/assignment-conversion cenv (:type rhs) (:type lhs))
         rhs' (apply-conversions cs rhs)]
     (if (= (:op lhs) :field-access)
       (cond-> {:op :field-update
