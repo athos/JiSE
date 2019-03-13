@@ -102,12 +102,12 @@
 
 (defn ^Class type->class [^Type t]
   (let [iname (.getInternalName t)]
-    (if (str/starts-with? iname "[")
-      (Class/forName iname)
-      (or (primitive-iname->class iname)
-          (try
-            (Class/forName (.getClassName t))
-            (catch ClassNotFoundException _))))))
+    (try
+      (if (str/starts-with? iname "[")
+        (Class/forName (str/replace iname #"/" "."))
+        (or (primitive-iname->class iname)
+            (Class/forName (.getClassName t))))
+      (catch ClassNotFoundException _))))
 
 (defn type->symbol [^Type t]
   (symbol (.getClassName t)))
