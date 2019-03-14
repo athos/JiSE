@@ -82,10 +82,12 @@
       (inherit-context {:op :local :index index :type type} cenv)
       (throw (ex-info (str "unknown variable found: " sym) {:variable sym})))))
 
-(defn parse-ctor-invocation [cenv [_ & args]]
+(defn parse-ctor-invocation [cenv [op & args]]
   (let [cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
-        class (t/tag->type cenv (:class-name cenv))
+        class (if (= op 'this)
+                (t/tag->type cenv (:class-name cenv))
+                (get-in cenv [:classes (:class-name cenv) :parent]))
         ctor (t/find-ctor cenv class (map :type args'))]
     {:op :ctor-invocation
      :context :statement
@@ -95,7 +97,7 @@
      :args args'}))
 
 (defn parse-seq [cenv expr]
-  (let [expr' (if (= (first expr) 'this)
+  (let [expr' (if ('#{this super} (first expr))
                 (parse-ctor-invocation cenv expr)
                 (parse-expr* cenv expr))]
     (as-> expr' expr'
@@ -253,14 +255,15 @@
                     :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
         {:keys [parent interfaces body]} (parse-supers proto-cenv body)
         {:keys [ctors fields methods]} (parse-class-body cname body)
+        parent (or parent t/OBJECT)
         ctors' (if (empty? ctors)
-                 [(with-meta `(~'defm ~alias [])
+                 [(with-meta `(~'defm ~alias [] (~'super))
                     (select-keys (modifiers-of class) [:public :protected :private]))]
                  ctors)
         cenv (init-cenv proto-cenv cname parent interfaces fields ctors' methods)]
     {:name (str/replace (str cname) \. \/)
      :access (access-flags (modifiers-of class))
-     :parent (or parent t/OBJECT)
+     :parent parent
      :interfaces interfaces
      :ctors (mapv (partial parse-method cenv true) ctors')
      :fields (mapv (partial parse-field cenv) fields)

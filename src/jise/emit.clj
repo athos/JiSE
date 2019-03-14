@@ -52,7 +52,7 @@
     (emit-line mv line)
     (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
 
-(defn emit-method [^ClassWriter cw ctor? {:keys [name access return-type args body]}]
+(defn emit-method [^ClassWriter cw parent ctor? {:keys [name access return-type args body]}]
   (let [desc (->> (map :type args)
                   (into-array Type)
                   (Type/getMethodDescriptor return-type))
@@ -61,9 +61,10 @@
     (doseq [arg args]
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)
+    ;; FIXME: it might be better to inject implicit ctor invocation in parsing phase
     (when (and ctor? (not= (get-in body [:exprs 0 :op]) :ctor-invocation))
       (.visitVarInsn mv Opcodes/ALOAD 0)
-      (emit-ctor-invocation mv {:class t/OBJECT :arg-types [] :args []}))
+      (emit-ctor-invocation mv {:class parent :arg-types [] :args []}))
     (emit-expr mv body)
     (when (= return-type t/VOID)
       (emit-return mv t/VOID))
@@ -81,9 +82,9 @@
     (doseq [field fields]
       (emit-field cw field))
     (doseq [ctor ctors]
-      (emit-method cw true ctor))
+      (emit-method cw parent true ctor))
     (doseq [method methods]
-      (emit-method cw false method))
+      (emit-method cw parent false method))
     (.visitEnd cw)
     (.toByteArray cw)))
 
