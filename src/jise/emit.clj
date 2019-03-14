@@ -43,6 +43,15 @@
   (when (= (:context expr) :return)
     (emit-return mv (:type expr))))
 
+(defn emit-ctor-invocation [^MethodVisitor mv {:keys [class arg-types args line]}]
+  (let [method-type (Type/getMethodType t/VOID (into-array Type arg-types))
+        iname (.getInternalName ^Type class)
+        desc (.getDescriptor ^Type method-type)]
+    (doseq [arg args]
+      (emit-expr mv arg))
+    (emit-line mv line)
+    (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
+
 (defn emit-method [^ClassWriter cw ctor? {:keys [name access return-type args body]}]
   (let [desc (->> (map :type args)
                   (into-array Type)
@@ -52,12 +61,9 @@
     (doseq [arg args]
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)
-    (when ctor?
+    (when (and ctor? (not= (get-in body [:exprs 0 :op]) :ctor-invocation))
       (.visitVarInsn mv Opcodes/ALOAD 0)
-      (.visitMethodInsn mv Opcodes/INVOKESPECIAL
-                        (.getInternalName ^Type t/OBJECT)
-                        "<init>"
-                        (Type/getMethodDescriptor t/VOID (into-array Type []))))
+      (emit-ctor-invocation mv {:class t/OBJECT :arg-types [] :args []}))
     (emit-expr mv body)
     (when (= return-type t/VOID)
       (emit-return mv t/VOID))
@@ -362,16 +368,10 @@
                        (:break-label *env*))]
     (.visitJumpInsn mv Opcodes/GOTO label)))
 
-(defmethod emit-expr* :new [^MethodVisitor mv {:keys [type access arg-types args context line]}]
-  (let [method-type (Type/getMethodType t/VOID (into-array Type arg-types))
-        iname (.getInternalName ^Type type)
-        desc (.getDescriptor ^Type method-type)]
-    (emit-line mv line)
-    (.visitTypeInsn mv Opcodes/NEW iname)
-    (dup-unless-statement mv context type)
-    (doseq [arg args]
-      (emit-expr mv arg))
-    (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
+(defmethod emit-expr* :new [^MethodVisitor mv {:keys [type context] :as expr}]
+  (.visitTypeInsn mv Opcodes/NEW (.getInternalName ^Type type))
+  (dup-unless-statement mv context type)
+  (emit-ctor-invocation mv (assoc expr :class type)))
 
 (defmethod emit-expr* :field-access
   [^MethodVisitor mv {:keys [type name class target context line]}]
@@ -400,6 +400,10 @@
         desc (.getDescriptor ^Type type)]
     (emit-line mv line)
     (.visitFieldInsn mv opcode owner name desc)))
+
+(defmethod emit-expr* :ctor-invocation [^MethodVisitor mv {:keys [class] :as expr}]
+  (emit-load mv class 0)
+  (emit-ctor-invocation mv expr))
 
 (defmethod emit-expr* :method-invocation
   [^MethodVisitor mv {:keys [interface? type name access class arg-types target args context line]}]

@@ -82,14 +82,29 @@
       (inherit-context {:op :local :index index :type type} cenv)
       (throw (ex-info (str "unknown variable found: " sym) {:variable sym})))))
 
+(defn parse-ctor-invocation [cenv [_ & args]]
+  (let [cenv' (with-context cenv :expression)
+        args' (map (partial parse-expr cenv') args)
+        class (t/tag->type cenv (:class-name cenv))
+        ctor (t/find-ctor cenv class (map :type args'))]
+    {:op :ctor-invocation
+     :context :statement
+     :class class
+     :access (:access ctor)
+     :arg-types (:arg-types ctor)
+     :args args'}))
+
 (defn parse-seq [cenv expr]
-  (as-> (parse-expr* cenv expr) expr'
-    (if-let [line (:line (meta expr))]
-      (assoc expr' :line line)
-      expr')
-    (if-let [label (:label (meta expr))]
-      {:op :labeled :label label :target expr'}
-      expr')))
+  (let [expr' (if (= (first expr) 'this)
+                (parse-ctor-invocation cenv expr)
+                (parse-expr* cenv expr))]
+    (as-> expr' expr'
+      (if-let [line (:line (meta expr))]
+        (assoc expr' :line line)
+        expr')
+      (if-let [label (:label (meta expr))]
+        {:op :labeled :label label :target expr'}
+        expr'))))
 
 (defn parse-literal [cenv v]
   (if (nil? v)
