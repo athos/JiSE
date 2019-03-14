@@ -73,7 +73,7 @@
       (assert false "not supported yet"))))
 
 (defn find-lname [cenv sym]
-  ((:lenv cenv) (name sym)))
+  (get (:lenv cenv) (name sym)))
 
 (defn parse-symbol [cenv sym]
   (if-let [cname (namespace sym)]
