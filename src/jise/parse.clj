@@ -104,7 +104,11 @@
 (defn parse-seq [cenv expr]
   (let [expr' (if ('#{this super} (first expr))
                 (parse-ctor-invocation cenv expr)
-                (parse-expr* cenv expr))]
+                (and (symbol? (first expr))
+                     (or (when-let [lname (find-lname cenv (first expr))]
+                           (when (t/array-type? (:type lname))
+                             (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))))
+                         (parse-expr* cenv expr))))]
     (as-> expr' expr'
       (if-let [line (:line (meta expr))]
         (assoc expr' :line line)
@@ -447,7 +451,8 @@
         rhs (parse-expr cenv' expr)
         cs (t/assignment-conversion cenv (:type rhs) (:type lhs))
         rhs' (apply-conversions cs rhs)]
-    (if (= (:op lhs) :field-access)
+    (case (:op lhs)
+      :field-access
       (cond-> {:op :field-update
                :context (context-of cenv)
                :type (:type lhs)
@@ -455,6 +460,15 @@
                :name (:name lhs)
                :rhs rhs'}
         (:target lhs) (assoc :target (:target lhs)))
+
+      :array-access
+      {:op :array-update
+       :context (context-of cenv)
+       :type (:type lhs)
+       :array (:array lhs)
+       :index (:index lhs)
+       :expr rhs'}
+
       {:op :assignment
        :context (context-of cenv)
        :type (:type lhs)
