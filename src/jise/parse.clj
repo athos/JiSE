@@ -76,11 +76,16 @@
   (get (:lenv cenv) (name sym)))
 
 (defn parse-symbol [cenv sym]
-  (if-let [cname (namespace sym)]
-    (parse-expr cenv (with-meta `(. ~(symbol cname) ~(symbol (str \- (name sym)))) (meta sym)))
-    (if-let [{:keys [index type]} (find-lname cenv sym)]
-      (inherit-context {:op :local :index index :type type} cenv)
-      (throw (ex-info (str "unknown variable found: " sym) {:variable sym})))))
+  (letfn [(parse-as-field [cenv target]
+            (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))]
+    (if-let [cname (namespace sym)]
+      (parse-as-field cenv (symbol cname))
+      (if-let [{:keys [index type]} (find-lname cenv sym)]
+        (inherit-context {:op :local :index index :type type} cenv)
+        (if-let [f (get-in cenv [:classes (:class-name cenv) :fields (name sym)])]
+          (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
+            (parse-as-field cenv target))
+          (throw (ex-info (str "unknown variable found: " sym) {:variable sym})))))))
 
 (defn parse-ctor-invocation [cenv [op & args]]
   (let [cenv' (with-context cenv :expression)
