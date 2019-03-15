@@ -428,8 +428,7 @@
 (defmethod parse-expr* 'str [cenv [_ & args :as expr]]
   (if (every? string? args)
     (parse-expr cenv (apply str args))
-    (let [t-sbuilder (t/tag->type cenv 'StringBuilder)
-          form `(-> (new StringBuilder)
+    (let [form `(-> (new StringBuilder)
                     ~@(map (fn [arg] `(.append ~arg)) args)
                     .toString)]
       (parse-expr cenv (with-meta form (meta expr))))))
