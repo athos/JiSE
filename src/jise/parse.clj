@@ -425,6 +425,15 @@
   (let [t' (t/tag->type cenv t)]
     (parse-cast cenv t' x)))
 
+(defmethod parse-expr* 'str [cenv [_ & args :as expr]]
+  (if (every? string? args)
+    (parse-expr cenv (apply str args))
+    (let [t-sbuilder (t/tag->type cenv 'StringBuilder)
+          form `(-> (new StringBuilder)
+                    ~@(map (fn [arg] `(.append ~arg)) args)
+                    .toString)]
+      (parse-expr cenv (with-meta form (meta expr))))))
+
 (defmethod parse-expr* 'instance? [cenv [_ c x]]
   {:op :instance?
    :context (context-of cenv)
