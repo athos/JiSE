@@ -608,21 +608,34 @@
                    :args args'}
             target' (assoc :target target')))))))
 
-(defmethod parse-expr* 'aget [cenv [_ arr index]]
-  (let [cenv' (with-context cenv :expression)
-        arr (parse-expr cenv' arr)]
-    {:op :array-access
-     :context (context-of cenv)
-     :type (t/element-type (:type arr))
-     :array arr
-     :index (parse-expr cenv' index)}))
+(defn fold-aget [[_ arr index & indices :as expr]]
+  (if (empty? indices)
+    expr
+    (recur (with-meta `(~'aget (~'aget ~arr ~index) ~@indices) (meta expr)))))
 
-(defmethod parse-expr* 'aset [cenv [_ arr index expr]]
-  (let [cenv' (with-context cenv :expression)
-        arr (parse-expr cenv' arr)]
-    {:op :array-update
-     :context (context-of cenv)
-     :type (t/element-type (:type arr))
-     :array arr
-     :index (parse-expr cenv' index)
-     :expr (parse-expr cenv' expr)}))
+(defmethod parse-expr* 'aget [cenv [_ arr index & indices :as expr]]
+  (if indices
+    (parse-expr cenv (fold-aget expr))
+    (let [cenv' (with-context cenv :expression)
+          arr (parse-expr cenv' arr)]
+      {:op :array-access
+       :context (context-of cenv)
+       :type (t/element-type (:type arr))
+       :array arr
+       :index (parse-expr cenv' index)})))
+
+(defmethod parse-expr* 'aset [cenv [_ arr index & more :as expr]]
+  (if (next more)
+    (let [indices (cons index (butlast more))
+          form (with-meta
+                 `(~'aset (~'aget ~arr ~@(butlast indices)) ~(last indices) ~(last more))
+                 (meta expr))]
+      (parse-expr cenv form))
+    (let [cenv' (with-context cenv :expression)
+          arr (parse-expr cenv' arr)]
+      {:op :array-update
+       :context (context-of cenv)
+       :type (t/element-type (:type arr))
+       :array arr
+       :index (parse-expr cenv' index)
+       :expr (parse-expr cenv' (first more))})))
