@@ -645,12 +645,14 @@
   (if indices
     (parse-expr cenv (fold-aget expr))
     (let [cenv' (with-context cenv :expression)
-          arr (parse-expr cenv' arr)]
+          arr (parse-expr cenv' arr)
+          index' (as-> (parse-expr cenv' index) index'
+                   (apply-conversions (t/unary-numeric-promotion (:type index')) index'))]
       {:op :array-access
        :context (context-of cenv)
        :type (t/element-type (:type arr))
        :array arr
-       :index (parse-expr cenv' index)})))
+       :index index'})))
 
 (defmethod parse-expr* 'aset [cenv [_ arr index & more :as expr]]
   (if (next more)
@@ -660,10 +662,12 @@
                  (meta expr))]
       (parse-expr cenv form))
     (let [cenv' (with-context cenv :expression)
-          arr (parse-expr cenv' arr)]
+          arr (parse-expr cenv' arr)
+          index' (as-> (parse-expr cenv' index) index'
+                   (apply-conversions (t/unary-numeric-promotion (:type index')) index'))]
       {:op :array-update
        :context (context-of cenv)
        :type (t/element-type (:type arr))
        :array arr
-       :index (parse-expr cenv' index)
+       :index index'
        :expr (parse-expr cenv' (first more))})))
