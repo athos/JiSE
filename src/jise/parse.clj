@@ -113,9 +113,11 @@
       (if-let [line (:line (meta expr))]
         (assoc expr' :line line)
         expr')
-      (if-let [label (:label (meta expr))]
-        {:op :labeled :label label :target expr'}
-        expr'))))
+      (or (when-let [label (:label (meta expr))]
+            (when (or (not= (:op expr') :labeled)
+                      (not= (:label expr') label))
+              {:op :labeled :label label :target expr'}))
+          expr'))))
 
 (defn parse-literal [cenv v]
   (if (nil? v)
