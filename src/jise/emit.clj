@@ -369,6 +369,10 @@
                        (:break-label *env*))]
     (.visitJumpInsn mv Opcodes/GOTO label)))
 
+(defmethod emit-expr* :throw [^MethodVisitor mv {:keys [exception]}]
+  (emit-expr mv exception)
+  (.visitInsn mv Opcodes/ATHROW))
+
 (defmethod emit-expr* :new [^MethodVisitor mv {:keys [type context] :as expr}]
   (.visitTypeInsn mv Opcodes/NEW (.getInternalName ^Type type))
   (dup-unless-statement mv context type)

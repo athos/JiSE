@@ -576,6 +576,10 @@
   (cond-> {:op :break}
     label (assoc :label label)))
 
+(defmethod parse-expr* 'throw [cenv [_ ex]]
+  {:op :throw
+   :exception (parse-expr (with-context cenv :expression) ex)})
+
 (defmethod parse-expr* 'new [cenv [_ type & args]]
   (let [type' (t/tag->type cenv type)]
     (if (t/array-type? type')
