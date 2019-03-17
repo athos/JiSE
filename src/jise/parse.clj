@@ -568,6 +568,29 @@
                 :body (parse-exprs (with-context cenv' :statement) body)}
          label (assoc :label label))})))
 
+(defn seq-prefixed-with? [prefix x]
+  (and (seq? x) (= (first x) prefix)))
+
+(defn parse-catch-clause [cenv [_ class lname & body]]
+  (let [class' (t/tag->type cenv class)
+        [cenv' [b]] (parse-bindings cenv [(with-meta lname {:tag class}) nil])
+        body' (parse-exprs cenv' body)]
+    {:class class'
+     :type (:type body')
+     :index (:index b)
+     :body body'}))
+
+(defmethod parse-expr* 'try [cenv [_ & body]]
+  (let [[body clauses] (split-with #(not (seq-prefixed-with? 'catch %)) body)
+        [catch-clauses finally-clauses] (split-with #(not (seq-prefixed-with? 'finally %)) clauses)
+        body' (parse-exprs cenv body)]
+    {:op :try
+     :context (context-of cenv)
+     :type (:type body')
+     :body body'
+     :catch-clauses (mapv (partial parse-catch-clause cenv) catch-clauses)
+     :finally-clause (parse-exprs (with-context cenv :statement) (first finally-clauses))}))
+
 (defmethod parse-expr* 'continue [_ [_ label]]
   (cond-> {:op :continue}
     label (assoc :label label)))
