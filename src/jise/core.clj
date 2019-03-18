@@ -14,13 +14,16 @@
         symbol
         (with-meta (meta cname)))))
 
+(defn compile-to-bytecode [form-meta qname body]
+  (-> `(defclass ~qname ~@body)
+      (with-meta form-meta)
+      parse/parse-class
+      emit/emit-class))
+
 (defn compile-class [form-meta cname body]
   (let [qname (with-meta (qualify-cname cname) (meta cname))
         qname' (str qname)
-        bytecode (-> `(defclass ~qname ~@body)
-                     (with-meta form-meta)
-                     parse/parse-class
-                     emit/emit-class)]
+        bytecode (compile-to-bytecode form-meta qname body)]
     (when *compile-files*
       (Compiler/writeClassFile (str/replace qname' \. \/) bytecode))
     (.defineClass ^DynamicClassLoader @Compiler/LOADER qname' bytecode nil)
@@ -42,8 +45,10 @@
   (require '[clojure.java.io :as io])
   (import 'java.io.DataOutputStream)
 
-  (defn gen [class filename]
-    (let [bytecode (emit/emit-class (parse/parse-class class))]
+  (defn gen [[_ cname & body :as class] filename]
+    (let [qname (with-meta (qualify-cname cname) (meta cname))
+          qname' (str qname)
+          bytecode (compile-to-bytecode (meta class) qname body)]
       (with-open [out (DataOutputStream. (io/output-stream filename))]
         (.write out bytecode)
         (.flush out))))
