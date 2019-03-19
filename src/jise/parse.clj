@@ -427,6 +427,10 @@
   (let [t' (t/tag->type cenv t)]
     (parse-cast cenv t' x)))
 
+(defmethod parse-expr* '= [cenv [_ x y :as expr]]
+  ;; FIXME: Remove explicit cast here once we could invoke "loosely" matching method
+  (parse-expr cenv (with-meta `(.equals ~x (~'cast Object ~y)) (meta expr))))
+
 (defmethod parse-expr* 'str [cenv [_ & args :as expr]]
   (if (every? string? args)
     (parse-expr cenv (apply str args))
