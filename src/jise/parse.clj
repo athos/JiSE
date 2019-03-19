@@ -530,20 +530,34 @@
             else' (assoc :else else')
             (not statement?) (assoc :type (:type then'))))))
 
-(defn parse-case-clause [cenv [k expr]]
-  (let [ks (if (seq? k) (set k) #{k})]
-    {:keys ks :body (parse-expr cenv expr)}))
+(defn parse-case-clause [cenv sym [k expr]]
+  (let [ks (if (seq? k) (set k) [k])
+        str? (string? (first ks))
+        ks' (cond->> ks str? (mapv #(.hashCode ^String %)))
+        guard (when str?
+                (parse-expr (with-context cenv :conditional)
+                            `(~'= ~sym ~(first ks))))
+        expr' (parse-expr cenv expr)]
+    (cond-> {:keys ks' :type (:type expr') :body expr'}
+      guard (assoc :guard guard))))
 
-(defmethod parse-expr* 'case [cenv [_ expr & clauses]]
-  (let [expr' (parse-expr (with-context cenv :expression) expr)
-        clauses' (->> (partition 2 clauses)
-                      (mapv (partial parse-case-clause cenv)))
-        default-clause (when (odd? (count clauses)) (last clauses))]
-    (cond-> {:op :switch
-             :test expr'
-             :clauses clauses'}
-      default-clause
-      (assoc :default (parse-expr cenv default-clause)))))
+(defmethod parse-expr* 'case [cenv [_ test & clauses :as expr]]
+  (if-let [l (find-lname cenv test)]
+    (let [cenv' (with-context cenv :expression)]
+      {:op :switch
+       :test (if (= (:type l) t/STRING)
+               (parse-expr cenv' `(.hashCode ~test))
+               (parse-expr cenv' test))
+       :clauses (->> (partition 2 clauses)
+                     (mapv (partial parse-case-clause cenv test)))
+       :default (when (odd? (count clauses))
+                  (parse-expr cenv (last clauses)))})
+    (let [h (gensym 'h)
+          form `(let* [~h ~test]
+                  ~(with-meta
+                     `(~'case ~h ~@clauses)
+                     (meta expr)))]
+      (parse-expr cenv form))))
 
 (defn extract-label [expr]
   (:label (meta expr)))

@@ -324,15 +324,19 @@
   (let [end-label (Label.)
         default-label (if default (Label.) end-label)
         clauses' (map #(assoc % :label (Label.)) clauses)
-        key->label (for [{:keys [keys label]} clauses'
-                         key keys]
-                     [key label])
+        key->label (->> (for [{:keys [keys label]} clauses'
+                              key keys]
+                          [key label])
+                        (sort-by first))
         keys (int-array (map first key->label))
-        labels (into-array Label (map second key->label))]
+        labels (into-array Label (map second key->label))
+        string? (= (:type test) t/STRING)]
     (emit-expr emitter test)
     (.visitLookupSwitchInsn mv default-label keys labels)
-    (doseq [{:keys [label body]} clauses']
+    (doseq [{:keys [label guard body]} clauses']
       (.visitLabel mv label)
+      (when guard
+        (emit-conditional emitter guard default-label))
       (emit-expr emitter body)
       (.visitJumpInsn mv Opcodes/GOTO end-label))
     (when default
