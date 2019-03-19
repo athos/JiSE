@@ -526,6 +526,21 @@
             else' (assoc :else else')
             (not statement?) (assoc :type (:type then'))))))
 
+(defn parse-case-clause [cenv [k expr]]
+  (let [ks (if (seq? k) (set k) #{k})]
+    {:keys ks :body (parse-expr cenv expr)}))
+
+(defmethod parse-expr* 'case [cenv [_ expr & clauses]]
+  (let [expr' (parse-expr (with-context cenv :expression) expr)
+        clauses' (->> (partition 2 clauses)
+                      (mapv (partial parse-case-clause cenv)))
+        default-clause (when (odd? (count clauses)) (last clauses))]
+    (cond-> {:op :switch
+             :test expr'
+             :clauses clauses'}
+      default-clause
+      (assoc :default (parse-expr cenv default-clause)))))
+
 (defn extract-label [expr]
   (:label (meta expr)))
 
