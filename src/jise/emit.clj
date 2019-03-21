@@ -329,8 +329,7 @@
                           [key label])
                         (sort-by first))
         keys (int-array (map first key->label))
-        labels (into-array Label (map second key->label))
-        string? (= (:type test) t/STRING)]
+        labels (into-array Label (map second key->label))]
     (emit-expr emitter test)
     (.visitLookupSwitchInsn mv default-label keys labels)
     (doseq [{:keys [label guard body]} clauses']
