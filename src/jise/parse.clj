@@ -376,7 +376,7 @@
   (if (= (:context cenv) :conditional)
     (let [cenv' (with-context cenv :expression)]
       (-> (parse-binary-op cenv' expr op)
-          (assoc :type 'boolean)))
+          (assoc :type t/BOOLEAN)))
     (parse-expr cenv `(if ~expr true false))))
 
 (defmethod parse-expr* '== [cenv expr]
