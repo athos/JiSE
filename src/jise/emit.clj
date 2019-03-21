@@ -302,6 +302,11 @@
                        :eq Opcodes/IF_ACMPNE
                        :ne Opcodes/IF_ACMPEQ)]
             (.visitJumpInsn mv opcode label))))
+      :and
+      (loop [[expr & exprs] (:exprs cond)]
+        (when expr
+          (emit-conditional emitter expr label)
+          (recur exprs)))
       (:method-invocation :instance?)
       (do (emit-expr emitter cond)
           (.visitJumpInsn mv Opcodes/IFEQ label))

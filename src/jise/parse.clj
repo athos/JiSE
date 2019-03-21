@@ -397,6 +397,14 @@
 (defmethod parse-expr* '>= [cenv expr]
   (parse-comparison cenv expr :ge))
 
+(defmethod parse-expr* 'and [cenv [_ & exprs :as expr]]
+  (if (= (:context cenv) :conditional)
+    {:op :and
+     :context (context-of cenv)
+     :type t/BOOLEAN
+     :exprs (mapv (partial parse-expr cenv) exprs)}
+    (parse-expr cenv `(if ~expr true false))))
+
 (defn parse-cast [cenv type x]
   (let [x' (parse-expr cenv x)
         cs (t/casting-conversion cenv (:type x') type)]
