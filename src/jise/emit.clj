@@ -238,7 +238,8 @@
 
 (defmethod emit-expr* :narrowing-reference [{:keys [^MethodVisitor mv] :as emitter} {:keys [type src context]}]
   (emit-expr emitter src)
-  (.visitTypeInsn mv Opcodes/CHECKCAST (.getInternalName ^Type type)))
+  (.visitTypeInsn mv Opcodes/CHECKCAST (.getInternalName ^Type type))
+  (drop-if-statement emitter context))
 
 (defmethod emit-expr* :instance? [{:keys [^MethodVisitor mv] :as emitter} {:keys [class operand context line]}]
   (emit-expr emitter operand)
