@@ -343,7 +343,8 @@
     (emit-conditional emitter test else-label)
     (emit-expr emitter then)
     (when else
-      (.visitJumpInsn mv Opcodes/GOTO end-label)
+      (when-not (:tail (:context then))
+        (.visitJumpInsn mv Opcodes/GOTO end-label))
       (.visitLabel mv else-label)
       (emit-expr emitter else))
     (.visitLabel mv end-label)))
@@ -365,7 +366,8 @@
       (when guard
         (emit-conditional emitter guard default-label))
       (emit-expr emitter body)
-      (.visitJumpInsn mv Opcodes/GOTO end-label))
+      (when-not (:tail (:context body))
+        (.visitJumpInsn mv Opcodes/GOTO end-label)))
     (when default
       (.visitLabel mv default-label)
       (emit-expr emitter default))

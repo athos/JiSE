@@ -564,15 +564,11 @@
         :else
         (let [test' (-> (parse-expr (with-context cenv :conditional) test)
                         unbox-if-possible)
-              statement? (:statement (context-of cenv))
-              cenv' (cond-> cenv (not statement?) (with-context :expression))
-              then' (parse-expr cenv' then)
-              else' (some->> else (parse-expr cenv'))]
-          (-> {:op :if, :test test', :then then'}
+              then' (parse-expr cenv then)
+              else' (some->> else (parse-expr cenv))]
+          (-> {:op :if, :type (:type then'), :test test', :then then'}
               (inherit-context cenv :return? false)
-              (cond->
-                else' (assoc :else else')
-                (not statement?) (assoc :type (:type then')))))))
+              (cond-> else' (assoc :else else'))))))
 
 (defn parse-case-clause [cenv sym [k expr]]
   (let [ks (if (seq? k) (set k) [k])
