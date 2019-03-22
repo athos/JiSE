@@ -409,6 +409,27 @@
     (when-not (:statement context)
       (.visitInsn mv Opcodes/ACONST_NULL))))
 
+(defmethod emit-expr* :try [{:keys [^MethodVisitor mv] :as emitter} {:keys [type body catch-clauses finally-clause]}]
+  (let [start-label (Label.)
+        handler-label (Label.)
+        end-label (Label.)
+        catch-clauses' (map #(assoc % :label (Label.)) catch-clauses)]
+    (doseq [{:keys [class label]} catch-clauses'
+            :let [iname (.getInternalName ^Type class)]]
+      (.visitTryCatchBlock mv start-label handler-label label iname))
+    (.visitLabel mv start-label)
+    (emit-expr emitter body)
+    (when-not (:tail (:context body))
+      (.visitJumpInsn mv Opcodes/GOTO end-label))
+    (.visitLabel mv handler-label)
+    (doseq [{:keys [label type index body]} catch-clauses']
+      (.visitLabel mv label)
+      (emit-store emitter {:type type :index index})
+      (emit-expr emitter body)
+      (when-not (:tail (:context body))
+        (.visitJumpInsn mv Opcodes/GOTO end-label)))
+    (.visitLabel mv end-label)))
+
 (defmethod emit-expr* :continue [{:keys [^MethodVisitor mv] :as emitter} {:keys [label]}]
   (let [^Label label (if label
                        (get-in emitter [:labels label :continue-label])

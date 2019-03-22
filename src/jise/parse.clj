@@ -663,7 +663,8 @@
          :type (:type body')
          :body body'
          :catch-clauses (mapv (partial parse-catch-clause cenv) catch-clauses)
-         :finally-clause (parse-exprs (with-context cenv :statement) (first finally-clauses))}
+         :finally-clause (some->> (first finally-clauses)
+                                  (parse-exprs (with-context cenv :statement)))}
         (inherit-context cenv :return? false))))
 
 (defmethod parse-expr* 'continue [cenv [_ label]]
