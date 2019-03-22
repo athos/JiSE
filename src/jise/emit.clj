@@ -285,28 +285,51 @@
     (emit-expr emitter' target)
     (.visitLabel mv break-label)))
 
+(defn emit-comparison [{:keys [^MethodVisitor mv] :as emitter} op {:keys [lhs rhs]} label]
+  (let [t (:type lhs)]
+    (emit-expr emitter lhs)
+    (emit-expr emitter rhs)
+    (if-let [[opcode1 opcode2] (get-in insns/comparison-insns [t op])]
+      (if opcode2
+        (do (.visitInsn mv opcode1)
+            (.visitJumpInsn mv opcode2 label))
+        (.visitJumpInsn mv opcode1 label))
+      (let [opcode (case op
+                     :eq Opcodes/IF_ACMPNE
+                     :ne Opcodes/IF_ACMPEQ)]
+        (.visitJumpInsn mv opcode label)))))
+
+(declare emit-conditional)
+
+(defn emit-and [emitter {:keys [exprs]} label]
+  (run! #(emit-conditional emitter % label) exprs))
+
+(defn emit-or [{:keys [^MethodVisitor mv] :as emitter} {:keys [exprs expr]} else-label]
+  (let [then-label (Label.)]
+    (run! #(emit-conditional emitter % then-label) exprs)
+    (emit-conditional emitter expr else-label)
+    (.visitLabel mv then-label)))
+
+(def negated-comparison-ops
+  {:eq :ne, :ne :eq, :lt :ge, :gt :le, :le :gt, :ge :lt})
+
+(defn emit-not [{:keys [^MethodVisitor mv] :as emitter} {:keys [expr]} label]
+  (if-let [negated (negated-comparison-ops (:op expr))]
+    (emit-comparison emitter negated expr label)
+    (do (emit-expr emitter expr)
+        (.visitJumpInsn mv Opcodes/IFNE label))))
+
 (defn emit-conditional [{:keys [^MethodVisitor mv] :as emitter} cond label]
   (let [op (:op cond)]
     (case op
       (:eq :ne :lt :gt :le :ge)
-      (let [{:keys [lhs rhs]} cond
-            t (:type lhs)]
-        (emit-expr emitter lhs)
-        (emit-expr emitter rhs)
-        (if-let [[opcode1 opcode2] (get-in insns/comparison-insns [t op])]
-          (if opcode2
-            (do (.visitInsn mv opcode1)
-                (.visitJumpInsn mv opcode2 label))
-            (.visitJumpInsn mv opcode1 label))
-          (let [opcode (case op
-                       :eq Opcodes/IF_ACMPNE
-                       :ne Opcodes/IF_ACMPEQ)]
-            (.visitJumpInsn mv opcode label))))
+      (emit-comparison emitter op cond label)
       :and
-      (loop [[expr & exprs] (:exprs cond)]
-        (when expr
-          (emit-conditional emitter expr label)
-          (recur exprs)))
+      (emit-and emitter cond label)
+      :or
+      (emit-or emitter cond label)
+      :not
+      (emit-not emitter cond label)
       (:method-invocation :instance?)
       (do (emit-expr emitter cond)
           (.visitJumpInsn mv Opcodes/IFEQ label))

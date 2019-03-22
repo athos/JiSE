@@ -407,6 +407,36 @@
        :exprs (mapv (partial parse-expr cenv) exprs)})
     (parse-expr cenv `(if ~expr true false))))
 
+(defn negate-expr [{:keys [op] :as expr}]
+  (case op
+    :not (:expr expr)
+    :and {:op :or
+          :type t/BOOLEAN
+          :exprs (butlast (:exprs expr))
+          :expr (negate-expr (last (:exprs expr)))}
+    :or {:op :and
+         :type t/BOOLEAN
+         :exprs (conj (mapv negate-expr (:exprs expr)) (:expr expr))}
+    {:op :not
+     :type t/BOOLEAN
+     :expr expr}))
+
+(defmethod parse-expr* 'or [cenv [_ & exprs :as expr]]
+  (if (= (:context cenv) :conditional)
+    (case (count exprs)
+      0 (parse-expr cenv false)
+      1 (parse-expr cenv (first exprs))
+      {:op :or
+       :type t/BOOLEAN
+       :exprs (mapv #(negate-expr (parse-expr cenv %)) (butlast exprs))
+       :expr (parse-expr cenv (last exprs))})
+    (parse-expr cenv `(if ~expr true false))))
+
+(defmethod parse-expr* 'not [cenv [_ operand :as expr]]
+  (if (= (:context cenv) :conditional)
+    (negate-expr (parse-expr cenv operand))
+    (parse-expr cenv `(if ~expr true false))))
+
 (defn parse-cast [cenv type x]
   (let [x' (parse-expr cenv x)
         cs (t/casting-conversion cenv (:type x') type)]
