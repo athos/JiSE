@@ -34,22 +34,24 @@
       (not (nil? value)) (assoc :value value))))
 
 (defn context-of [{:keys [context]}]
-  (if (= context :conditional)
-    :expression
+  (if (:conditional context)
+    (-> context (conj :conditional) (disj :expression))
     context))
 
 (defn with-context [x context]
-  (assoc x :context context))
+  (assoc x :context #{context}))
 
-(defn inherit-context [x y]
-  (with-context x (context-of y)))
+(defn inherit-context [x y & {:keys [return?]}]
+  (assoc x :context
+         (cond-> (context-of y)
+           (not (nil? return?)) ((if return? conj disj) :return))))
 
 (defn apply-conversions [conversions src]
   (reduce (fn [src {:keys [conversion to]}]
-            {:op conversion
-             :context (context-of src)
-             :type to
-             :src (assoc src :context :expression)})
+            (-> {:op conversion
+                 :type to
+                 :src (with-context src :expression)}
+                (inherit-context src)))
           src
           conversions))
 
@@ -94,12 +96,12 @@
                 (t/tag->type cenv (:class-name cenv))
                 (get-in cenv [:classes (:class-name cenv) :parent]))
         ctor (t/find-ctor cenv class (map :type args'))]
-    {:op :ctor-invocation
-     :context :statement
-     :class class
-     :access (:access ctor)
-     :arg-types (:arg-types ctor)
-     :args args'}))
+    (-> {:op :ctor-invocation
+         :class class
+         :access (:access ctor)
+         :arg-types (:arg-types ctor)
+         :args args'}
+        (inherit-context cenv))))
 
 (defn parse-seq [cenv expr]
   (let [expr' (if ('#{this super} (first expr))
@@ -137,19 +139,18 @@
   (let [expr' (cond (symbol? expr) (parse-symbol cenv expr)
                     (seq? expr) (parse-seq cenv expr)
                     :else (parse-literal cenv expr))]
-    (or (when (and (= (:context expr') :return)
-                   (not= (:type expr') (:return-type cenv)))
+    (or (when (and (:return (:context expr')) (not= (:type expr') (:return-type cenv)))
           (when-let [cs (seq (t/assignment-conversion cenv (:type expr') (:return-type cenv)))]
-            (-> (apply-conversions cs (assoc expr' :context :expression))
-                (assoc :context :return))))
+            (apply-conversions cs expr')))
         expr')))
 
 (defn  parse-exprs [cenv body]
   (let [cenv' (with-context cenv :statement)
         last' (parse-expr cenv (last body))]
-    {:op :do :type (:type last')
-     :exprs (-> (mapv parse-expr (repeat cenv') (butlast body))
-                (conj last'))}))
+    (-> {:op :do :type (:type last')
+         :exprs (-> (mapv parse-expr (repeat cenv') (butlast body))
+                    (conj last'))}
+        (inherit-context cenv :return? false))))
 
 (defn parse-name [proto-cenv name & {:keys [default-type]}]
   (let [{:keys [access type]} (parse-modifiers proto-cenv (meta name) :default-type default-type)]
@@ -190,13 +191,13 @@
         [cenv' args'] (parse-bindings (assoc cenv :lenv init-lenv :next-index init-index)
                                       (interleave args (repeat nil)))
         return-type (if ctor? t/VOID type)
-        context (if (= return-type t/VOID) :statement :return)]
+        context (if (= return-type t/VOID) :statement :expression)]
     (cond-> {:return-type return-type
              :args args'
              :access access
              :body (parse-exprs (-> cenv'
-                                    (assoc :return-type return-type)
-                                    (with-context context))
+                                    (assoc :return-type return-type
+                                           :context #{context :tail :return}))
                                 body)}
       (not ctor?) (assoc :name (str mname)))))
 
@@ -284,20 +285,20 @@
   (let [cenv' (with-context cenv :expression)
         x' (parse-expr cenv' x)
         cs (t/unary-numeric-promotion (:type x'))]
-    {:op op
-     :context (context-of cenv)
-     :type (:type x')
-     :operand (apply-conversions cs x')}))
+    (-> {:op op
+         :type (:type x')
+         :operand (apply-conversions cs x')}
+        (inherit-context cenv))))
 
 (defn parse-binary-op [cenv [_ x y] op]
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' x)
         rhs (parse-expr cenv' y)
         [cl cr] (t/binary-numeric-promotion (:type lhs) (:type rhs))]
-    {:op op
-     :context (context-of cenv)
-     :lhs (apply-conversions cl lhs)
-     :rhs (apply-conversions cr rhs)}))
+    (-> {:op op
+         :lhs (apply-conversions cl lhs)
+         :rhs (apply-conversions cr rhs)}
+        (inherit-context cenv))))
 
 (defn parse-arithmetic [cenv expr op]
   (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op)]
@@ -357,11 +358,11 @@
         rhs' (cond->> rhs'
                (= (:type rhs') t/LONG)
                (apply-conversions [(t/narrowing-primitive-conversion t/LONG t/INT)]))]
-    {:op op
-     :context (context-of cenv)
-     :type (:type lhs')
-     :lhs lhs'
-     :rhs rhs'}))
+    (-> {:op op
+         :type (:type lhs')
+         :lhs lhs'
+         :rhs rhs'}
+        (inherit-context cenv))))
 
 (defmethod parse-expr* '<< [cenv expr]
   (parse-shift cenv expr :shift-left))
@@ -373,7 +374,7 @@
   (parse-shift cenv expr :logical-shift-right))
 
 (defn parse-comparison [cenv expr op]
-  (if (= (:context cenv) :conditional)
+  (if (:conditional (:context cenv))
     (let [cenv' (with-context cenv :expression)]
       (-> (parse-binary-op cenv' expr op)
           (assoc :type t/BOOLEAN)))
@@ -398,7 +399,7 @@
   (parse-comparison cenv expr :ge))
 
 (defmethod parse-expr* 'and [cenv [_ & exprs :as expr]]
-  (if (= (:context cenv) :conditional)
+  (if (:conditional (:context cenv))
     (case (count exprs)
       0 (parse-expr cenv true)
       1 (parse-expr cenv (first exprs))
@@ -422,7 +423,7 @@
      :expr expr}))
 
 (defmethod parse-expr* 'or [cenv [_ & exprs :as expr]]
-  (if (= (:context cenv) :conditional)
+  (if (:conditional (:context cenv))
     (case (count exprs)
       0 (parse-expr cenv false)
       1 (parse-expr cenv (first exprs))
@@ -433,7 +434,7 @@
     (parse-expr cenv `(if ~expr true false))))
 
 (defmethod parse-expr* 'not [cenv [_ operand :as expr]]
-  (if (= (:context cenv) :conditional)
+  (if (:conditional (:context cenv))
     (negate-expr (parse-expr cenv operand))
     (parse-expr cenv `(if ~expr true false))))
 
@@ -480,11 +481,11 @@
       (parse-expr cenv (with-meta form (meta expr))))))
 
 (defmethod parse-expr* 'instance? [cenv [_ c x]]
-  {:op :instance?
-   :context (context-of cenv)
-   :type t/BOOLEAN
-   :class (t/tag->type cenv c)
-   :operand (parse-expr (with-context cenv :expression) x)})
+  (-> {:op :instance?
+       :type t/BOOLEAN
+       :class (t/tag->type cenv c)
+       :operand (parse-expr (with-context cenv :expression) x)}
+      (inherit-context cenv)))
 
 (defmethod parse-expr* 'do [cenv [_ & body]]
   (parse-exprs cenv body))
@@ -492,9 +493,10 @@
 (defmethod parse-expr* 'let* [cenv [_ bindings & body]]
   (let [[cenv' bindings'] (parse-bindings cenv bindings)
         body' (parse-exprs cenv' body)]
-    {:op :let :type (:type body')
-     :bindings bindings'
-     :body body'}))
+    (-> {:op :let :type (:type body')
+         :bindings bindings'
+         :body body'}
+        (inherit-context cenv :return? false))))
 
 (defmethod parse-expr* 'let [cenv expr]
   (parse-expr cenv (with-meta `(let* ~@(rest expr)) (meta expr))))
@@ -507,27 +509,27 @@
         rhs' (apply-conversions cs rhs)]
     (case (:op lhs)
       :field-access
-      (cond-> {:op :field-update
-               :context (context-of cenv)
-               :type (:type lhs)
-               :class (:class lhs)
-               :name (:name lhs)
-               :rhs rhs'}
-        (:target lhs) (assoc :target (:target lhs)))
+      (-> {:op :field-update
+           :type (:type lhs)
+           :class (:class lhs)
+           :name (:name lhs)
+           :rhs rhs'}
+          (inherit-context cenv)
+          (cond-> (:target lhs) (assoc :target (:target lhs))))
 
       :array-access
-      {:op :array-update
-       :context (context-of cenv)
-       :type (:type lhs)
-       :array (:array lhs)
-       :index (:index lhs)
-       :expr rhs'}
+      (-> {:op :array-update
+           :type (:type lhs)
+           :array (:array lhs)
+           :index (:index lhs)
+           :expr rhs'}
+          (inherit-context cenv))
 
-      {:op :assignment
-       :context (context-of cenv)
-       :type (:type lhs)
-       :lhs lhs
-       :rhs rhs'})))
+      (-> {:op :assignment
+           :type (:type lhs)
+           :lhs lhs
+           :rhs rhs'}
+          (inherit-context cenv)))))
 
 (defmethod parse-expr* 'inc! [cenv [_ target by]]
   (let [by (or by 1)
@@ -562,13 +564,15 @@
         :else
         (let [test' (-> (parse-expr (with-context cenv :conditional) test)
                         unbox-if-possible)
-              statement? (= (context-of cenv) :statement)
-              cenv' (cond-> cenv (not statement?) (assoc :context :expression))
+              statement? (:statement (context-of cenv))
+              cenv' (cond-> cenv (not statement?) (with-context :expression))
               then' (parse-expr cenv' then)
               else' (some->> else (parse-expr cenv'))]
-          (cond-> (inherit-context {:op :if, :test test', :then then'} cenv)
-            else' (assoc :else else')
-            (not statement?) (assoc :type (:type then'))))))
+          (-> {:op :if, :test test', :then then'}
+              (inherit-context cenv :return? false)
+              (cond->
+                else' (assoc :else else')
+                (not statement?) (assoc :type (:type then')))))))
 
 (defn parse-case-clause [cenv sym [k expr]]
   (let [ks (if (seq? k) (set k) [k])
@@ -584,14 +588,15 @@
 (defmethod parse-expr* 'case [cenv [_ test & clauses :as expr]]
   (if-let [l (find-lname cenv test)]
     (let [cenv' (with-context cenv :expression)]
-      {:op :switch
-       :test (if (= (:type l) t/STRING)
-               (parse-expr cenv' `(.hashCode ~test))
-               (parse-expr cenv' test))
-       :clauses (->> (partition 2 clauses)
-                     (mapv (partial parse-case-clause cenv test)))
-       :default (when (odd? (count clauses))
-                  (parse-expr cenv (last clauses)))})
+      (-> {:op :switch
+           :test (if (= (:type l) t/STRING)
+                   (parse-expr cenv' `(.hashCode ~test))
+                   (parse-expr cenv' test))
+           :clauses (->> (partition 2 clauses)
+                         (mapv (partial parse-case-clause cenv test)))
+           :default (when (odd? (count clauses))
+                      (parse-expr cenv (last clauses)))}
+          (inherit-context cenv :return? false)))
     (let [h (gensym 'h)
           form `(let* [~h ~test]
                   ~(with-meta
@@ -604,12 +609,12 @@
 
 (defmethod parse-expr* 'while [cenv [_ cond & body :as expr]]
   (let [label (extract-label expr)]
-    (cond-> {:op :while
-             :context (context-of cenv)
-             :cond (-> (parse-expr (with-context cenv :conditional) cond)
-                       unbox-if-possible)
-             :body (parse-exprs (with-context cenv :statement) body)}
-      label (assoc :label label))))
+    (-> {:op :while
+         :cond (-> (parse-expr (with-context cenv :conditional) cond)
+                   unbox-if-possible)
+         :body (parse-exprs (with-context cenv :statement) body)}
+        (inherit-context cenv)
+        (cond-> label (assoc :label label)))))
 
 (defmethod parse-expr* 'for [cenv [_ args & body :as form]]
   (if (= (count args) 2)
@@ -630,16 +635,17 @@
     (let [[lname init cond step] args
           [cenv' bindings'] (parse-bindings cenv [lname init])
           label (extract-label form)]
-      {:op :let
-       :bindings bindings'
-       :body
-       (cond-> {:op :for
-                :context (context-of cenv)
+      (-> {:op :let
+           :bindings bindings'
+           :body
+           (-> {:op :for
                 :cond (-> (parse-expr (with-context cenv' :conditional) cond)
                           unbox-if-possible)
                 :step (parse-expr (with-context cenv' :statement) step)
                 :body (parse-exprs (with-context cenv' :statement) body)}
-         label (assoc :label label))})))
+               (inherit-context cenv)
+               (cond-> label (assoc :label label)))}
+          (inherit-context cenv :return? false)))))
 
 (defn seq-prefixed-with? [prefix x]
   (and (seq? x) (= (first x) prefix)))
@@ -657,24 +663,27 @@
   (let [[body clauses] (split-with #(not (seq-prefixed-with? 'catch %)) body)
         [catch-clauses finally-clauses] (split-with #(not (seq-prefixed-with? 'finally %)) clauses)
         body' (parse-exprs cenv body)]
-    {:op :try
-     :context (context-of cenv)
-     :type (:type body')
-     :body body'
-     :catch-clauses (mapv (partial parse-catch-clause cenv) catch-clauses)
-     :finally-clause (parse-exprs (with-context cenv :statement) (first finally-clauses))}))
+    (-> {:op :try
+         :type (:type body')
+         :body body'
+         :catch-clauses (mapv (partial parse-catch-clause cenv) catch-clauses)
+         :finally-clause (parse-exprs (with-context cenv :statement) (first finally-clauses))}
+        (inherit-context cenv :return? false))))
 
-(defmethod parse-expr* 'continue [_ [_ label]]
-  (cond-> {:op :continue}
-    label (assoc :label label)))
+(defmethod parse-expr* 'continue [cenv [_ label]]
+  (-> {:op :continue}
+      (inherit-context cenv :return? false)
+      (cond-> label (assoc :label label))))
 
-(defmethod parse-expr* 'break [_ [_ label]]
-  (cond-> {:op :break}
-    label (assoc :label label)))
+(defmethod parse-expr* 'break [cenv [_ label]]
+  (-> {:op :break}
+      (inherit-context cenv :return? false)
+      (cond-> label (assoc :label label))))
 
 (defmethod parse-expr* 'throw [cenv [_ ex]]
-  {:op :throw
-   :exception (parse-expr (with-context cenv :expression) ex)})
+  (-> {:op :throw
+       :exception (parse-expr (with-context cenv :expression) ex)}
+      (inherit-context cenv :return? false)))
 
 (defmethod parse-expr* 'new [cenv [_ type & args]]
   (let [type' (t/tag->type cenv type)]
@@ -686,19 +695,19 @@
                              ~@(for [[i init] (map-indexed vector elems)]
                                  `(~'aset ~arr ~i ~init))
                              ~arr)))
-        {:op :new-array
-         :context (context-of cenv)
-         :type type'
-         :length (parse-expr (with-context cenv :expression) (first args))})
+        (-> {:op :new-array
+             :type type'
+             :length (parse-expr (with-context cenv :expression) (first args))}
+            (inherit-context cenv)))
       (let [cenv' (with-context cenv :expression)
             args' (map (partial parse-expr cenv') args)
             ctor (t/find-ctor cenv type' (map :type args'))]
-        {:op :new
-         :context (context-of cenv)
-         :type type'
-         :access (:access ctor)
-         :arg-types (:arg-types ctor)
-         :args args'}))))
+        (-> {:op :new
+             :type type'
+             :access (:access ctor)
+             :arg-types (:arg-types ctor)
+             :args args'}
+            (inherit-context cenv))))))
 
 (defmethod parse-expr* '. [cenv [_ target property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))
@@ -712,30 +721,30 @@
           pname (name property)]
       (if (str/starts-with? pname "-")
         (if (and (t/array-type? target-type) (= pname "-length"))
-          {:op :array-length
-           :context (context-of cenv)
-           :type t/INT
-           :array target'}
+          (-> {:op :array-length
+               :type t/INT
+               :array target'}
+              (inherit-context cenv))
           (let [pname' (subs pname 1)
                 field (t/find-field cenv target-type pname')]
-            (cond-> {:op :field-access
-                     :context (context-of cenv)
-                     :type (:type field)
-                     :class (:class field)
-                     :name pname'}
-              target' (assoc :target target'))))
+            (-> {:op :field-access
+                 :type (:type field)
+                 :class (:class field)
+                 :name pname'}
+                (inherit-context cenv)
+                (cond-> target' (assoc :target target')))))
         (let [args' (map (partial parse-expr cenv') maybe-args)
               method (t/find-method cenv target-type pname (map :type args'))]
-          (cond-> {:op :method-invocation
-                   :context (context-of cenv)
-                   :interface? (:interface? method false)
-                   :type (:return-type method)
-                   :access (:access method)
-                   :arg-types (:arg-types method)
-                   :class (:class method)
-                   :name pname
-                   :args args'}
-            target' (assoc :target target')))))))
+          (-> {:op :method-invocation
+               :interface? (:interface? method false)
+               :type (:return-type method)
+               :access (:access method)
+               :arg-types (:arg-types method)
+               :class (:class method)
+               :name pname
+               :args args'}
+              (inherit-context cenv)
+              (cond-> target' (assoc :target target'))))))))
 
 (defn fold-aget [[_ arr index & indices :as expr]]
   (if (empty? indices)
@@ -749,11 +758,11 @@
           arr (parse-expr cenv' arr)
           index' (as-> (parse-expr cenv' index) index'
                    (apply-conversions (t/unary-numeric-promotion (:type index')) index'))]
-      {:op :array-access
-       :context (context-of cenv)
-       :type (t/element-type (:type arr))
-       :array arr
-       :index index'})))
+      (-> {:op :array-access
+           :type (t/element-type (:type arr))
+           :array arr
+           :index index'}
+          (inherit-context cenv)))))
 
 (defmethod parse-expr* 'aset [cenv [_ arr index & more :as expr]]
   (if (next more)
@@ -766,9 +775,9 @@
           arr (parse-expr cenv' arr)
           index' (as-> (parse-expr cenv' index) index'
                    (apply-conversions (t/unary-numeric-promotion (:type index')) index'))]
-      {:op :array-update
-       :context (context-of cenv)
-       :type (t/element-type (:type arr))
-       :array arr
-       :index index'
-       :expr (parse-expr cenv' (first more))})))
+      (-> {:op :array-update
+           :type (t/element-type (:type arr))
+           :array arr
+           :index index'
+           :expr (parse-expr cenv' (first more))}
+          (inherit-context cenv)))))

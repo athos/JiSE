@@ -39,10 +39,11 @@
 (defn emit-return [{:keys [^MethodVisitor mv]} type]
   (.visitInsn mv (get insns/return-insns type Opcodes/ARETURN)))
 
-(defn emit-expr [{:keys [^MethodVisitor mv] :as emitter} expr]
+(defn emit-expr [{:keys [^MethodVisitor mv] :as emitter} {:keys [context] :as expr}]
   (emit-expr* emitter expr)
-  (when (= (:context expr) :return)
-    (emit-return emitter (:type expr))))
+  (when (:return context)
+    (let [t (if (:statement context) t/VOID (:type expr))]
+      (emit-return emitter t))))
 
 (defn emit-ctor-invocation [{:keys [^MethodVisitor mv] :as emitter} {:keys [class arg-types args line]}]
   (let [method-type (Type/getMethodType t/VOID (into-array Type arg-types))
@@ -68,8 +69,6 @@
       (.visitVarInsn mv Opcodes/ALOAD 0)
       (emit-ctor-invocation emitter {:class parent :arg-types [] :args []}))
     (emit-expr emitter body)
-    (when (= return-type t/VOID)
-      (emit-return emitter t/VOID))
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
@@ -95,21 +94,21 @@
     (emit-expr emitter expr)))
 
 (defn drop-if-statement [{:keys [^MethodVisitor mv]} context]
-  (when (= context :statement)
+  (when (:statement context)
     (let [opcode (if (= (t/type-category type) 2)
                  Opcodes/POP2
                  Opcodes/POP)]
       (.visitInsn mv opcode))))
 
 (defmethod emit-expr* :null [{:keys [^MethodVisitor mv]} {:keys [context]}]
-  (when-not (= context :statement)
+  (when-not (:statement context)
     (.visitInsn mv Opcodes/ACONST_NULL)))
 
 (defn primitive-type [type]
   (if (#{t/BYTE t/CHAR t/SHORT} type) t/INT type))
 
 (defmethod emit-expr* :literal [{:keys [^MethodVisitor mv]} {:keys [type value context]}]
-  (when-not (= context :statement)
+  (when-not (:statement context)
     (if-let [opcode (get-in insns/const-insns [(primitive-type type) value])]
       (.visitInsn mv opcode)
       (cond (and (#{t/BYTE t/SHORT t/CHAR t/INT} type)
@@ -130,7 +129,7 @@
   (.visitVarInsn mv (get insns/load-insns type Opcodes/ALOAD) index))
 
 (defmethod emit-expr* :local [emitter {:keys [type index context]}]
-  (when-not (= context :statement)
+  (when-not (:statement context)
     (emit-load emitter type index)))
 
 (defn emit-arithmetic [{:keys [^MethodVisitor mv] :as emitter} {:keys [type lhs rhs context line]} op]
@@ -264,7 +263,7 @@
     (.visitInsn mv opcode)))
 
 (defn dup-unless-statement [emitter context type]
-  (when-not (= context :statement)
+  (when-not (:statement context)
     (emit-dup emitter type)))
 
 (defmethod emit-expr* :assignment [emitter {:keys [lhs rhs context line]}]
@@ -277,7 +276,7 @@
   (let [{:keys [type index]} target]
     (emit-line emitter line)
     (.visitIincInsn mv index by)
-    (when-not (= context :statement)
+    (when-not (:statement context)
       (emit-load emitter type index))))
 
 (defmethod emit-expr* :labeled [{:keys [^MethodVisitor mv] :as emitter} {:keys [label target kind]}]
@@ -389,7 +388,7 @@
         (emit-expr emitter' body)
         (.visitJumpInsn mv Opcodes/GOTO start-label)
         (.visitLabel mv end-label)))
-    (when-not (= context :statement)
+    (when-not (:statement context)
       (.visitInsn mv Opcodes/ACONST_NULL))))
 
 (defmethod emit-expr* :for [{:keys [^MethodVisitor mv] :as emitter} {:keys [cond step body label context]}]
@@ -405,7 +404,7 @@
         (emit-expr emitter' step)
         (.visitJumpInsn mv Opcodes/GOTO start-label)
         (.visitLabel mv end-label)))
-    (when-not (= context :statement)
+    (when-not (:statement context)
       (.visitInsn mv Opcodes/ACONST_NULL))))
 
 (defmethod emit-expr* :continue [{:keys [^MethodVisitor mv] :as emitter} {:keys [label]}]
@@ -445,7 +444,7 @@
   (when target
     (emit-expr emitter target))
   (emit-expr emitter rhs)
-  (when-not (= context :statement)
+  (when-not (:statement context)
     (let [t (:type rhs)]
       (if target
         (let [opcode (if (= (t/type-category t) 2) Opcodes/DUP_X2 Opcodes/DUP_X1)]
