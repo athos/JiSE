@@ -347,6 +347,9 @@
 (defmethod parse-expr* 'xor [cenv expr]
   (parse-arithmetic cenv (fold-binary-op expr) :bitwise-xor))
 
+(defmethod parse-expr* '! [cenv [_ operand :as expr]]
+  (parse-expr cenv (with-meta `(~'xor ~operand -1) (meta expr))))
+
 (defn parse-shift [cenv [_ x y] op]
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' x)
