@@ -585,15 +585,18 @@
 
 (defmethod parse-expr* 'case [cenv [_ test & clauses :as expr]]
   (if-let [l (find-lname cenv test)]
-    (let [cenv' (with-context cenv :expression)]
+    (let [cenv' (with-context cenv :expression)
+          clauses' (->> (partition 2 clauses)
+                        (mapv (partial parse-case-clause cenv test)))
+          default (when (odd? (count clauses))
+                    (parse-expr cenv (last clauses)))]
       (-> {:op :switch
+           :type (:type (or (first clauses') default))
            :test (if (= (:type l) t/STRING)
                    (parse-expr cenv' `(.hashCode ~test))
                    (parse-expr cenv' test))
-           :clauses (->> (partition 2 clauses)
-                         (mapv (partial parse-case-clause cenv test)))
-           :default (when (odd? (count clauses))
-                      (parse-expr cenv (last clauses)))}
+           :clauses clauses'
+           :default default}
           (inherit-context cenv :return? false)))
     (let [h (gensym 'h)
           form `(let* [~h ~test]
