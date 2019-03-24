@@ -570,13 +570,15 @@
               (inherit-context cenv :return? false)
               (cond-> else' (assoc :else else'))))))
 
-(defn parse-case-clause [cenv sym [k expr]]
-  (let [ks (if (seq? k) (set k) [k])
+(defn parse-case-clause [cenv sym [ks expr]]
+  (let [ks (if (seq? ks) (vec ks) [ks])
         str? (string? (first ks))
         ks' (cond->> ks str? (mapv #(.hashCode ^String %)))
         guard (when str?
-                (parse-expr (with-context cenv :conditional)
-                            `(~'= ~sym ~(first ks))))
+                (->> (if (> (count ks) 1)
+                       `(~'or ~@(map (fn [k] `(~'= ~sym ~k)) ks))
+                       `(~'= ~sym ~(first ks)))
+                     (parse-expr (with-context cenv :conditional))))
         expr' (parse-expr cenv expr)]
     (cond-> {:keys ks' :type (:type expr') :body expr'}
       guard (assoc :guard guard))))

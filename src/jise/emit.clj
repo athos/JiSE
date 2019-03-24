@@ -349,14 +349,23 @@
       (emit-expr emitter else))
     (.visitLabel mv end-label)))
 
-(defmethod emit-expr* :switch [{:keys [^MethodVisitor mv] :as emitter} {:keys [test clauses default]}]
+(defn assign-labels [clauses]
+  (loop [clauses clauses
+         key->label {}
+         ret []]
+    (if (empty? clauses)
+      [ret (sort-by first key->label)]
+      (let [[{:keys [keys] :as clause} & clauses] clauses
+            label (or (some key->label keys) (Label.))]
+        (recur clauses
+               (into key->label (map (fn [k] [k label])) keys)
+               (conj ret (assoc clause :label label)))))))
+
+(defmethod emit-expr* :switch
+  [{:keys [^MethodVisitor mv] :as emitter} {:keys [test clauses default]}]
   (let [end-label (Label.)
         default-label (if default (Label.) end-label)
-        clauses' (map #(assoc % :label (Label.)) clauses)
-        key->label (->> (for [{:keys [keys label]} clauses'
-                              key keys]
-                          [key label])
-                        (sort-by first))
+        [clauses' key->label] (assign-labels clauses)
         keys (int-array (map first key->label))
         labels (into-array Label (map second key->label))]
     (emit-expr emitter test)
