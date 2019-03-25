@@ -95,13 +95,15 @@
         class (if (= op 'this)
                 (t/tag->type cenv (:class-name cenv))
                 (get-in cenv [:classes (:class-name cenv) :parent]))
-        ctor (t/find-ctor cenv class (map :type args'))]
+        ctor (t/find-ctor cenv class (map :type args'))
+        initializer (and (= op 'super) (get-in cenv [:classes (:class-name cenv) :initializer]))]
     (-> {:op :ctor-invocation
          :class class
          :access (:access ctor)
          :arg-types (:arg-types ctor)
          :args args'}
-        (inherit-context cenv))))
+        (inherit-context (cond-> cenv initializer (with-context :statement)))
+        (cond-> initializer (assoc :initializer (parse-expr cenv initializer))))))
 
 (defn parse-seq [cenv expr]
   (let [expr' (if ('#{this super} (first expr))
@@ -216,29 +218,35 @@
 (defn parse-class-body [cname body]
   (let [alias (class-alias cname)]
     (loop [decls body
-           ret {:ctors [], :fields [], :methods []}]
+           ret {:ctors [], :fields [], :methods [], :initializer []}]
       (if (empty? decls)
         ret
         (let [[decl & decls] decls]
           (if (seq? decl)
             (case (symbol-without-ns (first decl))
-              def (recur decls (update ret :fields conj decl))
+              def (let [[_ name init] decl
+                        decl' (when init
+                                (with-meta
+                                  `(set! (~(symbol (str ".-" name)) ~'this) ~init)
+                                  (meta decl)))
+                        ret' (-> ret
+                                 (update :fields conj decl)
+                                 (cond-> decl' (update :initializer conj decl')))]
+                    (recur decls ret'))
               defm (let [[_ name] decl]
                      (recur decls
                             (if (= name alias)
                               (update ret :ctors conj decl)
                               (update ret :methods conj decl))))
               do (recur (concat (rest decl) decls) ret)
-              (if-let [v (resolve (first decl))]
-                (if (:macro (meta v))
-                  (recur (cons (macroexpand decl) decls) ret)
-                  (let [msg (str "unknown type of declaration found: " (first decl))]
-                    (throw (ex-info msg {:decl decl}))))
-                (let [msg (str "unknown type of declaration found: " (first decl))]
-                  (throw (ex-info msg {:decl decl})))))
+              (let [v (resolve (first decl))
+                    [decls ret] (if (and v (:macro (meta v)))
+                                  [(cons (macroexpand decl) decls) ret]
+                                  [decls (update ret :initializer conj decl)])]
+                (recur decls ret)))
             (recur decls ret)))))))
 
-(defn init-cenv [proto-cenv cname parent interfaces fields ctors methods]
+(defn init-cenv [proto-cenv cname parent interfaces fields ctors methods initializer]
   (let [fields' (into {} (map (fn [[_ name :as field]]
                                 (let [modifiers (modifiers-of field)
                                       {:keys [type access]} (parse-modifiers proto-cenv modifiers)]
@@ -257,7 +265,7 @@
                                      {:access access :return-type type
                                       :arg-types (mapv #(:type (parse-name proto-cenv %)) args)})))
                          {} methods)
-        class-entry  {:parent parent :interfaces (set interfaces)
+        class-entry  {:parent parent :interfaces (set interfaces) :initializer initializer
                       :fields fields' :ctors ctors' :methods methods'}]
     (assoc-in proto-cenv [:classes cname] class-entry)))
 
@@ -266,13 +274,14 @@
         proto-cenv {:class-name cname :classes {}
                     :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
         {:keys [parent interfaces body]} (parse-supers proto-cenv body)
-        {:keys [ctors fields methods]} (parse-class-body cname body)
+        {:keys [ctors fields methods initializer]} (parse-class-body cname body)
         parent (or parent t/OBJECT)
         ctors' (if (empty? ctors)
                  [(with-meta `(~'defm ~alias [] (~'super))
                     (select-keys (modifiers-of class) [:public :protected :private]))]
                  ctors)
-        cenv (init-cenv proto-cenv cname parent interfaces fields ctors' methods)]
+        cenv (init-cenv proto-cenv cname parent interfaces fields ctors' methods
+                        (when (seq initializer) `(do ~@initializer)))]
     {:name (str/replace (str cname) \. \/)
      :access (access-flags (modifiers-of class))
      :parent parent

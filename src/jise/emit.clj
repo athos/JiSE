@@ -45,14 +45,17 @@
     (let [t (if (:statement context) t/VOID (:type expr))]
       (emit-return emitter t))))
 
-(defn emit-ctor-invocation [{:keys [^MethodVisitor mv] :as emitter} {:keys [class arg-types args line]}]
+(defn emit-ctor-invocation
+  [{:keys [^MethodVisitor mv] :as emitter} {:keys [class arg-types args initializer line]}]
   (let [method-type (Type/getMethodType t/VOID (into-array Type arg-types))
         iname (.getInternalName ^Type class)
         desc (.getDescriptor ^Type method-type)]
     (doseq [arg args]
       (emit-expr emitter arg))
     (emit-line emitter line)
-    (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
+    (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)
+    (when initializer
+      (emit-expr emitter initializer))))
 
 (defn emit-method [^ClassWriter cw parent ctor? {:keys [name access return-type args body]}]
   (let [desc (->> (map :type args)
