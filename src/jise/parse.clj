@@ -3,7 +3,7 @@
   (:require [clojure.string :as str]
             [jise.type :as t]))
 
-(defn symbol-without-ns [sym]
+(defn symbol-without-jise-ns [sym]
   (if (= (namespace sym) "jise.core")
     (symbol (name sym))
     sym))
@@ -55,21 +55,32 @@
           src
           conversions))
 
-(defn macroexpand [form]
+(defn macroexpand [cenv form]
   (let [expanded (macroexpand-1 form)]
     (if (identical? expanded form)
-      (if-let [[op & args] (and (seq? form) (symbol? (first form)) (namespace (first form)) form)]
+      (if-let [[op & args] (and (seq? form)
+                                (symbol? (first form))
+                                (some->> (namespace (first form)) symbol (t/find-in-cenv cenv))
+                                form)]
         (with-meta `(. ~(symbol (namespace op)) ~(symbol (name op)) ~@args) (meta form))
         form)
-      (recur (cond-> expanded
+      (recur cenv
+             (cond-> expanded
                (instance? clojure.lang.IObj expanded)
                (vary-meta merge (meta form)))))))
 
+(defn fixup-ns [sym]
+  (let [sym' (symbol-without-jise-ns sym)
+        ns (namespace sym')]
+    (if-let [orig (some->> ns symbol (get (ns-aliases *ns*)))]
+      (symbol (str orig) (name sym'))
+      sym')))
+
 (declare parse-expr)
 
-(defmulti parse-expr* (fn [cenv expr] (symbol-without-ns (first expr))))
+(defmulti parse-expr* (fn [cenv expr] (fixup-ns (first expr))))
 (defmethod parse-expr* :default [cenv expr]
-  (let [expanded (macroexpand expr)]
+  (let [expanded (macroexpand cenv expr)]
     (if-not (identical? expanded expr)
       (parse-expr cenv expanded)
       (assert false "not supported yet"))))
@@ -223,7 +234,7 @@
         ret
         (let [[decl & decls] decls]
           (if (seq? decl)
-            (case (symbol-without-ns (first decl))
+            (case (symbol-without-jise-ns (first decl))
               def (let [[_ name init] decl
                         decl' (when init
                                 (with-meta
@@ -241,7 +252,7 @@
               do (recur (concat (rest decl) decls) ret)
               (let [v (resolve (first decl))
                     [decls ret] (if (and v (:macro (meta v)))
-                                  [(cons (macroexpand decl) decls) ret]
+                                  [(cons (macroexpand {} decl) decls) ret]
                                   [decls (update ret :initializer conj decl)])]
                 (recur decls ret)))
             (recur decls ret)))))))
