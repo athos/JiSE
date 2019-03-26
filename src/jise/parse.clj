@@ -495,6 +495,12 @@
   ;; FIXME: Remove explicit cast here once we could invoke "loosely" matching method
   (parse-expr cenv (with-meta `(.equals ~x (~'cast Object ~y)) (meta expr))))
 
+(defmethod parse-expr* 'nil? [cenv [_ arg :as expr]]
+  (parse-expr cenv (with-meta `(~'== ~arg nil) (meta expr))))
+
+(defmethod parse-expr* `nil? [cenv [_ arg :as expr]]
+  (parse-expr cenv (with-meta `(~'== ~arg nil) (meta expr))))
+
 (defmethod parse-expr* 'str [cenv [_ & args :as expr]]
   (if (every? string? args)
     (parse-expr cenv (apply str args))
