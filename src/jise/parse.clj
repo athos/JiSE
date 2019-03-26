@@ -593,11 +593,17 @@
         :else
         (let [test' (-> (parse-expr (with-context cenv :conditional) test)
                         unbox-if-possible)
-              then' (parse-expr cenv then)
-              else' (some->> else (parse-expr cenv))]
-          (-> {:op :if, :type (:type then'), :test test', :then then'}
-              (inherit-context cenv :return? false)
-              (cond-> else' (assoc :else else'))))))
+              cenv' (if (and (:tail (:context cenv)) (nil? else))
+                      (with-context cenv :statement)
+                      cenv)
+              then' (parse-expr cenv' then)
+              else' (some->> else (parse-expr cenv'))
+              node {:op :if, :type (:type then'), :test test', :then then'}]
+          (if else'
+            (-> node
+                (assoc :else else')
+                (inherit-context cenv :return? false))
+            (inherit-context node cenv)))))
 
 (defn parse-case-clause [cenv sym [ks expr]]
   (let [ks (if (seq? ks) (vec ks) [ks])
@@ -614,19 +620,26 @@
 
 (defmethod parse-expr* 'case [cenv [_ test & clauses :as expr]]
   (if-let [l (find-lname cenv test)]
-    (let [cenv' (with-context cenv :expression)
+    (let [default (when (odd? (count clauses))
+                    (last clauses))
+          cenv' (if (and (:tail (:context cenv)) (nil? default))
+                  (with-context cenv :statement)
+                  cenv)
           clauses' (->> (partition 2 clauses)
-                        (mapv (partial parse-case-clause cenv test)))
-          default (when (odd? (count clauses))
-                    (parse-expr cenv (last clauses)))]
-      (-> {:op :switch
-           :type (:type (or (first clauses') default))
-           :test (if (= (:type l) t/STRING)
-                   (parse-expr cenv' `(.hashCode ~test))
-                   (parse-expr cenv' test))
-           :clauses clauses'
-           :default default}
-          (inherit-context cenv :return? false)))
+                        (mapv (partial parse-case-clause cenv' test)))
+          default' (some->> default (parse-expr cenv'))
+          node {:op :switch
+                :type (:type (or (first clauses') default'))
+                :test (let [cenv' (with-context cenv :expression)]
+                        (if (= (:type l) t/STRING)
+                          (parse-expr cenv' `(.hashCode ~test))
+                          (parse-expr cenv' test)))
+                :clauses clauses'}]
+      (if default'
+        (-> node
+            (assoc :default default')
+            (inherit-context cenv :return? false))
+        (inherit-context node cenv)))
     (let [h (gensym 'h)
           form `(let* [~h ~test]
                   ~(with-meta
