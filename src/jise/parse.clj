@@ -396,11 +396,18 @@
 (defmethod parse-expr* '>>> [cenv expr]
   (parse-shift cenv expr :logical-shift-right))
 
-(defn parse-comparison [cenv expr op]
+(defn fold-comparison [[op & args :as expr]]
+  (with-meta
+    `(~'and ~@(map (fn [[x y]] `(~op ~x ~y)) (partition 2 1 args)))
+    (meta expr)))
+
+(defn parse-comparison [cenv [_ x y & more :as expr] op]
   (if (:conditional (:context cenv))
-    (let [cenv' (with-context cenv :expression)]
-      (-> (parse-binary-op cenv' expr op)
-          (assoc :type t/BOOLEAN)))
+    (if more
+      (parse-expr cenv (fold-comparison expr))
+      (let [cenv' (with-context cenv :expression)]
+        (-> (parse-binary-op cenv' expr op)
+            (assoc :type t/BOOLEAN))))
     (parse-expr cenv `(if ~expr true false))))
 
 (defmethod parse-expr* '== [cenv expr]
