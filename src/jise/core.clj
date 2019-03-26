@@ -62,12 +62,12 @@
               l left
               r right]
           (while (<= l r)
-            (while (< (aget xs l) p) (inc! l))
-            (while (> (aget xs r) p) (dec! r))
+            (while (< (xs l) p) (inc! l))
+            (while (> (xs r) p) (dec! r))
             (when (<= l r)
               (let [tmp (aget xs l)]
-                (aset xs l (aget xs r))
-                (aset xs r tmp)
+                (set! (xs l) (xs r))
+                (set! (xs r) tmp)
                 (inc! l)
                 (dec! r))))
           (Qsort/qsort xs left r)
