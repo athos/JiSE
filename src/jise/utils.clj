@@ -1,4 +1,4 @@
-(ns jise.fn
+(ns jise.utils
   (:refer-clojure :exclude [defn fn let])
   (:require [clojure.core :as c]
             [jise.core :as jise]))
