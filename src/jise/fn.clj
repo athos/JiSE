@@ -1,5 +1,5 @@
 (ns jise.fn
-  (:refer-clojure :exclude [defn fn])
+  (:refer-clojure :exclude [defn fn let])
   (:require [clojure.core :as c]
             [jise.core :as jise]))
 
@@ -11,7 +11,7 @@
        args))
 
 (c/defn- emit-fn-class [fname args body]
-  (let [args' (fixup-type-hints args)]
+  (c/let [args' (fixup-type-hints args)]
     `^:public
     (jise/class ~fname [clojure.lang.IFn]
       ^:public ^Object
@@ -28,3 +28,12 @@
 
 (defmacro defn [name args & body]
   `(def ~name (fn ~args ~@body)))
+
+(defmacro let [bindings & body]
+  (c/let [bindings' (partition 2 bindings)
+          params (map first bindings')
+          args (map second bindings')]
+    `((fn ~(vec params) ~@body) ~@args)))
+
+(defmacro do [& body]
+  `((fn [] ~@body)))
