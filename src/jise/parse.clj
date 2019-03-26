@@ -83,7 +83,7 @@
   (let [expanded (macroexpand cenv expr)]
     (if-not (identical? expanded expr)
       (parse-expr cenv expanded)
-      (assert false "not supported yet"))))
+      (throw (ex-info (str "unsupported expr: " (pr-str expr)) {:expr expr})))))
 
 (defn find-lname [cenv sym]
   (get (:lenv cenv) (name sym)))
