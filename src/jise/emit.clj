@@ -396,7 +396,8 @@
       (fn [emitter']
         (.visitLabel mv start-label)
         (emit-line emitter' line)
-        (emit-conditional emitter' cond end-label)
+        (when-not (and (= (:op cond) :literal) (true? (:value cond)))
+          (emit-conditional emitter' cond end-label))
         (emit-expr emitter' body)
         (.visitJumpInsn mv Opcodes/GOTO start-label)
         (.visitLabel mv end-label)))
@@ -410,7 +411,8 @@
     (with-labels emitter label continue-label end-label
       (fn [emitter']
         (.visitLabel mv start-label)
-        (emit-conditional emitter' cond end-label)
+        (when-not (and (= (:op cond) :literal) (true? (:value cond)))
+          (emit-conditional emitter' cond end-label))
         (emit-expr emitter' body)
         (.visitLabel mv continue-label)
         (emit-expr emitter' step)
