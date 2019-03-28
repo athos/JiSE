@@ -1,12 +1,7 @@
 (ns jise.parse
-  (:refer-clojure :exclude [macroexpand])
   (:require [clojure.string :as str]
+            [jise.misc :as misc]
             [jise.type :as t]))
-
-(defn symbol-without-jise-ns [sym]
-  (if (= (namespace sym) "jise.core")
-    (symbol (name sym))
-    sym))
 
 (defn modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
@@ -55,32 +50,11 @@
           src
           conversions))
 
-(defn macroexpand [cenv form]
-  (let [expanded (macroexpand-1 form)]
-    (if (identical? expanded form)
-      (if-let [[op & args] (and (seq? form)
-                                (symbol? (first form))
-                                (some->> (namespace (first form)) symbol (t/find-in-cenv cenv))
-                                form)]
-        (with-meta `(. ~(symbol (namespace op)) ~(symbol (name op)) ~@args) (meta form))
-        form)
-      (recur cenv
-             (cond-> expanded
-               (instance? clojure.lang.IObj expanded)
-               (vary-meta merge (meta form)))))))
-
-(defn fixup-ns [sym]
-  (let [sym' (symbol-without-jise-ns sym)
-        ns (namespace sym')]
-    (if-let [orig (some->> ns symbol (get (ns-aliases *ns*)))]
-      (symbol (str orig) (name sym'))
-      sym')))
-
 (declare parse-expr)
 
-(defmulti parse-expr* (fn [cenv expr] (fixup-ns (first expr))))
+(defmulti parse-expr* (fn [cenv expr] (misc/fixup-ns (first expr))))
 (defmethod parse-expr* :default [cenv expr]
-  (let [expanded (macroexpand cenv expr)]
+  (let [expanded (misc/macroexpand cenv expr)]
     (if-not (identical? expanded expr)
       (parse-expr cenv expanded)
       (throw (ex-info (str "unsupported expr: " (pr-str expr)) {:expr expr})))))
@@ -247,7 +221,7 @@
         ret
         (let [[decl & decls] decls]
           (if (seq? decl)
-            (case (symbol-without-jise-ns (first decl))
+            (case (misc/symbol-without-jise-ns (first decl))
               def (let [[_ name init] decl
                         decl' (when init
                                 (with-meta
