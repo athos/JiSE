@@ -333,11 +333,9 @@
       (emit-or emitter cond label)
       :not
       (emit-not emitter cond label)
-      (:method-invocation :instance?)
+
       (do (emit-expr emitter cond)
-          (.visitJumpInsn mv Opcodes/IFEQ label))
-      (let [msg (str "not supported conditional: " op)]
-        (throw (ex-info msg {:op op}))))))
+          (.visitJumpInsn mv Opcodes/IFEQ label)))))
 
 (defmethod emit-expr* :if [{:keys [^MethodVisitor mv] :as emitter} {:keys [test then else line]}]
   (let [end-label (Label.)
