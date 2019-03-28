@@ -511,7 +511,9 @@
         desc (.getDescriptor method-type)]
     (emit-line emitter line)
     (.visitMethodInsn mv opcode iname name desc interface?))
-  (when-not (= type t/VOID)
+  (if (= type t/VOID)
+    (when-not (:statement context)
+      (.visitInsn mv Opcodes/ACONST_NULL))
     (drop-if-statement emitter context)))
 
 (def primitive-types
