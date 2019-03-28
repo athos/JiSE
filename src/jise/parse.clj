@@ -117,22 +117,26 @@
         (cond-> initializer (assoc :initializer (parse-expr cenv initializer))))))
 
 (defn parse-seq [cenv expr]
-  (let [expr' (if ('#{this super} (first expr))
-                (parse-ctor-invocation cenv expr)
+  (let [{:keys [line label]} (meta expr)
+        cenv' (if label (inherit-context cenv cenv :return? false) cenv)
+        expr' (if ('#{this super} (first expr))
+                (parse-ctor-invocation cenv' expr)
                 (and (symbol? (first expr))
-                     (or (when-let [lname (find-lname cenv (first expr))]
+                     (or (when-let [lname (find-lname cenv' (first expr))]
                            (when (t/array-type? (:type lname))
-                             (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))))
-                         (parse-expr* cenv expr))))]
+                             (parse-expr cenv' (with-meta `(~'aget ~@expr) (meta expr)))))
+                         (parse-expr* cenv' expr))))]
     (as-> expr' expr'
-      (if-let [line (:line (meta expr))]
+      (if line
         (assoc expr' :line line)
         expr')
-      (or (when-let [label (:label (meta expr))]
-            (when (or (not= (:op expr') :labeled)
-                      (not= (:label expr') label))
-              {:op :labeled :label label :target expr'}))
-          expr'))))
+      (if label
+        (if (or (not= (:op expr') :labeled)
+                (not= (:label expr') label))
+          (-> {:op :labeled :label label :target expr'}
+              (inherit-context cenv))
+          (inherit-context expr' cenv))
+        expr'))))
 
 (defn parse-literal [cenv v]
   (if (nil? v)
