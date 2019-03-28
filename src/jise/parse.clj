@@ -199,6 +199,7 @@
                                     (assoc :return-type return-type
                                            :context #{context :tail :return}))
                                 body)}
+      ctor? (assoc :ctor? ctor?)
       (not ctor?) (assoc :name (str mname)))))
 
 (defn parse-supers [proto-cenv [maybe-supers & body]]
@@ -224,9 +225,12 @@
             (case (misc/symbol-without-jise-ns (first decl))
               def (let [[_ name init] decl
                         decl' (when init
-                                (with-meta
-                                  `(set! (~(symbol (str ".-" name)) ~'this) ~init)
-                                  (meta decl)))
+                                (let [modifiers (modifiers-of decl)]
+                                  (with-meta
+                                    `(set! (. ~(if (:static modifiers) alias 'this)
+                                              ~(symbol (str \- name)))
+                                           ~init)
+                                    (modifiers-of decl))))
                         ret' (-> ret
                                  (update :fields conj decl)
                                  (cond-> decl' (update :initializer conj decl')))]
@@ -267,12 +271,22 @@
                       :fields fields' :ctors ctors' :methods methods'}]
     (assoc-in proto-cenv [:classes cname] class-entry)))
 
+(defn filter-static-initializer [initializer]
+  (reduce (fn [ret expr]
+            (let [k (if (:static (modifiers-of expr))
+                      :static-initializer
+                      :initializer)]
+              (update ret k conj expr)))
+          {:initializer [] :static-initializer []}
+          initializer))
+
 (defn parse-class [[_ cname & body :as class]]
   (let [alias (class-alias cname)
         proto-cenv {:class-name cname :classes {}
                     :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
         {:keys [parent interfaces body]} (parse-supers proto-cenv body)
         {:keys [ctors fields methods initializer]} (parse-class-body cname body)
+        {:keys [initializer static-initializer]} (filter-static-initializer initializer)
         parent (or parent t/OBJECT)
         ctors' (if (empty? ctors)
                  [(with-meta `(~'defm ~alias [] (~'super))
@@ -284,6 +298,10 @@
      :access (access-flags (modifiers-of class))
      :parent parent
      :interfaces interfaces
+     :static-initializer (when (seq static-initializer)
+                           (let [m `^:static (~'defm ~'<clinit> [] ~@static-initializer)]
+                             (-> (parse-method cenv false m)
+                                 (assoc :static-initializer? true))))
      :ctors (mapv (partial parse-method cenv true) ctors')
      :fields (mapv (partial parse-field cenv) fields)
      :methods (mapv (partial parse-method cenv false) methods)}))

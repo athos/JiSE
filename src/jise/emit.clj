@@ -23,7 +23,7 @@
 (defn emit-field [^ClassWriter cw {:keys [access name type value]}]
   (let [access (access-value access)
         desc (.getDescriptor ^Type type)]
-   (doto (.visitField cw access (munge name) desc nil value)
+   (doto (.visitField cw access (munge name) desc nil nil)
      (.visitEnd))))
 
 (defmulti emit-expr* (fn [emitter expr] (:op expr)))
@@ -57,11 +57,14 @@
     (when initializer
       (emit-expr emitter initializer))))
 
-(defn emit-method [^ClassWriter cw parent ctor? {:keys [name access return-type args body]}]
+(defn emit-method
+  [^ClassWriter cw parent {:keys [name access return-type args body static-initializer? ctor?]}]
   (let [desc (->> (map :type args)
                   (into-array Type)
                   (Type/getMethodDescriptor return-type))
-        mname (if ctor? "<init>" (munge name))
+        mname (cond static-initializer? "<clinit>"
+                    ctor? "<init>"
+                    :else (munge name))
         mv (.visitMethod cw (access-value access) mname desc nil nil)
         emitter (make-emitter mv)]
     (doseq [arg args]
@@ -75,7 +78,7 @@
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
-(defn emit-class [{:keys [name access parent interfaces ctors fields methods]}]
+(defn emit-class [{:keys [name access parent interfaces static-initializer ctors fields methods]}]
   (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)]
     (.visit cw Opcodes/V1_8
             (+ (access-value access) Opcodes/ACC_SUPER)
@@ -85,10 +88,11 @@
             (into-array String (map #(.getInternalName ^Type %) interfaces)))
     (doseq [field fields]
       (emit-field cw field))
+    (emit-method cw parent static-initializer)
     (doseq [ctor ctors]
-      (emit-method cw parent true ctor))
+      (emit-method cw parent ctor))
     (doseq [method methods]
-      (emit-method cw parent false method))
+      (emit-method cw parent method))
     (.visitEnd cw)
     (.toByteArray cw)))
 
