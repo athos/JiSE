@@ -156,9 +156,18 @@
   (let [expr' (cond (symbol? expr) (parse-symbol cenv expr)
                     (seq? expr) (parse-seq cenv expr)
                     :else (parse-literal cenv expr))]
-    (or (when (and (:return (:context expr')) (not= (:type expr') (:return-type cenv)))
-          (when-let [cs (seq (t/assignment-conversion cenv (:type expr') (:return-type cenv)))]
-            (apply-conversions cs expr')))
+    (or (when (and (:return (:context expr'))
+                   (not= (or (:type expr') t/VOID) (:return-type cenv)))
+          (let [expr' (if (= (:type expr') t/VOID)
+                        ;; insert implicit (do ... nil)
+                        (-> {:op :do
+                             :type nil
+                             :exprs [(with-context expr' :statement)
+                                     (parse-literal cenv nil)]}
+                            (inherit-context cenv :return? false))
+                        expr')]
+            (when-let [cs (seq (t/assignment-conversion cenv (:type expr') (:return-type cenv)))]
+              (apply-conversions cs expr'))))
         expr')))
 
 (defn  parse-exprs [cenv body]
