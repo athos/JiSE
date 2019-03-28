@@ -503,10 +503,10 @@
   (doseq [arg args]
     (emit-expr emitter arg))
   (let [method-type (Type/getMethodType ^Type type (into-array Type arg-types))
-        opcode (cond (:private access) Opcodes/INVOKESPECIAL
-                   interface? Opcodes/INVOKEINTERFACE
-                   target Opcodes/INVOKEVIRTUAL
-                   :else Opcodes/INVOKESTATIC)
+        opcode (cond (:static access) Opcodes/INVOKESTATIC
+                     interface? Opcodes/INVOKEINTERFACE
+                     (:private access) Opcodes/INVOKESPECIAL
+                     :else Opcodes/INVOKEVIRTUAL)
         iname (.getInternalName ^Type class)
         desc (.getDescriptor method-type)]
     (emit-line emitter line)
