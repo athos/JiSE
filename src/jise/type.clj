@@ -102,7 +102,7 @@
       (if (str/starts-with? iname "[")
         (Class/forName (str/replace iname #"/" "."))
         (or (primitive-iname->class iname)
-            (Class/forName (.getClassName t))))
+            (resolve (symbol (.getClassName t)))))
       (catch ClassNotFoundException _))))
 
 (defn type->symbol [^Type t]
