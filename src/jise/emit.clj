@@ -195,7 +195,7 @@
         (drop-if-statement emitter context))))
 
 (defmethod emit-expr* :narrowing-primitive [{:keys [^MethodVisitor mv] :as emitter} {:keys [type src context]}]
-  (if (and (= (:op src) :literal) (#{t/BYTE t/SHORT t/CHAR} type))
+  (if (and (= (:op src) :literal) (#{t/BYTE t/SHORT t/CHAR t/FLOAT} type))
     (emit-expr emitter (assoc src :context context :type type))
     (do (emit-expr emitter src)
         (case type

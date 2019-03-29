@@ -20,9 +20,9 @@
           3 Opcodes/ICONST_3,4 Opcodes/ICONST_4
           5 Opcodes/ICONST_5}
    t/LONG {0 Opcodes/LCONST_0, 1 Opcodes/LCONST_1}
-   t/FLOAT {0 Opcodes/FCONST_0, 1 Opcodes/FCONST_1
-            2 Opcodes/FCONST_2}
-   t/DOUBLE {0 Opcodes/DCONST_0, 1 Opcodes/DCONST_1}})
+   t/FLOAT {0.0 Opcodes/FCONST_0, 1.0 Opcodes/FCONST_1
+            2.0 Opcodes/FCONST_2}
+   t/DOUBLE {0.0 Opcodes/DCONST_0, 1.0 Opcodes/DCONST_1}})
 
 (def return-insns
   {t/VOID Opcodes/RETURN
