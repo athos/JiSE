@@ -1,7 +1,7 @@
 (ns jise.type
   (:require [clojure.string :as str])
   (:import [clojure.asm Opcodes Type]
-           [java.lang.reflect Modifier]))
+           [java.lang.reflect Constructor Modifier]))
 
 (set! *warn-on-reflection* true)
 
@@ -311,8 +311,10 @@
                  (filter #(= (:arg-types %) arg-types))
                  first)
         (let [target-class (type->class class)
-              arg-classes (into-array Class (map type->class arg-types))
-              ctor (.getConstructor target-class arg-classes)]
-          {:arg-types (->> (.getParameterTypes ctor)
-                           (mapv (partial tag->type cenv)))
-           :access (modifiers->access-flags (.getModifiers ctor))}))))
+              arg-classes (map type->class arg-types)]
+          (when-first [^Constructor ctor (->> (.getDeclaredConstructors target-class)
+                                              (filter #(= (seq (.getParameterTypes ^Constructor %))
+                                                          arg-classes)))]
+            {:arg-types (->> (.getParameterTypes ctor)
+                             (mapv (partial tag->type cenv)))
+             :access (modifiers->access-flags (.getModifiers ctor))})))))
