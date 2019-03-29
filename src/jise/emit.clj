@@ -13,12 +13,14 @@
    :labels {}})
 
 (defn access-value [flags]
-  (cond-> 0
-    (:static flags) (+ Opcodes/ACC_STATIC)
-    (:public flags) (+ Opcodes/ACC_PUBLIC)
-    (:protected flags) (+ Opcodes/ACC_PROTECTED)
-    (:private flags) (+ Opcodes/ACC_PRIVATE)
-    (:final flags) (+ Opcodes/ACC_FINAL)))
+  (let [attrs {:static Opcodes/ACC_STATIC
+               :public Opcodes/ACC_PUBLIC
+               :protected Opcodes/ACC_PROTECTED
+               :private Opcodes/ACC_PRIVATE
+               :final Opcodes/ACC_FINAL
+               :transient Opcodes/ACC_TRANSIENT
+               :volatile Opcodes/ACC_VOLATILE}]
+    (apply + (keep attrs flags))))
 
 (defn emit-field [^ClassWriter cw {:keys [access name type value]}]
   (let [access (access-value access)

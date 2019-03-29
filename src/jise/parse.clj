@@ -7,12 +7,10 @@
   (merge (meta form) (meta name)))
 
 (defn access-flags [modifiers]
-  (cond-> #{}
-    (:static modifiers) (conj :static)
-    (:public modifiers) (conj :public)
-    (:protected modifiers) (conj :protected)
-    (:private modifiers) (conj :private)
-    (:final modifiers) (conj :final)))
+  (-> modifiers
+      (select-keys [:static :public :protected :private :final :transient :volatile])
+      keys
+      set))
 
 (defn parse-modifiers [proto-cenv {:keys [tag] :as modifiers} & {:keys [default-type]}]
   {:type (if (nil? tag)
