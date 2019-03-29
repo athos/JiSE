@@ -90,7 +90,8 @@
             (into-array String (map #(.getInternalName ^Type %) interfaces)))
     (doseq [field fields]
       (emit-field cw field))
-    (emit-method cw parent static-initializer)
+    (when static-initializer
+      (emit-method cw parent static-initializer))
     (doseq [ctor ctors]
       (emit-method cw parent ctor))
     (doseq [method methods]

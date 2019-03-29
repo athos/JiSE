@@ -205,7 +205,7 @@
         supers' (map (partial t/tag->type proto-cenv) supers)
         {[parent] false
          interfaces true} (group-by #(.isInterface (t/type->class %)) supers')]
-    {:parent (seq parent)
+    {:parent parent
      :interfaces interfaces
      :body (cond->> body (nil? supers) (cons maybe-supers))}))
 
