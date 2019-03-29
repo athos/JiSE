@@ -1,7 +1,7 @@
 (ns jise.type
   (:require [clojure.string :as str])
   (:import [clojure.asm Opcodes Type]
-           [java.lang.reflect Constructor Modifier]))
+           [java.lang.reflect Constructor Field Modifier]))
 
 (set! *warn-on-reflection* true)
 
@@ -277,14 +277,24 @@
         [(f t1' unbox1) (f t2' unbox2)]))))
 
 (defn find-field [cenv ^Type class name]
-  (let [class-name (type->symbol class)]
-    ;; TODO: needs to search class hierarchy as well
-    (if-let [f (get-in cenv [:classes class-name :fields name])]
-      {:class class :type (:type f)}
-      (let [f (.getField (type->class class) name)]
-        {:class (tag->type cenv (.getDeclaringClass f))
-         :type (tag->type cenv (.getType f))
-         :access (modifiers->access-flags (.getModifiers f))}))))
+  (letfn [(lookup [^Class c]
+            (if-let [[^Field f] (->> (.getDeclaredFields c)
+                                     (filter #(= (.getName ^Field %) name))
+                                     seq)]
+              {:class (tag->type cenv (.getDeclaringClass f))
+               :type (tag->type cenv (.getType f))
+               :access (modifiers->access-flags (.getModifiers f))}
+              (or (some lookup (.getInterfaces c))
+                  (some-> (.getSuperclass c) lookup))))]
+    (let [class-name (type->symbol class)]
+      (if-let [entry (get-in cenv [:classes class-name])]
+        (if-let [{:keys [type access]} (get-in entry [:fields name])]
+          {:class class :type type :access access}
+          ;; Here we assume all the superclasses and interfaces are defined outside of JiSE
+          (let [{:keys [parent interfaces]} entry]
+            (or (some lookup (map type->class interfaces))
+                (lookup (type->class parent)))))
+        (lookup (type->class class))))))
 
 (defn find-method [cenv ^Type class name arg-types]
   ;; TODO: needs to search class hierarchy as well
