@@ -67,7 +67,7 @@
       (parse-as-field cenv (symbol cname))
       (if-let [{:keys [index type]} (find-lname cenv sym)]
         (inherit-context {:op :local :index index :type type} cenv)
-        (if-let [f (get-in cenv [:classes (:class-name cenv) :fields (name sym)])]
+        (if-let [f (t/find-field cenv (t/tag->type cenv (:class-name cenv)) (name sym))]
           (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
             (parse-as-field cenv target))
           (throw (ex-info (str "unknown variable found: " sym) {:variable sym})))))))
