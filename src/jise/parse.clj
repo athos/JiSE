@@ -749,10 +749,13 @@
                              ~@(for [[i init] (map-indexed vector elems)]
                                  `(~'aset ~arr ~i ~init))
                              ~arr)))
-        (-> {:op :new-array
-             :type type'
-             :length (parse-expr (with-context cenv :expression) (first args))}
-            (inherit-context cenv)))
+        (let [cenv' (with-context cenv :expression)
+              length (parse-expr cenv' (first args))
+              cs (t/unary-numeric-promotion (:type length))]
+          (-> {:op :new-array
+               :type type'
+               :length (apply-conversions cs length)}
+              (inherit-context cenv))))
       (let [cenv' (with-context cenv :expression)
             args' (map (partial parse-expr cenv') args)
             ctor (t/find-ctor cenv type' (map :type args'))]
