@@ -739,23 +739,29 @@
        :exception (parse-expr (with-context cenv :expression) ex)}
       (inherit-context cenv :return? false)))
 
+(defn parse-array-creation [cenv type type' args]
+  (if (vector? (first args))
+    (let [elems (first args)
+          arr (gensym)]
+      (parse-expr cenv `(let* [~arr (new ~type ~(count elems))]
+                          ~@(for [[i init] (map-indexed vector elems)
+                                  :let [init' (if (vector? init)
+                                                `(new ~(first type) ~init)
+                                                init)]]
+                              `(~'aset ~arr ~i ~init'))
+                          ~arr)))
+    (let [cenv' (with-context cenv :expression)
+          length (parse-expr cenv' (first args))
+          cs (t/unary-numeric-promotion (:type length))]
+      (-> {:op :new-array
+           :type type'
+           :length (apply-conversions cs length)}
+          (inherit-context cenv)))))
+
 (defmethod parse-expr* 'new [cenv [_ type & args]]
   (let [type' (t/tag->type cenv type)]
     (if (t/array-type? type')
-      (if (vector? (first args))
-        (let [elems (first args)
-              arr (gensym)]
-          (parse-expr cenv `(~'let [~arr (new ~type ~(count elems))]
-                             ~@(for [[i init] (map-indexed vector elems)]
-                                 `(~'aset ~arr ~i ~init))
-                             ~arr)))
-        (let [cenv' (with-context cenv :expression)
-              length (parse-expr cenv' (first args))
-              cs (t/unary-numeric-promotion (:type length))]
-          (-> {:op :new-array
-               :type type'
-               :length (apply-conversions cs length)}
-              (inherit-context cenv))))
+      (parse-array-creation cenv type type' args)
       (let [cenv' (with-context cenv :expression)
             args' (map (partial parse-expr cenv') args)
             ctor (t/find-ctor cenv type' (map :type args'))]
