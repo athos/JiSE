@@ -533,15 +533,18 @@
    t/FLOAT Opcodes/T_FLOAT
    t/DOUBLE Opcodes/T_DOUBLE})
 
-(defmethod emit-expr* :new-array [{:keys [^MethodVisitor mv] :as emitter} {:keys [type length context line]}]
-  (emit-expr emitter length)
-  (emit-line emitter line)
-  (let [elem-type (t/element-type type)]
-    (if (t/primitive-type? elem-type)
-      (let [t (primitive-types elem-type)]
-        (.visitIntInsn mv Opcodes/NEWARRAY t))
-      (.visitTypeInsn mv Opcodes/ANEWARRAY (.getInternalName elem-type))))
-  (drop-if-statement emitter context))
+(defmethod emit-expr* :new-array [{:keys [^MethodVisitor mv] :as emitter} {:keys [type lengths context line]}]
+  (let [dim (count lengths)]
+    (run! (partial emit-expr emitter) lengths)
+    (emit-line emitter line)
+    (if (> dim 1)
+      (.visitMultiANewArrayInsn mv (.getDescriptor ^Type type) dim)
+      (let [elem-type (t/element-type type)]
+        (if (t/primitive-type? elem-type)
+          (let [t (primitive-types elem-type)]
+            (.visitIntInsn mv Opcodes/NEWARRAY t))
+          (.visitTypeInsn mv Opcodes/ANEWARRAY (.getInternalName elem-type)))))
+    (drop-if-statement emitter context)))
 
 (defmethod emit-expr* :array-length [{:keys [^MethodVisitor mv] :as emitter} {:keys [array context line]}]
   (emit-expr emitter array)

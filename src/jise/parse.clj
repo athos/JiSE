@@ -750,12 +750,14 @@
                                                 init)]]
                               `(~'aset ~arr ~i ~init'))
                           ~arr)))
-    (let [cenv' (with-context cenv :expression)
-          length (parse-expr cenv' (first args))
-          cs (t/unary-numeric-promotion (:type length))]
+    (let [cenv' (with-context cenv :expression)]
       (-> {:op :new-array
            :type type'
-           :length (apply-conversions cs length)}
+           :lengths (map (fn [arg]
+                           (let [arg' (parse-expr cenv' arg)
+                                 cs (t/unary-numeric-promotion (:type arg'))]
+                             (apply-conversions cs arg')))
+                         args)}
           (inherit-context cenv)))))
 
 (defmethod parse-expr* 'new [cenv [_ type & args]]
