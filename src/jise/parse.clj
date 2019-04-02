@@ -830,11 +830,14 @@
       (parse-expr cenv form))
     (let [cenv' (with-context cenv :expression)
           arr (parse-expr cenv' arr)
+          elem-type (t/element-type (:type arr))
           index' (as-> (parse-expr cenv' index) index'
-                   (apply-conversions (t/unary-numeric-promotion (:type index')) index'))]
+                   (apply-conversions (t/unary-numeric-promotion (:type index')) index'))
+          expr' (parse-expr cenv' (first more))
+          cs (t/assignment-conversion cenv' (:type expr') elem-type)]
       (-> {:op :array-update
-           :type (t/element-type (:type arr))
+           :type elem-type
            :array arr
            :index index'
-           :expr (parse-expr cenv' (first more))}
+           :expr (apply-conversions cs expr')}
           (inherit-context cenv)))))
