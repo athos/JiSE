@@ -774,6 +774,35 @@
              :args args'}
             (inherit-context cenv))))))
 
+(defn parse-field-access [cenv target target-type fname]
+  (if (and (t/array-type? target-type) (= fname "-length"))
+    (-> {:op :array-length
+         :type t/INT
+         :array target}
+        (inherit-context cenv))
+    (let [fname' (subs fname 1)
+          field (t/find-field cenv target-type fname')]
+      (-> {:op :field-access
+           :type (:type field)
+           :class (:class field)
+           :name fname'}
+          (inherit-context cenv)
+          (cond-> target (assoc :target target))))))
+
+(defn parse-method-invocation [cenv target target-type mname args]
+  (let [args' (map (partial parse-expr (with-context cenv :expression)) args)
+        method (t/find-method cenv target-type mname (map :type args'))]
+    (-> {:op :method-invocation
+         :interface? (:interface? method false)
+         :type (:return-type method)
+         :access (:access method)
+         :arg-types (:arg-types method)
+         :class (:class method)
+         :name mname
+         :args args'}
+        (inherit-context cenv)
+        (cond-> target (assoc :target target)))))
+
 (defmethod parse-expr* '. [cenv [_ target property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))
     (parse-expr cenv `(. ~target ~@property))
@@ -785,31 +814,8 @@
           target-type (or (:type target') (t/tag->type cenv target))
           pname (name property)]
       (if (str/starts-with? pname "-")
-        (if (and (t/array-type? target-type) (= pname "-length"))
-          (-> {:op :array-length
-               :type t/INT
-               :array target'}
-              (inherit-context cenv))
-          (let [pname' (subs pname 1)
-                field (t/find-field cenv target-type pname')]
-            (-> {:op :field-access
-                 :type (:type field)
-                 :class (:class field)
-                 :name pname'}
-                (inherit-context cenv)
-                (cond-> target' (assoc :target target')))))
-        (let [args' (map (partial parse-expr cenv') maybe-args)
-              method (t/find-method cenv target-type pname (map :type args'))]
-          (-> {:op :method-invocation
-               :interface? (:interface? method false)
-               :type (:return-type method)
-               :access (:access method)
-               :arg-types (:arg-types method)
-               :class (:class method)
-               :name pname
-               :args args'}
-              (inherit-context cenv)
-              (cond-> target' (assoc :target target'))))))))
+        (parse-field-access cenv target' target-type pname)
+        (parse-method-invocation cenv target' target-type pname maybe-args)))))
 
 (defn fold-aget [[_ arr index & indices :as expr]]
   (if (empty? indices)
