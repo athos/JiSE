@@ -156,6 +156,9 @@
      :type type
      :access access}))
 
+(defn next-index [cenv type]
+  (first (swap-vals! (:next-index cenv) + (t/type-category type))))
+
 (defn parse-binding [cenv lname init]
   (let [init' (some->> init (parse-expr (with-context cenv :expression)))
         lname' (parse-name cenv lname :default-type (:type init'))
@@ -164,7 +167,7 @@
                 init')]
     (-> lname'
         (update :name name)
-        (assoc :index (:next-index cenv))
+        (assoc :index (next-index cenv (:type lname')))
         (cond-> init' (assoc :init init')))))
 
 (defn parse-bindings [cenv bindings]
@@ -173,9 +176,7 @@
          ret []]
     (if lname
       (let [b (parse-binding cenv' lname init)
-            cenv' (-> cenv'
-                      (assoc-in [:lenv (:name b)] b)
-                      (update :next-index + (t/type-category (:type b))))]
+            cenv' (assoc-in cenv' [:lenv (:name b)] b)]
         (recur bindings cenv' (conj ret b)))
       [(inherit-context cenv' cenv) ret])))
 
@@ -186,7 +187,7 @@
                     {}
                     {"this" {:index 0 :type (t/tag->type cenv (:class-name cenv))}})
         init-index (count init-lenv)
-        [cenv' args'] (parse-bindings (assoc cenv :lenv init-lenv :next-index init-index)
+        [cenv' args'] (parse-bindings (assoc cenv :lenv init-lenv :next-index (atom init-index))
                                       (interleave args (repeat nil)))
         return-type (if ctor? t/VOID type)
         context (if (= return-type t/VOID) :statement :expression)]
