@@ -478,7 +478,7 @@
         owner (.getInternalName ^Type class)
         desc (.getDescriptor ^Type type)]
     (emit-line emitter line)
-    (.visitFieldInsn mv opcode owner name desc)
+    (.visitFieldInsn mv opcode owner (munge name) desc)
     (drop-if-statement emitter context)))
 
 (defmethod emit-expr* :field-update
@@ -496,7 +496,7 @@
         owner (.getInternalName ^Type class)
         desc (.getDescriptor ^Type type)]
     (emit-line emitter line)
-    (.visitFieldInsn mv opcode owner name desc)))
+    (.visitFieldInsn mv opcode owner (munge name) desc)))
 
 (defmethod emit-expr* :ctor-invocation [emitter {:keys [class] :as expr}]
   (emit-load emitter class 0)
@@ -517,7 +517,7 @@
         iname (.getInternalName ^Type class)
         desc (.getDescriptor method-type)]
     (emit-line emitter line)
-    (.visitMethodInsn mv opcode iname name desc interface?))
+    (.visitMethodInsn mv opcode iname (munge name) desc interface?))
   (if (= type t/VOID)
     (when-not (:statement context)
       (.visitInsn mv Opcodes/ACONST_NULL))
