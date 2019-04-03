@@ -144,10 +144,10 @@
 
 (defn  parse-exprs [cenv body]
   (let [cenv' (with-context cenv :statement)
+        exprs' (mapv parse-expr (repeat cenv') (butlast body))
         last' (parse-expr cenv (last body))]
     (-> {:op :do :type (:type last')
-         :exprs (-> (mapv parse-expr (repeat cenv') (butlast body))
-                    (conj last'))}
+         :exprs (conj exprs' last')}
         (inherit-context cenv :return? false))))
 
 (defn parse-name [proto-cenv name & {:keys [default-type]}]
