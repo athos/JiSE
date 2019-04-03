@@ -15,7 +15,7 @@
           (recur more expr [] (conj blocks [tag block]))
           (recur more tag (conj block expr) blocks))))))
 
-(defmethod parse/parse-expr* `tagbody [cenv [_ & body]]
+(defmethod parse/parse-expr* `tagbody* [cenv [_ & body]]
   (let [blocks (parse-tagbody-body body)
         [last-tag last-body] (last blocks)
         cenv' (parse/inherit-context cenv cenv :return? false)
@@ -29,9 +29,15 @@
                        [last-tag last'])}
         (parse/inherit-context cenv))))
 
-(defmethod parse/parse-expr* `go [cenv [_ tag]]
+(defmethod parse/parse-expr* `go* [cenv [_ tag]]
   (-> {:op ::go :tag tag}
       (parse/inherit-context (parse/with-context cenv :statement))))
+
+(defmacro tagbody [& body]
+  `(tagbody* ~@body))
+
+(defmacro go [tag]
+  `(go* ~tag))
 
 (defmethod emit/emit-expr* ::tagbody [{:keys [^MethodVisitor mv] :as emitter} {:keys [blocks context]}]
   (let [tag->label (zipmap (map first blocks) (repeatedly #(Label.)))
