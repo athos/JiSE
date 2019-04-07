@@ -704,10 +704,17 @@
 (defn seq-prefixed-with? [prefix x]
   (and (seq? x) (= (first x) prefix)))
 
-(defn parse-catch-clause [cenv [_ class lname & body]]
+(defn append-finally [cenv finally-clause exprs]
+  (if finally-clause
+    (if (:expression (context-of cenv))
+      `(let* [v# (do ~@exprs)] ~@finally-clause v#)
+      `(do ~@exprs ~@finally-clause))
+    `(do ~@exprs)))
+
+(defn parse-catch-clause [cenv finally-clause [_ class lname & body]]
   (let [class' (t/tag->type cenv class)
         [cenv' [b]] (parse-bindings cenv [(with-meta lname {:tag class}) nil])
-        body' (parse-exprs cenv' body)]
+        body' (parse-expr cenv' (append-finally cenv finally-clause body))]
     {:class class'
      :type (:type body')
      :index (:index b)
@@ -718,13 +725,14 @@
                                          (not (seq-prefixed-with? 'finally %)))
                                    body)
         [catch-clauses finally-clauses] (split-with #(not (seq-prefixed-with? 'finally %)) clauses)
-        body' (parse-exprs cenv body)]
+        finally-clause (nfirst finally-clauses)
+        append-finally (partial append-finally cenv finally-clause)
+        body' (parse-expr cenv (append-finally body))]
     (-> {:op :try
          :type (:type body')
          :body body'
-         :catch-clauses (mapv (partial parse-catch-clause cenv) catch-clauses)
-         :finally-clause (some->> (first finally-clauses)
-                                  (parse-exprs (with-context cenv :statement)))}
+         :catch-clauses (mapv (partial parse-catch-clause cenv finally-clause)
+                              catch-clauses)}
         (inherit-context cenv :return? false))))
 
 (defmethod parse-expr* 'continue [cenv [_ label]]

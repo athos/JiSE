@@ -428,7 +428,7 @@
     (when-not (:statement context)
       (.visitInsn mv Opcodes/ACONST_NULL))))
 
-(defmethod emit-expr* :try [{:keys [^MethodVisitor mv] :as emitter} {:keys [type body catch-clauses finally-clause]}]
+(defmethod emit-expr* :try [{:keys [^MethodVisitor mv] :as emitter} {:keys [type body catch-clauses]}]
   (let [start-label (Label.)
         handler-label (Label.)
         end-label (Label.)
@@ -441,9 +441,9 @@
     (when-not (:tail (:context body))
       (.visitJumpInsn mv Opcodes/GOTO end-label))
     (.visitLabel mv handler-label)
-    (doseq [{:keys [label type index body]} catch-clauses']
+    (doseq [{:keys [class label index body]} catch-clauses']
       (.visitLabel mv label)
-      (emit-store emitter {:type type :index index})
+      (emit-store emitter {:type class :index index})
       (emit-expr emitter body)
       (when-not (:tail (:context body))
         (.visitJumpInsn mv Opcodes/GOTO end-label)))
