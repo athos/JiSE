@@ -28,7 +28,7 @@
 
 (defn context-of [{:keys [context]}]
   (if (:conditional context)
-    (-> context (conj :conditional) (disj :expression))
+    (-> context (conj :expression) (disj :conditional))
     context))
 
 (defn with-context [x context]
@@ -242,7 +242,7 @@
               do (recur (concat (rest decl) decls) ret)
               (let [v (resolve (first decl))
                     [decls ret] (if (and v (:macro (meta v)))
-                                  [(cons (macroexpand {} decl) decls) ret]
+                                  [(cons (misc/macroexpand {} decl) decls) ret]
                                   [decls (update ret :initializer conj decl)])]
                 (recur decls ret)))
             (recur decls ret)))))))
@@ -714,7 +714,9 @@
      :body body'}))
 
 (defmethod parse-expr* 'try [cenv [_ & body]]
-  (let [[body clauses] (split-with #(not (seq-prefixed-with? 'catch %)) body)
+  (let [[body clauses] (split-with #(and (not (seq-prefixed-with? 'catch %))
+                                         (not (seq-prefixed-with? 'finally %)))
+                                   body)
         [catch-clauses finally-clauses] (split-with #(not (seq-prefixed-with? 'finally %)) clauses)
         body' (parse-exprs cenv body)]
     (-> {:op :try
