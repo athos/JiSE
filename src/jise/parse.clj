@@ -65,9 +65,11 @@
             (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))]
     (if-let [cname (namespace sym)]
       (parse-as-field cenv (symbol cname))
-      (if-let [{:keys [index type]} (find-lname cenv sym)]
-        (inherit-context {:op :local :index index :type type} cenv)
-        (if-let [f (t/find-field cenv (t/tag->type cenv (:class-name cenv)) (name sym))]
+      (if-let [{:keys [index type foreign?]} (find-lname cenv sym)]
+        (if foreign?
+          (parse-as-field cenv 'this)
+          (inherit-context {:op :local :index index :type type} cenv))
+        (if-let [f (t/find-field cenv (:class-type cenv) (name sym))]
           (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
             (parse-as-field cenv target))
           (throw (ex-info (str "unknown variable found: " sym) {:variable sym})))))))
@@ -76,7 +78,7 @@
   (let [cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
         class (if (= op 'this)
-                (t/tag->type cenv (:class-name cenv))
+                (:class-type cenv)
                 (get-in cenv [:classes (:class-name cenv) :parent]))
         ctor (t/find-ctor cenv class (map :type args'))
         initializer (and (= op 'super) (get-in cenv [:classes (:class-name cenv) :initializer]))]
@@ -185,9 +187,11 @@
         {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
         init-lenv (if (:static access)
                     {}
-                    {"this" {:index 0 :type (t/tag->type cenv (:class-name cenv))}})
+                    {"this" {:index 0 :type (:class-type cenv)}})
         init-index (count init-lenv)
-        [cenv' args'] (parse-bindings (assoc cenv :lenv init-lenv :next-index (atom init-index))
+        [cenv' args'] (parse-bindings (assoc cenv
+                                             :lenv (merge init-lenv (:enclosing-env cenv))
+                                             :next-index (atom init-index))
                                       (interleave args (repeat nil)))
         return-type (if ctor? t/VOID type)
         context (if (= return-type t/VOID) :statement :expression)]
@@ -279,7 +283,16 @@
           {:initializer [] :static-initializer []}
           initializer))
 
-(defn parse-class [[_ cname & body :as class]]
+(defn synthesize-fields [enclosing-env]
+  (reduce (fn [fields [name {:keys [type used?]}]]
+            (if @used?
+              (let [type' (t/type->symbol type)]
+                (conj fields `(def ~(with-meta (symbol name) {:tag type' :public true}))))
+              fields))
+          []
+          enclosing-env))
+
+(defn parse-class [enclosing-env [_ cname & body :as class]]
   (let [alias (class-alias cname)
         proto-cenv {:class-name cname :classes {}
                     :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
@@ -291,8 +304,14 @@
                  [(with-meta `(~'defm ~alias [] (~'super))
                     (select-keys (modifiers-of class) [:public :protected :private]))]
                  ctors)
-        cenv (init-cenv proto-cenv cname parent interfaces fields ctors' methods
-                        (when (seq initializer) `(do ~@initializer)))]
+        cenv (-> proto-cenv
+                 (init-cenv cname parent interfaces fields ctors' methods
+                            (when (seq initializer) `(do ~@initializer)))
+                 (assoc :enclosing-env enclosing-env)
+                 (as-> cenv (assoc cenv :class-type (t/tag->type cenv cname))))
+        ctors' (mapv (partial parse-method cenv true) ctors')
+        methods' (mapv (partial parse-method cenv false) methods)
+        synthesized-fields (synthesize-fields enclosing-env)]
     {:name (str/replace (str cname) \. \/)
      :access (access-flags (modifiers-of class))
      :parent parent
@@ -301,9 +320,10 @@
                            (let [m `^:static (~'defm ~'<clinit> [] ~@static-initializer)]
                              (-> (parse-method cenv false m)
                                  (assoc :static-initializer? true))))
-     :ctors (mapv (partial parse-method cenv true) ctors')
-     :fields (mapv (partial parse-field cenv) fields)
-     :methods (mapv (partial parse-method cenv false) methods)}))
+     :ctors ctors'
+     :methods methods'
+     :fields (mapv (partial parse-field cenv)
+                   (concat fields synthesized-fields))}))
 
 (defn parse-unary-op [cenv [_ x] op]
   (let [cenv' (with-context cenv :expression)
@@ -791,14 +811,22 @@
          :type t/INT
          :array target}
         (inherit-context cenv))
-    (let [fname' (subs fname 1)
-          field (t/find-field cenv target-type fname')]
-      (-> {:op :field-access
-           :type (:type field)
-           :class (:class field)
-           :name fname'}
-          (inherit-context cenv)
-          (cond-> target (assoc :target target))))))
+    (let [fname' (subs fname 1)]
+      (if-let [{:keys [type used?]} (get (:enclosing-env cenv) fname')]
+        (do (reset! used? true)
+            (-> {:op :field-access
+                 :type type
+                 :class (:class-type cenv)
+                 :target target
+                 :name fname'}
+                (inherit-context cenv)))
+        (let [field (t/find-field cenv target-type fname')]
+          (-> {:op :field-access
+               :type (:type field)
+               :class (:class field)
+               :name fname'}
+              (inherit-context cenv)
+              (cond-> target (assoc :target target))))))))
 
 (defn parse-method-invocation [cenv target target-type mname args]
   (let [args' (map (partial parse-expr (with-context cenv :expression)) args)

@@ -2,8 +2,9 @@
   (:refer-clojure :exclude [class])
   (:require [clojure.string :as str]
             [jise.emit :as emit]
-            [jise.parse :as parse])
-  (:import [clojure.lang Compiler DynamicClassLoader]))
+            [jise.parse :as parse]
+            [jise.type :as type])
+  (:import [clojure.lang Compiler Compiler$LocalBinding DynamicClassLoader]))
 
 (defn qualify-cname [cname]
   (let [cname' (name cname)]
@@ -14,31 +15,49 @@
         symbol
         (with-meta (meta cname)))))
 
-(defn compile-to-bytecode [form-meta qname body]
-  (-> `(defclass ~qname ~@body)
-      (with-meta form-meta)
-      parse/parse-class
-      emit/emit-class))
+(defn compile-to-bytecode [form-meta enclosing-env qname body]
+  (->> (with-meta `(defclass ~qname ~@body) form-meta)
+       (parse/parse-class enclosing-env)
+       emit/emit-class))
 
-(defn compile-class [form-meta cname body]
+(defn compile-class [form-meta enclosing-env cname body]
   (let [qname (with-meta (qualify-cname cname) (meta cname))
         qname' (str qname)
-        bytecode (compile-to-bytecode form-meta qname body)]
+        bytecode (compile-to-bytecode form-meta enclosing-env qname body)]
     (when *compile-files*
       (Compiler/writeClassFile (str/replace qname' \. \/) bytecode))
     (.defineClass ^DynamicClassLoader @Compiler/LOADER qname' bytecode nil)
     qname))
 
+(defn enclosing-env [&env]
+  (reduce-kv (fn [m sym ^Compiler$LocalBinding lb]
+               (assoc m (name sym)
+                      {:type (if (.hasJavaClass lb)
+                               (type/tag->type {} (.getJavaClass lb))
+                               type/OBJECT)
+                       :foreign? true
+                       :used? (atom false)}))
+             {}
+             &env))
+
 (defmacro defclass [cname & body]
-  (let [qname (compile-class (meta &form) cname body)]
+  (let [qname (compile-class (meta &form) {} cname body)]
     `(do (import '~qname)
          ~qname)))
 
 (defmacro class [maybe-name & body]
   (let [cname (if (symbol? maybe-name)
                 maybe-name
-                `C#)]
-    `(new ~(compile-class (meta &form) cname body))))
+                `C#)
+        enclosing-env (enclosing-env &env)
+        qname (compile-class (meta &form) enclosing-env cname body)
+        obj (gensym 'obj)]
+    `(let [~obj (new ~qname)]
+       ~@(for [[name {:keys [used?]}] enclosing-env
+               :when @used?
+               :let [sym (symbol name)]]
+           `(set! (. ~obj ~sym) ~sym))
+       ~obj)))
 
 (comment
 
@@ -48,7 +67,7 @@
   (defn gen [[_ cname & body :as class] filename]
     (let [qname (with-meta (qualify-cname cname) (meta cname))
           qname' (str qname)
-          bytecode (compile-to-bytecode (meta class) qname body)]
+          bytecode (compile-to-bytecode (meta class) {} qname body)]
       (with-open [out (DataOutputStream. (io/output-stream filename))]
         (.write out bytecode)
         (.flush out))))
