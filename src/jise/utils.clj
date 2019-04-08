@@ -11,9 +11,9 @@
 
 (defn- fixup-type-hint [allow-primitive? arg]
   (c/let [{:keys [tag] :or {tag 'Object}} (meta arg)
-        tag' (or (when allow-primitive?
-                   (primitive-type tag))
-                 'Object)]
+          tag' (or (when allow-primitive?
+                     (primitive-type tag))
+                   'Object)]
     (cond-> arg
       (not= tag tag')
       (vary-meta assoc :tag tag'))))
@@ -31,7 +31,7 @@
                           c '[L D O]]
                       (conj x c)))))]
         (->> (for [cs (mapcat rec (range 1 6))
-               :when (not (every? '#{O} cs))]
+                   :when (not (every? '#{O} cs))]
                [`'~cs (symbol (apply str 'clojure.lang.IFn$ cs))])
              (into {})))))
 
