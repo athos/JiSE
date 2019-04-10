@@ -593,23 +593,25 @@
 
 (defmethod parse-expr* 'inc! [cenv [_ target by]]
   (let [by (or by 1)
-        target' (parse-expr (with-context cenv :expression) target)]
+        {:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
     (if (and (= (:op target') :local)
-             (when-let [{:keys [to]} (t/widening-primitive-conversion (:type target') t/INT)]
-               (= to t/INT))
+             (or (= type t/INT)
+                 (when-let [{:keys [to]} (t/widening-primitive-conversion type t/INT)]
+                   (= to t/INT)))
              (<= 0 by Byte/MAX_VALUE))
-      (-> {:op :increment, :target target', :type (:type target'), :by by}
+      (-> {:op :increment, :target target', :type type, :by by}
           (inherit-context cenv))
       (parse-expr cenv `(set! ~target (~'+ ~target ~by))))))
 
 (defmethod parse-expr* 'dec! [cenv [_ target by]]
   (let [by (or by 1)
-        target' (parse-expr (with-context cenv :expression) target)]
+        {:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
     (if (and (= (:op target') :local)
-             (when-let [{:keys [to]} (t/widening-primitive-conversion (:type target') t/INT)]
-               (= to t/INT))
+             (or (= type t/INT)
+                 (when-let [{:keys [to]} (t/widening-primitive-conversion type t/INT)]
+                   (= to t/INT)))
              (<= 0 by (- Byte/MIN_VALUE)))
-      (-> {:op :increment, :target target', :type (:type target'), :by (- by)}
+      (-> {:op :increment, :target target', :type type, :by (- by)}
           (inherit-context cenv))
       (parse-expr cenv `(set! ~target (~'- ~target ~by))))))
 
