@@ -108,6 +108,22 @@
 (defn type->symbol [^Type t]
   (symbol (.getClassName t)))
 
+(def primitive-type->symbol
+  {BOOLEAN 'boolean
+   BYTE 'byte
+   CHAR 'char
+   SHORT 'short
+   INT 'int
+   LONG 'long
+   FLOAT 'float
+   DOUBLE 'double})
+
+(defn type->tag [^Type t]
+  (if (array-type? t)
+    [(type->tag (element-type t))]
+    (or (primitive-type->symbol t)
+        (symbol (.getClassName t)))))
+
 (defn super? [cenv t1 t2]
   (or (= t1 OBJECT)
       (= t2 nil)

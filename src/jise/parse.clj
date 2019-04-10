@@ -286,7 +286,7 @@
 (defn synthesize-fields [enclosing-env]
   (reduce (fn [fields [name {:keys [type used?]}]]
             (if @used?
-              (let [type' (t/type->symbol type)]
+              (let [type' (t/type->tag type)]
                 (conj fields `(def ~(with-meta (symbol name) {:tag type' :public true}))))
               fields))
           []
