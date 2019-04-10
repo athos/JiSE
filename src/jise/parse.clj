@@ -48,6 +48,9 @@
           src
           conversions))
 
+(defn find-in-current-class [cenv & ks]
+  (get-in cenv (into [:classes (:class-name cenv)] ks)))
+
 (declare parse-expr)
 
 (defmulti parse-expr* (fn [cenv expr] (misc/fixup-ns (first expr))))
@@ -79,9 +82,9 @@
         args' (map (partial parse-expr cenv') args)
         class (if (= op 'this)
                 (:class-type cenv)
-                (get-in cenv [:classes (:class-name cenv) :parent]))
+                (find-in-current-class cenv :parent))
         ctor (t/find-ctor cenv class (map :type args'))
-        initializer (and (= op 'super) (get-in cenv [:classes (:class-name cenv) :initializer]))]
+        initializer (when (= op 'super) (find-in-current-class cenv :initializer))]
     (-> {:op :ctor-invocation
          :class class
          :access (:access ctor)
