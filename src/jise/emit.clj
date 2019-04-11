@@ -38,8 +38,8 @@
       (.visitLabel mv here)
       (.visitLineNumber mv line here))))
 
-(defn emit-return [{:keys [^MethodVisitor mv]} type]
-  (.visitInsn mv (get insns/return-insns type Opcodes/ARETURN)))
+(defn emit-return [{:keys [^MethodVisitor mv]} ^Type type]
+  (.visitInsn mv (.getOpcode type Opcodes/IRETURN)))
 
 (defn emit-expr [{:keys [^MethodVisitor mv] :as emitter} {:keys [context] :as expr}]
   (emit-expr* emitter expr)
@@ -135,15 +135,15 @@
                             value)]
                     (.visitLdcInsn mv v))))))
 
-(defn emit-load [{:keys [^MethodVisitor mv]} type index]
-  (.visitVarInsn mv (get insns/load-insns type Opcodes/ALOAD) index))
+(defn emit-load [{:keys [^MethodVisitor mv]} ^Type type index]
+  (.visitVarInsn mv (.getOpcode type Opcodes/ILOAD) index))
 
 (defmethod emit-expr* :local [emitter {:keys [type index context]}]
   (when-not (:statement context)
     (emit-load emitter type index)))
 
 (defn emit-arithmetic [{:keys [^MethodVisitor mv] :as emitter} {:keys [type lhs rhs context line]} op]
-  (let [opcode (get-in insns/arithmetic-insns [type op])]
+  (let [opcode (.getOpcode ^Type type (get insns/arithmetic-insns op))]
     (emit-expr emitter lhs)
     (emit-expr emitter rhs)
     (emit-line emitter line)
@@ -168,7 +168,7 @@
 (defmethod emit-expr* :neg [{:keys [^MethodVisitor mv] :as emitter} {:keys [type operand context line]}]
   (emit-expr emitter operand)
   (emit-line emitter line)
-  (.visitInsn mv (get insns/negation-insns type))
+  (.visitInsn mv (.getOpcode ^Type type Opcodes/INEG))
   (drop-if-statement emitter context))
 
 (defmethod emit-expr* :bitwise-and [emitter expr]
@@ -256,8 +256,8 @@
   (.visitTypeInsn mv Opcodes/INSTANCEOF (.getInternalName ^Type class))
   (drop-if-statement emitter context))
 
-(defn emit-store [{:keys [^MethodVisitor mv]} {:keys [type index]}]
-  (.visitVarInsn mv (get insns/store-insns type Opcodes/ASTORE) index))
+(defn emit-store [{:keys [^MethodVisitor mv]} {:keys [^Type type index]}]
+  (.visitVarInsn mv (.getOpcode type Opcodes/ISTORE) index))
 
 (defmethod emit-expr* :let [emitter {:keys [bindings body line]}]
   (emit-line emitter line)
@@ -557,7 +557,7 @@
   (emit-expr emitter index)
   (emit-line emitter line)
   (let [elem-type (t/element-type (:type array))]
-    (.visitInsn mv (get insns/aload-insns elem-type Opcodes/AALOAD))
+    (.visitInsn mv (.getOpcode elem-type Opcodes/IALOAD))
     (drop-if-statement emitter context)))
 
 (defmethod emit-expr* :array-update
@@ -568,4 +568,4 @@
   (dup-unless-statement emitter context (:type expr))
   (emit-line emitter line)
   (let [elem-type (t/element-type (:type array))]
-    (.visitInsn mv (get insns/astore-insns elem-type Opcodes/AASTORE))))
+    (.visitInsn mv (.getOpcode elem-type Opcodes/IASTORE))))

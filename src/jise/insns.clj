@@ -24,76 +24,18 @@
             2.0 Opcodes/FCONST_2}
    t/DOUBLE {0.0 Opcodes/DCONST_0, 1.0 Opcodes/DCONST_1}})
 
-(def return-insns
-  {t/VOID Opcodes/RETURN
-   t/BOOLEAN Opcodes/IRETURN
-   t/BYTE Opcodes/IRETURN
-   t/CHAR Opcodes/IRETURN
-   t/SHORT Opcodes/IRETURN
-   t/INT Opcodes/IRETURN
-   t/LONG Opcodes/LRETURN
-   t/FLOAT Opcodes/FRETURN
-   t/DOUBLE Opcodes/DRETURN})
-
-(def load-insns
-  {t/BOOLEAN Opcodes/ILOAD
-   t/BYTE Opcodes/ILOAD
-   t/CHAR Opcodes/ILOAD
-   t/SHORT Opcodes/ILOAD
-   t/INT Opcodes/ILOAD
-   t/LONG Opcodes/LLOAD
-   t/FLOAT Opcodes/FLOAD
-   t/DOUBLE Opcodes/DLOAD})
-
-(def store-insns
-  {t/BOOLEAN Opcodes/ISTORE
-   t/BYTE Opcodes/ISTORE
-   t/CHAR Opcodes/ISTORE
-   t/SHORT Opcodes/ISTORE
-   t/INT Opcodes/ISTORE
-   t/LONG Opcodes/LSTORE
-   t/FLOAT Opcodes/FSTORE
-   t/DOUBLE Opcodes/DSTORE})
-
 (def arithmetic-insns
-  {t/INT {:add Opcodes/IADD
-          :sub Opcodes/ISUB
-          :mul Opcodes/IMUL
-          :div Opcodes/IDIV
-          :rem Opcodes/IREM
-          :bitwise-and Opcodes/IAND
-          :bitwise-or Opcodes/IOR
-          :bitwise-xor Opcodes/IXOR
-          :shift-left Opcodes/ISHL
-          :shift-right Opcodes/ISHR
-          :logical-shift-right Opcodes/IUSHR}
-   t/LONG {:add Opcodes/LADD
-           :sub Opcodes/LSUB
-           :mul Opcodes/LMUL
-           :div Opcodes/LDIV
-           :rem Opcodes/LREM
-           :bitwise-and Opcodes/LAND
-           :bitwise-or Opcodes/LOR
-           :bitwise-xor Opcodes/LXOR
-           :shift-left Opcodes/LSHL
-           :shift-right Opcodes/LSHR
-           :logical-shift-right Opcodes/LUSHR}
-   t/FLOAT {:add Opcodes/FADD
-            :sub Opcodes/FSUB
-            :mul Opcodes/FMUL
-            :div Opcodes/FDIV
-            :rem Opcodes/FREM}
-   t/DOUBLE {:add Opcodes/DADD
-             :sub Opcodes/DSUB
-             :mul Opcodes/DMUL
-             :div Opcodes/DDIV
-             :rem Opcodes/DREM}})
-
-(def negation-insns
-  {t/INT Opcodes/INEG
-   t/LONG Opcodes/LNEG
-   t/FLOAT Opcodes/FNEG
-   t/DOUBLE Opcodes/DNEG})
+  {:add Opcodes/IADD
+   :sub Opcodes/ISUB
+   :mul Opcodes/IMUL
+   :div Opcodes/IDIV
+   :rem Opcodes/IREM
+   :bitwise-and Opcodes/IAND
+   :bitwise-or Opcodes/IOR
+   :bitwise-xor Opcodes/IXOR
+   :shift-left Opcodes/ISHL
+   :shift-right Opcodes/ISHR
+   :logical-shift-right Opcodes/IUSHR})
 
 (def comparison-insns
   {t/INT {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]
@@ -127,23 +69,3 @@
    t/DOUBLE {t/INT Opcodes/D2I
              t/LONG Opcodes/D2L
              t/FLOAT Opcodes/D2F}})
-
-(def aload-insns
-  {t/BOOLEAN Opcodes/BALOAD
-   t/BYTE Opcodes/BALOAD
-   t/CHAR Opcodes/CALOAD
-   t/SHORT Opcodes/SALOAD
-   t/INT Opcodes/IALOAD
-   t/LONG Opcodes/LALOAD
-   t/FLOAT Opcodes/FALOAD
-   t/DOUBLE Opcodes/DALOAD})
-
-(def astore-insns
-  {t/BOOLEAN Opcodes/BASTORE
-   t/BYTE Opcodes/BASTORE
-   t/CHAR Opcodes/CASTORE
-   t/SHORT Opcodes/SASTORE
-   t/INT Opcodes/IASTORE
-   t/LONG Opcodes/LASTORE
-   t/FLOAT Opcodes/FASTORE
-   t/DOUBLE Opcodes/DASTORE})
