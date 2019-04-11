@@ -1,17 +1,6 @@
 (ns jise.insns
   (:require [jise.type :as t])
-  (:import [clojure.asm Opcodes Type]))
-
-(def primitive-types
-  {t/BOOLEAN Type/BOOLEAN_TYPE
-   t/BYTE Type/BYTE_TYPE
-   t/CHAR Type/CHAR_TYPE
-   t/SHORT Type/SHORT_TYPE
-   t/INT Type/INT_TYPE
-   t/LONG Type/LONG_TYPE
-   t/FLOAT Type/FLOAT_TYPE
-   t/DOUBLE Type/DOUBLE_TYPE
-   t/VOID Type/VOID_TYPE})
+  (:import [clojure.asm Opcodes]))
 
 (def const-insns
   {t/BOOLEAN {true Opcodes/ICONST_1, false Opcodes/ICONST_0}
