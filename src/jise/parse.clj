@@ -8,7 +8,7 @@
 
 (defn access-flags [modifiers]
   (-> modifiers
-      (select-keys [:static :public :protected :private :final :transient :volatile])
+      (select-keys [:abstract :static :public :protected :private :final :transient :volatile])
       keys
       set))
 
@@ -201,10 +201,11 @@
     (cond-> {:return-type return-type
              :args args'
              :access access
-             :body (parse-exprs (-> cenv'
-                                    (assoc :return-type return-type
-                                           :context #{context :tail :return}))
-                                body)}
+             :body (when-not (:abstract access)
+                     (parse-exprs (-> cenv'
+                                      (assoc :return-type return-type
+                                             :context #{context :tail :return}))
+                                  body))}
       ctor? (assoc :ctor? ctor?)
       (not ctor?) (assoc :name (str mname)))))
 

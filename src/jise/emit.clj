@@ -13,7 +13,8 @@
    :labels {}})
 
 (defn access-value [flags]
-  (let [attrs {:static Opcodes/ACC_STATIC
+  (let [attrs {:abstract Opcodes/ACC_ABSTRACT
+               :static Opcodes/ACC_STATIC
                :public Opcodes/ACC_PUBLIC
                :protected Opcodes/ACC_PROTECTED
                :private Opcodes/ACC_PRIVATE
@@ -76,7 +77,8 @@
     (when (and ctor? (not= (get-in body [:exprs 0 :op]) :ctor-invocation))
       (.visitVarInsn mv Opcodes/ALOAD 0)
       (emit-ctor-invocation emitter {:class parent :arg-types [] :args []}))
-    (emit-expr emitter body)
+    (when-not (:abstract access)
+      (emit-expr emitter body))
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
