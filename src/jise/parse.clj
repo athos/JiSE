@@ -65,7 +65,7 @@
 
 (defn parse-symbol [cenv sym]
   (if-let [tag (:tag (meta sym))]
-    (parse-expr cenv `(~'cast ~tag (vary-meta sym dissoc :tag)))
+    (parse-expr cenv `(~'cast ~tag ~(vary-meta sym dissoc :tag)))
     (letfn [(parse-as-field [cenv target]
               (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))]
       (if-let [cname (namespace sym)]
