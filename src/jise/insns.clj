@@ -40,6 +40,12 @@
              :lt [Opcodes/DCMPL Opcodes/IFGE], :gt [Opcodes/DCMPL Opcodes/IFLE]
              :le [Opcodes/DCMPL Opcodes/IFGT], :ge [Opcodes/DCMPL Opcodes/IFLT]}})
 
+(def constant-comparison-insns
+  {:eq-null Opcodes/IFNONNULL :ne-null Opcodes/IFNULL
+   :eq-0 Opcodes/IFNE :ne-0 Opcodes/IFEQ
+   :lt-0 Opcodes/IFGE :gt-0 Opcodes/IFLE
+   :le-0 Opcodes/IFGT :ge-0 Opcodes/IFLT})
+
 (def widening-insns
   {t/INT {t/LONG Opcodes/I2L
           t/FLOAT Opcodes/I2F

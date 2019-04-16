@@ -297,19 +297,23 @@
     (emit-expr emitter' target)
     (.visitLabel mv break-label)))
 
-(defn emit-comparison [{:keys [^MethodVisitor mv] :as emitter} op {:keys [lhs rhs]} label]
-  (let [t (:type lhs)]
-    (emit-expr emitter lhs)
-    (emit-expr emitter rhs)
-    (if-let [[opcode1 opcode2] (get-in insns/comparison-insns [t op])]
-      (if opcode2
-        (do (.visitInsn mv opcode1)
-            (.visitJumpInsn mv opcode2 label))
-        (.visitJumpInsn mv opcode1 label))
-      (let [opcode (case op
-                     :eq Opcodes/IF_ACMPNE
-                     :ne Opcodes/IF_ACMPEQ)]
-        (.visitJumpInsn mv opcode label)))))
+(defn emit-comparison [{:keys [^MethodVisitor mv] :as emitter} op {:keys [operand lhs rhs]} label]
+  (if operand
+    (let [opcode (get insns/constant-comparison-insns op)]
+      (emit-expr emitter operand)
+      (.visitJumpInsn mv opcode label))
+    (let [t (:type lhs)]
+      (emit-expr emitter lhs)
+      (emit-expr emitter rhs)
+      (if-let [[opcode1 opcode2] (get-in insns/comparison-insns [t op])]
+        (if opcode2
+          (do (.visitInsn mv opcode1)
+              (.visitJumpInsn mv opcode2 label))
+          (.visitJumpInsn mv opcode1 label))
+        (let [opcode (case op
+                       :eq Opcodes/IF_ACMPNE
+                       :ne Opcodes/IF_ACMPEQ)]
+          (.visitJumpInsn mv opcode label))))))
 
 (declare emit-conditional)
 
@@ -323,7 +327,9 @@
     (.visitLabel mv then-label)))
 
 (def negated-comparison-ops
-  {:eq :ne, :ne :eq, :lt :ge, :gt :le, :le :gt, :ge :lt})
+  {:eq :ne, :ne :eq, :lt :ge, :gt :le, :le :gt, :ge :lt
+   :eq-0 :ne-0, :ne-0 :eq-0, :eq-null :ne-null, :ne-null :eq-null
+   :lt-0 :ge-0, :gt-0 :le-0, :le-0 :gt-0, :ge-0 :lt-0})
 
 (defn emit-not [{:keys [^MethodVisitor mv] :as emitter} {:keys [expr]} label]
   (if-let [negated (negated-comparison-ops (:op expr))]
@@ -334,7 +340,7 @@
 (defn emit-conditional [{:keys [^MethodVisitor mv] :as emitter} cond label]
   (let [op (:op cond)]
     (case op
-      (:eq :ne :lt :gt :le :ge)
+      (:eq :ne :lt :gt :le :ge :eq-null :ne-null :eq-0 :ne-0 :lt-0 :gt-0 :le-0 :ge-0)
       (emit-comparison emitter op cond label)
       :and
       (emit-and emitter cond label)

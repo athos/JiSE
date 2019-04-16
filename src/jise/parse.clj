@@ -338,15 +338,18 @@
          :operand (apply-conversions cs x')}
         (inherit-context cenv))))
 
-(defn parse-binary-op [cenv [_ x y] op]
-  (let [cenv' (with-context cenv :expression)
-        lhs (parse-expr cenv' x)
-        rhs (parse-expr cenv' y)
-        [cl cr] (t/binary-numeric-promotion (:type lhs) (:type rhs))]
-    (-> {:op op
-         :lhs (apply-conversions cl lhs)
-         :rhs (apply-conversions cr rhs)}
-        (inherit-context cenv))))
+(defn parse-binary-op
+  ([cenv [_ x y] op]
+   (let [cenv' (with-context cenv :expression)
+         lhs (parse-expr cenv' x)
+         rhs (parse-expr cenv' y)]
+     (parse-binary-op cenv lhs rhs op)))
+  ([cenv lhs rhs op]
+   (let [[cl cr] (t/binary-numeric-promotion (:type lhs) (:type rhs))]
+     (-> {:op op
+          :lhs (apply-conversions cl lhs)
+          :rhs (apply-conversions cr rhs)}
+         (inherit-context cenv)))))
 
 (defn parse-arithmetic [cenv expr op]
   (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op)]
@@ -429,32 +432,70 @@
     `(~'and ~@(map (fn [[x y]] `(~op ~x ~y)) (partition 2 1 args)))
     (meta expr)))
 
-(defn parse-comparison [cenv [_ x y & more :as expr] op]
-  (if (:conditional (:context cenv))
-    (if more
-      (parse-expr cenv (fold-comparison expr))
-      (let [cenv' (with-context cenv :expression)]
-        (-> (parse-binary-op cenv' expr op)
-            (assoc :type t/BOOLEAN))))
-    (parse-expr cenv `(if ~expr true false))))
+(defn parse-comparison
+  ([cenv [_ x y & more :as expr] op]
+   (if (:conditional (:context cenv))
+     (if more
+       (parse-expr cenv (fold-comparison expr))
+       (let [cenv' (with-context cenv :expression)
+             x' (parse-expr cenv' x)
+             y' (parse-expr cenv' y)]
+         (parse-comparison cenv' x' y' op)))
+     (parse-expr cenv `(if ~expr true false))))
+  ([cenv lhs rhs op]
+   (-> (parse-binary-op cenv lhs rhs op)
+       (assoc :type t/BOOLEAN))))
 
-(defmethod parse-expr* '== [cenv expr]
-  (parse-comparison cenv expr :eq))
+(defn parse-cmp-0 [cenv x op default-op default]
+  (if (= x 0)
+    (parse-expr cenv default)
+    (let [cenv' (with-context cenv :expression)
+          x' (parse-expr cenv' x)]
+      (if (= (:type x') t/INT)
+        {:op op
+         :type t/BOOLEAN
+         :operand x'}
+        (parse-comparison cenv' x' (parse-literal cenv' 0) default-op)))))
 
-(defmethod parse-expr* '!= [cenv expr]
-  (parse-comparison cenv expr :ne))
+(defn parse-eq-null [cenv x op]
+  (if (nil? x)
+    (parse-expr cenv true)
+    (let [x' (parse-expr (with-context cenv :expression) x)]
+      {:op op
+       :type t/BOOLEAN
+       :operand x'})))
 
-(defmethod parse-expr* '< [cenv expr]
-  (parse-comparison cenv expr :lt))
+(defmethod parse-expr* '== [cenv [_ x y & more :as expr]]
+  (or (when-not more
+        (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv (if (= x 0) y x) :eq-0 :eq true)
+              (or (nil? x) (nil? y)) (parse-eq-null cenv (if (nil? x) y x) :eq-null)))
+      (parse-comparison cenv expr :eq)))
 
-(defmethod parse-expr* '> [cenv expr]
-  (parse-comparison cenv expr :gt))
+(defmethod parse-expr* '!= [cenv [_ x y & more :as expr]]
+  (or (when-not more
+        (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv (if (= x 0) y x) :ne-0 :ne false)
+              (or (nil? x) (nil? y)) (parse-eq-null cenv (if (nil? x) y x) :ne-null)))
+      (parse-comparison cenv expr :ne)))
 
-(defmethod parse-expr* '<= [cenv expr]
-  (parse-comparison cenv expr :le))
+(defmethod parse-expr* '< [cenv [_ x y & more :as expr]]
+  (if (and (nil? more) (or (= x 0) (= y 0)))
+    (parse-cmp-0 cenv (if (= x 0) y x) :lt-0 :lt false)
+    (parse-comparison cenv expr :lt)))
 
-(defmethod parse-expr* '>= [cenv expr]
-  (parse-comparison cenv expr :ge))
+(defmethod parse-expr* '> [cenv [_ x y & more :as expr]]
+  (if (and (nil? more) (or (= x 0) (= y 0)))
+    (parse-cmp-0 cenv (if (= x 0) y x) :gt-0 :gt false)
+    (parse-comparison cenv expr :gt)))
+
+(defmethod parse-expr* '<= [cenv [_ x y & more :as expr]]
+  (if (and (nil? more) (or (= x 0) (= y 0)))
+    (parse-cmp-0 cenv (if (= x 0) y x) :le-0 :le true)
+    (parse-comparison cenv expr :le)))
+
+(defmethod parse-expr* '>= [cenv [_ x y & more :as expr]]
+  (if (and (nil? more) (or (= x 0) (= y 0)))
+    (parse-cmp-0 cenv (if (= x 0) y x) :ge-0 :ge true)
+    (parse-comparison cenv expr :ge)))
 
 (defmethod parse-expr* 'and [cenv [_ & exprs :as expr]]
   (if (:conditional (:context cenv))
