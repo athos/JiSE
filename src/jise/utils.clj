@@ -76,7 +76,7 @@
          {:public true :tag return-type})
       ^:public ^Object
       (jise/defm ~'invoke ~(vec args'')
-        ~@(emit-fn-body args' args'' body)))))
+        (.invokePrim ~'this ~@args')))))
 
 (defn- emit-fn-class [fname args body]
   (c/let [args' (fixup-type-hints args)
