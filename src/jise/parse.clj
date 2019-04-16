@@ -64,18 +64,20 @@
   (get (:lenv cenv) (name sym)))
 
 (defn parse-symbol [cenv sym]
-  (letfn [(parse-as-field [cenv target]
-            (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))]
-    (if-let [cname (namespace sym)]
-      (parse-as-field cenv (symbol cname))
-      (if-let [{:keys [index type foreign?]} (find-lname cenv sym)]
-        (if foreign?
-          (parse-as-field cenv 'this)
-          (inherit-context {:op :local :index index :type type} cenv))
-        (if-let [f (t/find-field cenv (:class-type cenv) (name sym))]
-          (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
-            (parse-as-field cenv target))
-          (throw (ex-info (str "unknown variable found: " sym) {:variable sym})))))))
+  (if-let [tag (:tag (meta sym))]
+    (parse-expr cenv `(~'cast ~tag (vary-meta sym dissoc :tag)))
+    (letfn [(parse-as-field [cenv target]
+              (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))]
+      (if-let [cname (namespace sym)]
+        (parse-as-field cenv (symbol cname))
+        (if-let [{:keys [index type foreign?]} (find-lname cenv sym)]
+          (if foreign?
+            (parse-as-field cenv 'this)
+            (inherit-context {:op :local :index index :type type} cenv))
+          (if-let [f (t/find-field cenv (:class-type cenv) (name sym))]
+            (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
+              (parse-as-field cenv target))
+            (throw (ex-info (str "unknown variable found: " sym) {:variable sym}))))))))
 
 (defn parse-ctor-invocation [cenv [op & args]]
   (let [cenv' (with-context cenv :expression)
@@ -94,26 +96,28 @@
         (cond-> initializer (assoc :initializer (parse-expr cenv initializer))))))
 
 (defn parse-seq [cenv expr]
-  (let [{:keys [line label]} (meta expr)
-        cenv' (if label (inherit-context cenv cenv :return? false) cenv)
-        expr' (if ('#{this super} (first expr))
-                (parse-ctor-invocation cenv' expr)
-                (and (symbol? (first expr))
-                     (or (when-let [lname (find-lname cenv' (first expr))]
-                           (when (t/array-type? (:type lname))
-                             (parse-expr cenv' (with-meta `(~'aget ~@expr) (meta expr)))))
-                         (parse-expr* cenv' expr))))]
-    (as-> expr' expr'
-      (if line
-        (assoc expr' :line line)
-        expr')
-      (if label
-        (if (or (not= (:op expr') :labeled)
-                (not= (:label expr') label))
-          (-> {:op :labeled :label label :target expr'}
-              (inherit-context cenv))
-          (inherit-context expr' cenv))
-        expr'))))
+  (if-let [tag (:tag (meta expr))]
+    (parse-expr cenv `(~'cast ~tag ~(vary-meta expr dissoc :tag)))
+    (let [{:keys [tag line label]} (meta expr)
+          cenv' (if label (inherit-context cenv cenv :return? false) cenv)
+          expr' (if ('#{this super} (first expr))
+                  (parse-ctor-invocation cenv' expr)
+                  (and (symbol? (first expr))
+                       (or (when-let [lname (find-lname cenv' (first expr))]
+                             (when (t/array-type? (:type lname))
+                               (parse-expr cenv' (with-meta `(~'aget ~@expr) (meta expr)))))
+                           (parse-expr* cenv' expr))))]
+      (as-> expr' expr'
+        (if line
+          (assoc expr' :line line)
+          expr')
+        (if label
+          (if (or (not= (:op expr') :labeled)
+                  (not= (:label expr') label))
+            (-> {:op :labeled :label label :target expr'}
+                (inherit-context cenv))
+            (inherit-context expr' cenv))
+          expr')))))
 
 (defn parse-literal [cenv v]
   (if (nil? v)
