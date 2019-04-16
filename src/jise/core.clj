@@ -72,24 +72,4 @@
         (.write out bytecode)
         (.flush out))))
 
-  ^:public
-  (defclass Qsort
-    ^:public ^:static
-    (defm qsort [^{:tag [int]} xs ^int left ^int right]
-      (when (< left right)
-        (let [p (aget xs (/ (+ left right) 2))
-              l left
-              r right]
-          (while (<= l r)
-            (while (< (xs l) p) (inc! l))
-            (while (> (xs r) p) (dec! r))
-            (when (<= l r)
-              (let [tmp (aget xs l)]
-                (set! (xs l) (xs r))
-                (set! (xs r) tmp)
-                (inc! l)
-                (dec! r))))
-          (Qsort/qsort xs left r)
-          (Qsort/qsort xs l right)))))
-
  )
