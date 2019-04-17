@@ -857,27 +857,26 @@
             (inherit-context cenv))))))
 
 (defn parse-field-access [cenv target target-type fname]
-  (if (and (t/array-type? target-type) (= fname "-length"))
+  (if (and (t/array-type? target-type) (= fname "length"))
     (-> {:op :array-length
          :type t/INT
          :array target}
         (inherit-context cenv))
-    (let [fname' (subs fname 1)]
-      (if-let [{:keys [type used?]} (get (:enclosing-env cenv) fname')]
-        (do (reset! used? true)
-            (-> {:op :field-access
-                 :type type
-                 :class (:class-type cenv)
-                 :target target
-                 :name fname'}
-                (inherit-context cenv)))
-        (let [field (t/find-field cenv target-type fname')]
+    (if-let [{:keys [type used?]} (get (:enclosing-env cenv) fname)]
+      (do (reset! used? true)
           (-> {:op :field-access
-               :type (:type field)
-               :class (:class field)
-               :name fname'}
-              (inherit-context cenv)
-              (cond-> target (assoc :target target))))))))
+               :type type
+               :class (:class-type cenv)
+               :target target
+               :name fname}
+              (inherit-context cenv)))
+      (let [field (t/find-field cenv target-type fname)]
+        (-> {:op :field-access
+             :type (:type field)
+             :class (:class field)
+             :name fname}
+            (inherit-context cenv)
+            (cond-> target (assoc :target target)))))))
 
 (defn parse-method-invocation [cenv target target-type mname args]
   (let [args' (map (partial parse-expr (with-context cenv :expression)) args)
@@ -904,7 +903,7 @@
           target-type (or (:type target') (t/tag->type cenv target))
           pname (name property)]
       (if (str/starts-with? pname "-")
-        (parse-field-access cenv target' target-type pname)
+        (parse-field-access cenv target' target-type (subs pname 1))
         (parse-method-invocation cenv target' target-type pname maybe-args)))))
 
 (defn fold-aget [[_ arr index & indices :as expr]]
