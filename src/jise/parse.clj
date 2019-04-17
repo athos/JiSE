@@ -912,6 +912,9 @@
     expr
     (recur (with-meta `(~'aget (~'aget ~arr ~index) ~@indices) (meta expr)))))
 
+(defmethod parse-expr* 'alength [cenv [_ arr :as expr]]
+  (parse-expr cenv (with-meta `(.-length arr) (meta expr))))
+
 (defmethod parse-expr* 'aget [cenv [_ arr index & indices :as expr]]
   (if indices
     (parse-expr cenv (fold-aget expr))
