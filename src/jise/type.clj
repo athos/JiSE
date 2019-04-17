@@ -150,7 +150,7 @@
         (string? obj) STRING
         :else nil))
 
-(defn type-category [t]
+(defn type-category ^long [t]
   (if (#{LONG DOUBLE} t) 2 1))
 
 (defn modifiers->access-flags [ms]

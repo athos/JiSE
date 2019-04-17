@@ -570,10 +570,14 @@
 
 (defmethod emit-expr* :array-update
   [{:keys [^MethodVisitor mv] :as emitter} {:keys [array index expr context line]}]
-  (emit-expr emitter array)
-  (emit-expr emitter index)
-  (emit-expr emitter expr)
-  (dup-unless-statement emitter context (:type expr))
-  (emit-line emitter line)
   (let [elem-type (t/element-type (:type array))]
+    (emit-expr emitter array)
+    (emit-expr emitter index)
+    (emit-expr emitter expr)
+    (when-not (:statement context)
+      (let [opcode (case (t/type-category elem-type)
+                     1 Opcodes/DUP_X2
+                     2 Opcodes/DUP2_X2)]
+        (.visitInsn mv opcode)))
+    (emit-line emitter line)
     (.visitInsn mv (.getOpcode elem-type Opcodes/IASTORE))))
