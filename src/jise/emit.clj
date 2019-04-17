@@ -112,9 +112,12 @@
                  Opcodes/POP)]
       (.visitInsn mv opcode))))
 
-(defmethod emit-expr* :null [{:keys [^MethodVisitor mv]} {:keys [context]}]
+(defn push-null-unless-statement [{:keys [^MethodVisitor mv]} context]
   (when-not (:statement context)
     (.visitInsn mv Opcodes/ACONST_NULL)))
+
+(defmethod emit-expr* :null [emitter {:keys [context]}]
+  (push-null-unless-statement emitter context))
 
 (defn primitive-type [type]
   (if (#{t/BYTE t/CHAR t/SHORT} type) t/INT type))
@@ -416,8 +419,7 @@
         (emit-expr emitter' body)
         (.visitJumpInsn mv Opcodes/GOTO start-label)
         (.visitLabel mv end-label)))
-    (when-not (:statement context)
-      (.visitInsn mv Opcodes/ACONST_NULL))))
+    (push-null-unless-statement emitter context)))
 
 (defmethod emit-expr* :for [{:keys [^MethodVisitor mv] :as emitter} {:keys [cond step body label context]}]
   (let [start-label (Label.)
@@ -433,8 +435,7 @@
         (emit-expr emitter' step)
         (.visitJumpInsn mv Opcodes/GOTO start-label)
         (.visitLabel mv end-label)))
-    (when-not (:statement context)
-      (.visitInsn mv Opcodes/ACONST_NULL))))
+    (push-null-unless-statement emitter context)))
 
 (defmethod emit-expr* :try [{:keys [^MethodVisitor mv] :as emitter} {:keys [type body catch-clauses]}]
   (let [start-label (Label.)
@@ -527,8 +528,7 @@
     (emit-line emitter line)
     (.visitMethodInsn mv opcode iname (munge name) desc interface?))
   (if (= type t/VOID)
-    (when-not (:statement context)
-      (.visitInsn mv Opcodes/ACONST_NULL))
+    (push-null-unless-statement emitter context)
     (drop-if-statement emitter context)))
 
 (def primitive-types
