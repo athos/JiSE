@@ -49,8 +49,8 @@
       (emit-return emitter t))))
 
 (defn emit-ctor-invocation
-  [{:keys [^MethodVisitor mv] :as emitter} {:keys [class arg-types args initializer line]}]
-  (let [method-type (Type/getMethodType t/VOID (into-array Type arg-types))
+  [{:keys [^MethodVisitor mv] :as emitter} {:keys [class param-types args initializer line]}]
+  (let [method-type (Type/getMethodType t/VOID (into-array Type param-types))
         iname (.getInternalName ^Type class)
         desc (.getDescriptor ^Type method-type)]
     (doseq [arg args]
@@ -76,7 +76,7 @@
     ;; FIXME: it might be better to inject implicit ctor invocation in parsing phase
     (when (and ctor? (not= (get-in body [:exprs 0 :op]) :ctor-invocation))
       (.visitVarInsn mv Opcodes/ALOAD 0)
-      (emit-ctor-invocation emitter {:class parent :arg-types [] :args []}))
+      (emit-ctor-invocation emitter {:class parent :param-types [] :args []}))
     (when-not (:abstract access)
       (emit-expr emitter body))
     (.visitMaxs mv 1 1)
@@ -218,7 +218,7 @@
                       :interface? false
                       :type type
                       :access #{:public :static}
-                      :arg-types [(:type src)]
+                      :param-types [(:type src)]
                       :name "valueOf"
                       :args [src]}))
 
@@ -239,7 +239,7 @@
                       :interface? false
                       :type type
                       :access #{:public}
-                      :arg-types []
+                      :param-types []
                       :name (unboxing-method-names type)
                       :target src
                       :args []}))
@@ -512,12 +512,12 @@
 
 (defmethod emit-expr* :method-invocation
   [{:keys [^MethodVisitor mv] :as emitter}
-   {:keys [interface? type name access class arg-types target args context line]}]
+   {:keys [interface? type name access class param-types target args context line]}]
   (when target
     (emit-expr emitter target))
   (doseq [arg args]
     (emit-expr emitter arg))
-  (let [method-type (Type/getMethodType ^Type type (into-array Type arg-types))
+  (let [method-type (Type/getMethodType ^Type type (into-array Type param-types))
         opcode (cond (:static access) Opcodes/INVOKESTATIC
                      interface? Opcodes/INVOKEINTERFACE
                      (:private access) Opcodes/INVOKESPECIAL

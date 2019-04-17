@@ -90,7 +90,7 @@
     (-> {:op :ctor-invocation
          :class class
          :access (:access ctor)
-         :arg-types (:arg-types ctor)
+         :param-types (:param-types ctor)
          :args args'}
         (inherit-context (cond-> cenv initializer (with-context :statement)))
         (cond-> initializer (assoc :initializer (parse-expr cenv initializer))))))
@@ -267,8 +267,8 @@
                       fields)
         ctors' (reduce (fn [cs [_ _ args :as ctor]]
                          (let [access (access-flags (modifiers-of ctor))
-                               arg-types (mapv #(:type (parse-name proto-cenv %)) args)]
-                           (conj cs {:access access :arg-types arg-types})))
+                               param-types (mapv #(:type (parse-name proto-cenv %)) args)]
+                           (conj cs {:access access :param-types param-types})))
                        [] ctors)
         methods' (reduce (fn [m [_ name args :as method]]
                            (let [modifiers (modifiers-of method)
@@ -276,7 +276,7 @@
                                                                         :default-type t/VOID)]
                              (update m (str name) (fnil conj [])
                                      {:access access :return-type type
-                                      :arg-types (mapv #(:type (parse-name proto-cenv %)) args)})))
+                                      :param-types (mapv #(:type (parse-name proto-cenv %)) args)})))
                          {} methods)
         class-entry  {:parent parent :interfaces (set interfaces) :initializer initializer
                       :fields fields' :ctors ctors' :methods methods'}]
@@ -852,7 +852,7 @@
         (-> {:op :new
              :type type'
              :access (:access ctor)
-             :arg-types (:arg-types ctor)
+             :param-types (:param-types ctor)
              :args args'}
             (inherit-context cenv))))))
 
@@ -886,7 +886,7 @@
          :interface? (:interface? method false)
          :type (:return-type method)
          :access (:access method)
-         :arg-types (:arg-types method)
+         :param-types (:param-types method)
          :class (:class method)
          :name mname
          :args args'}

@@ -317,7 +317,7 @@
   (let [class-name (type->symbol class)
         methods (get-in cenv [:classes class-name :methods name])]
     (or (and (seq methods)
-             (-> (filter #(= (:arg-types %) arg-types) methods)
+             (-> (filter #(= (:param-types %) arg-types) methods)
                  first
                  (assoc :class class)))
         (let [target-class (type->class class)
@@ -325,8 +325,8 @@
               m (.getMethod target-class name arg-classes)]
           {:class (tag->type cenv (.getDeclaringClass m))
            :interface? (.isInterface target-class)
-           :arg-types (->> (.getParameterTypes m)
-                           (mapv (partial tag->type cenv)))
+           :param-types (->> (.getParameterTypes m)
+                             (mapv (partial tag->type cenv)))
            :return-type (tag->type cenv (.getReturnType m))
            :access (modifiers->access-flags (.getModifiers m))}))))
 
@@ -334,13 +334,13 @@
   (let [class-name (type->symbol class)
         ctors (get-in cenv [:classes class-name :ctors])]
     (or (some->> (seq ctors)
-                 (filter #(= (:arg-types %) arg-types))
+                 (filter #(= (:param-types %) arg-types))
                  first)
         (let [target-class (type->class class)
               arg-classes (map type->class arg-types)]
           (when-first [^Constructor ctor (->> (.getDeclaredConstructors target-class)
                                               (filter #(= (seq (.getParameterTypes ^Constructor %))
                                                           arg-classes)))]
-            {:arg-types (->> (.getParameterTypes ctor)
-                             (mapv (partial tag->type cenv)))
+            {:param-types (->> (.getParameterTypes ctor)
+                               (mapv (partial tag->type cenv)))
              :access (modifiers->access-flags (.getModifiers ctor))})))))
