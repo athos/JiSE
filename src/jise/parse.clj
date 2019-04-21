@@ -683,8 +683,10 @@
   (cond (true? test) (parse-expr cenv then)
         (false? test) (parse-expr cenv else)
         :else
-        (let [test' (-> (parse-expr (with-context cenv :conditional) test)
-                        unbox-if-possible)
+        (let [test' (parse-expr (with-context cenv :conditional) test)
+              test' (if-let [cs (t/casting-conversion cenv (:type test') t/BOOLEAN)]
+                      (apply-conversions cs test')
+                      test')
               cenv' (if (and (:tail (:context cenv)) (nil? else))
                       (with-context cenv :statement)
                       cenv)
@@ -743,10 +745,13 @@
   (:label (meta expr)))
 
 (defmethod parse-expr* 'while [cenv [_ cond & body :as expr]]
-  (let [label (extract-label expr)]
+  (let [label (extract-label expr)
+        cond' (parse-expr (with-context cenv :conditional) cond)
+        cond' (if-let [cs (t/casting-conversion cenv (:type cond') t/BOOLEAN)]
+                (apply-conversions cs cond')
+                cond')]
     (-> {:op :while
-         :cond (-> (parse-expr (with-context cenv :conditional) cond)
-                   unbox-if-possible)
+         :cond cond'
          :body (parse-exprs (with-context cenv :statement) body)}
         (inherit-context cenv)
         (cond-> label (assoc :label label)))))
@@ -769,13 +774,16 @@
       (parse-expr cenv (with-meta form' (meta form))))
     (let [[lname init cond step] args
           [cenv' bindings'] (parse-bindings cenv [lname init])
+          cond' (parse-expr (with-context cenv' :conditional) cond)
+          cond' (if-let [cs (t/casting-conversion cenv' (:type cond') t/BOOLEAN)]
+                  (apply-conversions cs cond')
+                  cond')
           label (extract-label form)]
       (-> {:op :let
            :bindings bindings'
            :body
            (-> {:op :for
-                :cond (-> (parse-expr (with-context cenv' :conditional) cond)
-                          unbox-if-possible)
+                :cond cond'
                 :step (parse-expr (with-context cenv' :statement) step)
                 :body (parse-exprs (with-context cenv' :statement) body)}
                (inherit-context cenv)
