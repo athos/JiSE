@@ -1,7 +1,8 @@
 (ns jise.parse
   (:require [clojure.string :as str]
             [jise.misc :as misc]
-            [jise.type :as t]))
+            [jise.type :as t])
+  (:import [clojure.java.api Clojure]))
 
 (defn modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
@@ -69,7 +70,10 @@
     (letfn [(parse-as-field [cenv target]
               (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))]
       (if-let [cname (namespace sym)]
-        (parse-as-field cenv (symbol cname))
+        (if-let [var (resolve sym)]
+          (let [form `(.deref (~'cast clojure.lang.IDeref (Clojure/var (~'cast Object ~(str (symbol var))))))]
+            (parse-expr cenv (with-meta form (meta sym))))
+          (parse-as-field cenv (symbol cname)))
         (if-let [{:keys [index type foreign?]} (find-lname cenv sym)]
           (if foreign?
             (parse-as-field cenv 'this)
@@ -100,13 +104,19 @@
     (parse-expr cenv `(~'cast ~tag ~(vary-meta expr dissoc :tag)))
     (let [{:keys [tag line label]} (meta expr)
           cenv' (if label (inherit-context cenv cenv :return? false) cenv)
-          expr' (if ('#{this super} (first expr))
-                  (parse-ctor-invocation cenv' expr)
-                  (and (symbol? (first expr))
-                       (or (when-let [lname (find-lname cenv' (first expr))]
-                             (when (t/array-type? (:type lname))
-                               (parse-expr cenv' (with-meta `(~'aget ~@expr) (meta expr)))))
-                           (parse-expr* cenv' expr))))]
+          expr' (let [op (first expr)]
+                  (if ('#{this super} op)
+                    (parse-ctor-invocation cenv' expr)
+                    (and (symbol? op)
+                         (or (when-let [lname (find-lname cenv' op)]
+                               (when (t/array-type? (:type lname))
+                                 (parse-expr cenv' (with-meta `(~'aget ~@expr) (meta expr)))))
+                             (when-let [var (and (namespace op) (resolve op))]
+                               (when-not (:macro (meta var))
+                                 (let [form `(.invoke (clojure.java.api.Clojure/var (~'cast Object ~(str (symbol var))))
+                                                      ~@(map (fn [x] `(~'cast Object ~x)) (rest expr)))]
+                                   (parse-expr cenv' (with-meta form (meta expr))))))
+                             (parse-expr* cenv' expr)))))]
       (as-> expr' expr'
         (if line
           (assoc expr' :line line)
