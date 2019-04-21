@@ -124,23 +124,26 @@
     (or (primitive-type->symbol t)
         (symbol (.getClassName t)))))
 
+(def CLONEABLE (Type/getType Cloneable))
+(def SERIARIZABLE (Type/getType java.io.Serializable))
+
 (defn super? [cenv t1 t2]
   (or (= t1 OBJECT)
       (= t2 nil)
-      (and (array-type? t2)
-           (or (#{OBJECT (Type/getType Cloneable) (Type/getType java.io.Serializable)} t1)
-               (let [et (element-type t2)]
-                 (and (not (primitive-type? et))
-                      (array-type? t1)
-                      (super? cenv (element-type t1) et)))))
-      (loop [t t2]
-        (if-let [{:keys [parent interfaces]} (get-in cenv [:classes (type->symbol t)])]
-          (cond (or (= parent t1) (contains? interfaces t1)) true
-                (= parent OBJECT) false
-                :else (recur parent))
-          (when-let [c (type->class t)]
-            (when-let [c1 (type->class t1)]
-              (contains? (supers c) c1)))))))
+      (if (array-type? t2)
+        (or (#{OBJECT CLONEABLE SERIARIZABLE} t1)
+            (let [et (element-type t2)]
+              (and (not (primitive-type? et))
+                   (array-type? t1)
+                   (super? cenv (element-type t1) et))))
+        (loop [t t2]
+          (if-let [{:keys [parent interfaces]} (get-in cenv [:classes (type->symbol t)])]
+            (cond (or (= parent t1) (contains? interfaces t1)) true
+                  (= parent OBJECT) false
+                  :else (recur parent))
+            (when-let [c (type->class t)]
+              (when-let [c1 (type->class t1)]
+                (contains? (supers c) c1))))))))
 
 (defn ^Type object-type [obj]
   (cond (boolean? obj) BOOLEAN
