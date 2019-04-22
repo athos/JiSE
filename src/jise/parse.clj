@@ -1,8 +1,10 @@
 (ns jise.parse
+  (:refer-clojure :exclude [find-var])
   (:require [clojure.string :as str]
             [jise.misc :as misc]
             [jise.type :as t])
-  (:import [clojure.java.api Clojure]))
+  (:import [clojure.asm Type]
+           [clojure.java.api Clojure]))
 
 (defn modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
@@ -52,6 +54,31 @@
 (defn find-in-current-class [cenv & ks]
   (get-in cenv (into [:classes (:class-name cenv)] ks)))
 
+(defn find-lname [cenv sym]
+  (get (:lenv cenv) (name sym)))
+
+(defn find-var [cenv sym]
+  (when-let [var (resolve sym)]
+    (let [vname (symbol (subs (str var) 2))]
+      (-> (swap! (:vars cenv)
+                 (fn [{:keys [var->entry fields] :as vars}]
+                   (if (get var->entry vname)
+                     vars
+                     (let [field-name (gensym (:name (meta var)))
+                           entry {:var var :var-name vname :field-name field-name}]
+                       (-> vars
+                           (assoc-in [:var->entry vname] entry)
+                           (update :fields conj (name field-name)))))))
+          (get-in [:var->entry vname])))))
+
+(def VAR_TYPE (Type/getType clojure.lang.Var))
+
+(defn find-field [cenv class fname]
+  (or (t/find-field cenv class fname)
+      (when (and (= class (:class-type cenv))
+                 (get-in @(:vars cenv) [:fields fname]))
+        {:class class :type VAR_TYPE :access #{:public :static}})))
+
 (declare parse-expr)
 
 (defmulti parse-expr* (fn [cenv expr] (misc/fixup-ns (first expr))))
@@ -61,24 +88,21 @@
       (parse-expr cenv expanded)
       (throw (ex-info (str "unsupported expr: " (pr-str expr)) {:expr expr})))))
 
-(defn find-lname [cenv sym]
-  (get (:lenv cenv) (name sym)))
-
 (defn parse-symbol [cenv sym]
   (if-let [tag (:tag (meta sym))]
     (parse-expr cenv `(~'cast ~tag ~(vary-meta sym dissoc :tag)))
     (letfn [(parse-as-field [cenv target]
               (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))]
       (if-let [cname (namespace sym)]
-        (if-let [var (resolve sym)]
-          (let [form `(.deref (~'cast clojure.lang.IDeref (Clojure/var (~'cast Object ~(str (symbol var))))))]
+        (if-let [{:keys [field-name]} (find-var cenv sym)]
+          (let [form `(.deref (. ~(:class-name cenv) ~(symbol (str \- field-name))))]
             (parse-expr cenv (with-meta form (meta sym))))
           (parse-as-field cenv (symbol cname)))
         (if-let [{:keys [index type foreign?]} (find-lname cenv sym)]
           (if foreign?
             (parse-as-field cenv 'this)
             (inherit-context {:op :local :index index :type type} cenv))
-          (if-let [f (t/find-field cenv (:class-type cenv) (name sym))]
+          (if-let [f (find-field cenv (:class-type cenv) (name sym))]
             (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
               (parse-as-field cenv target))
             (throw (ex-info (str "unknown variable found: " sym) {:variable sym}))))))))
@@ -111,9 +135,9 @@
                          (or (when-let [lname (find-lname cenv' op)]
                                (when (t/array-type? (:type lname))
                                  (parse-expr cenv' (with-meta `(~'aget ~@expr) (meta expr)))))
-                             (when-let [var (and (namespace op) (resolve op))]
+                             (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
                                (when-not (:macro (meta var))
-                                 (let [form `(.invoke (clojure.java.api.Clojure/var (~'cast Object ~(str (symbol var))))
+                                 (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
                                                       ~@(map (fn [x] `(~'cast Object ~x)) (rest expr)))]
                                    (parse-expr cenv' (with-meta form (meta expr))))))
                              (parse-expr* cenv' expr)))))]
@@ -235,6 +259,14 @@
 (defn class-alias [cname]
   (symbol (str/replace cname #"^.*\.([^.]+)" "$1")))
 
+(defn convert-def-to-set [alias [_ name init :as def]]
+  (when init
+    (let [static? (:static (modifiers-of def))]
+      (cond-> `(set! (. ~(if static? alias 'this)
+                        ~(symbol (str \- name)))
+                     ~init)
+        static? (with-meta {:static true})))))
+
 (defn parse-class-body [cname body]
   (let [alias (class-alias cname)]
     (loop [decls body
@@ -245,13 +277,7 @@
           (if (seq? decl)
             (case (misc/symbol-without-jise-ns (first decl))
               def (let [[_ name init] decl
-                        decl' (when init
-                                (let [modifiers (modifiers-of decl)]
-                                  (with-meta
-                                    `(set! (. ~(if (:static modifiers) alias 'this)
-                                              ~(symbol (str \- name)))
-                                           ~init)
-                                    (modifiers-of decl))))
+                        decl' (convert-def-to-set alias decl)
                         ret' (-> ret
                                  (update :fields conj decl)
                                  (cond-> decl' (update :initializer conj decl')))]
@@ -292,23 +318,29 @@
                       :fields fields' :ctors ctors' :methods methods'}]
     (assoc-in proto-cenv [:classes cname] class-entry)))
 
-(defn filter-static-initializer [initializer]
+(defn filter-static [exprs]
   (reduce (fn [ret expr]
             (let [k (if (:static (modifiers-of expr))
-                      :static-initializer
-                      :initializer)]
+                      :static
+                      :non-static)]
               (update ret k conj expr)))
-          {:initializer [] :static-initializer []}
-          initializer))
+          {:static [] :non-static []}
+          exprs))
 
-(defn synthesize-fields [enclosing-env]
-  (reduce (fn [fields [name {:keys [type used?]}]]
-            (if @used?
-              (let [type' (t/type->tag type)]
-                (conj fields `(def ~(with-meta (symbol name) {:tag type' :public true}))))
-              fields))
-          []
-          enclosing-env))
+(defn synthesize-fields [{:keys [enclosing-env vars]}]
+  (as-> [] fields
+    (reduce (fn [fields [name {:keys [type used?]}]]
+              (if @used?
+                (let [type' (t/type->tag type)]
+                  (conj fields `(def ~(with-meta (symbol name) {:tag type' :public true}))))
+                fields))
+            fields
+            enclosing-env)
+    (reduce (fn [fields [_ {:keys [field-name var-name]}]]
+              (conj fields `(def ~(with-meta field-name {:tag 'clojure.lang.Var :private true :static true})
+                              (~'cast clojure.lang.Var (Clojure/var (~'cast Object ~(str var-name)))))))
+            fields
+            (:var->entry @vars))))
 
 (defn parse-class [enclosing-env [_ cname & body :as class]]
   (let [alias (class-alias cname)
@@ -316,7 +348,7 @@
                     :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
         {:keys [parent interfaces body]} (parse-supers proto-cenv body)
         {:keys [ctors fields methods initializer]} (parse-class-body cname body)
-        {:keys [initializer static-initializer]} (filter-static-initializer initializer)
+        {initializer :non-static static-initializer :static} (filter-static initializer)
         parent (or parent t/OBJECT)
         ctors' (if (empty? ctors)
                  [(with-meta `(~'defm ~alias [] (~'super))
@@ -325,17 +357,21 @@
         cenv (-> proto-cenv
                  (init-cenv cname parent interfaces fields ctors' methods
                             (when (seq initializer) `(do ~@initializer)))
-                 (assoc :enclosing-env enclosing-env)
+                 (assoc :enclosing-env enclosing-env
+                        :vars (atom {:var->entry {} :fields #{}}))
                  (as-> cenv (assoc cenv :class-type (t/tag->type cenv cname))))
         ctors' (mapv (partial parse-method cenv true) ctors')
         methods' (mapv (partial parse-method cenv false) methods)
-        synthesized-fields (synthesize-fields enclosing-env)]
+        synthesized-fields (synthesize-fields cenv)]
     {:name (str/replace (str cname) \. \/)
      :access (access-flags (modifiers-of class))
      :parent parent
      :interfaces interfaces
-     :static-initializer (when (seq static-initializer)
-                           (let [m `^:static (~'defm ~'<clinit> [] ~@static-initializer)]
+     :static-initializer (when-let [init (->> (:static (filter-static synthesized-fields))
+                                              (keep (partial convert-def-to-set alias))
+                                              (concat static-initializer)
+                                              seq)]
+                           (let [m `^:static (~'defm ~'<clinit> [] ~@init)]
                              (-> (parse-method cenv false m)
                                  (assoc :static-initializer? true))))
      :ctors ctors'
@@ -888,7 +924,7 @@
                :target target
                :name fname}
               (inherit-context cenv)))
-      (let [field (t/find-field cenv target-type fname)]
+      (let [field (find-field cenv target-type fname)]
         (-> {:op :field-access
              :type (:type field)
              :class (:class field)
