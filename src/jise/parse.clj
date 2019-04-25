@@ -592,6 +592,9 @@
         cs (t/casting-conversion cenv (:type x') type)]
     (apply-conversions cs x')))
 
+(defmethod parse-expr* 'boolean [cenv [_ x]]
+  (parse-cast cenv t/BOOLEAN x))
+
 (defmethod parse-expr* 'byte [cenv [_ x]]
   (parse-cast cenv t/BYTE x))
 
