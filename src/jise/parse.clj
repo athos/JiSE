@@ -953,9 +953,10 @@
   (if (and (seq? property) (nil? maybe-args))
     (parse-expr cenv `(. ~target ~@property))
     (let [cenv' (with-context cenv :expression)
-          target' (when (or (not (symbol? target))
-                            (namespace target)
-                            (find-lname cenv target))
+          target' (when-not (and (symbol? target)
+                                 (not (namespace target))
+                                 (not (find-lname cenv target))
+                                 (t/tag->type cenv target))
                     (parse-expr cenv' target))
           target-type (or (:type target') (t/tag->type cenv target))
           pname (name property)]
