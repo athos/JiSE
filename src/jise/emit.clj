@@ -82,7 +82,7 @@
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
-(defn emit-class [{:keys [name access parent interfaces static-initializer ctors fields methods]}]
+(defn emit-class [{:keys [source name access parent interfaces static-initializer ctors fields methods]}]
   (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)]
     (.visit cw Opcodes/V1_8
             (+ (access-value access) Opcodes/ACC_SUPER)
@@ -90,6 +90,8 @@
             nil
             (.getInternalName ^Type parent)
             (into-array String (map #(.getInternalName ^Type %) interfaces)))
+    (when source
+      (.visitSource cw source nil))
     (doseq [field fields]
       (emit-field cw field))
     (when static-initializer

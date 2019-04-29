@@ -15,15 +15,16 @@
         symbol
         (with-meta (meta cname)))))
 
-(defn compile-to-bytecode [form-meta enclosing-env qname body]
+(defn compile-to-bytecode [source form-meta enclosing-env qname body]
   (->> (with-meta `(defclass ~qname ~@body) form-meta)
        (parse/parse-class enclosing-env)
+       (#(cond-> % source (assoc :source source)))
        emit/emit-class))
 
 (defn compile-class [form-meta enclosing-env cname body]
   (let [qname (with-meta (qualify-cname cname) (meta cname))
         qname' (str qname)
-        bytecode (compile-to-bytecode form-meta enclosing-env qname body)]
+        bytecode (compile-to-bytecode *source-path* form-meta enclosing-env qname body)]
     (when *compile-files*
       (Compiler/writeClassFile (str/replace qname' \. \/) bytecode))
     (.defineClass ^DynamicClassLoader @Compiler/LOADER qname' bytecode nil)
