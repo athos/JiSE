@@ -123,6 +123,17 @@
         (inherit-context (cond-> cenv initializer (with-context :statement)))
         (cond-> initializer (assoc :initializer (parse-expr cenv initializer))))))
 
+(defn parse-sugar [cenv [op :as expr]]
+  (or (when-let [maybe-array (or (find-lname cenv op)
+                                 (find-field cenv (:class-type cenv) (str op)))]
+        (when (t/array-type? (:type maybe-array))
+          (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))))
+      (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
+        (when-not (:macro (meta var))
+          (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
+                               ~@(map (fn [x] `(~'cast Object ~x)) (rest expr)))]
+            (parse-expr cenv (with-meta form (meta expr))))))))
+
 (defn parse-seq [cenv expr]
   (if-let [tag (:tag (meta expr))]
     (parse-expr cenv `(~'cast ~tag ~(vary-meta expr dissoc :tag)))
@@ -132,14 +143,7 @@
                   (if ('#{this super} op)
                     (parse-ctor-invocation cenv' expr)
                     (and (symbol? op)
-                         (or (when-let [lname (find-lname cenv' op)]
-                               (when (t/array-type? (:type lname))
-                                 (parse-expr cenv' (with-meta `(~'aget ~@expr) (meta expr)))))
-                             (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
-                               (when-not (:macro (meta var))
-                                 (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
-                                                      ~@(map (fn [x] `(~'cast Object ~x)) (rest expr)))]
-                                   (parse-expr cenv' (with-meta form (meta expr))))))
+                         (or (parse-sugar cenv' expr)
                              (parse-expr* cenv' expr)))))]
       (as-> expr' expr'
         (if line
