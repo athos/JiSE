@@ -59,17 +59,18 @@
 
 (defn find-var [cenv sym]
   (when-let [var (resolve sym)]
-    (let [vname (symbol (subs (str var) 2))]
-      (-> (swap! (:vars cenv)
-                 (fn [{:keys [var->entry fields] :as vars}]
-                   (if (get var->entry vname)
-                     vars
-                     (let [field-name (gensym (:name (meta var)))
-                           entry {:var var :var-name vname :field-name field-name}]
-                       (-> vars
-                           (assoc-in [:var->entry vname] entry)
-                           (update :fields conj (name field-name)))))))
-          (get-in [:var->entry vname])))))
+    (when-not (:macro (meta var))
+      (let [vname (symbol (subs (str var) 2))]
+        (-> (swap! (:vars cenv)
+                   (fn [{:keys [var->entry fields] :as vars}]
+                     (if (get var->entry vname)
+                       vars
+                       (let [field-name (gensym (:name (meta var)))
+                             entry {:var var :var-name vname :field-name field-name}]
+                         (-> vars
+                             (assoc-in [:var->entry vname] entry)
+                             (update :fields conj (name field-name)))))))
+            (get-in [:var->entry vname]))))))
 
 (def VAR_TYPE (Type/getType clojure.lang.Var))
 
