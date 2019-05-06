@@ -263,6 +263,16 @@
                                      (narrowing-reference-conversion cenv from to))]
                       [c]))))
 
+(defn strict-invocation-conversion [cenv from to]
+  (if (= from to)
+    []
+    (when-let [c (or (widening-reference-conversion from to)
+                     (widening-reference-conversion cenv from to))]
+      [c])))
+
+(defn loose-invocation-conversion [cenv from to]
+  (assignment-conversion cenv from to))
+
 (defn unary-numeric-promotion [t]
   (condp contains? t
     #{BYTE_CLASS SHORT_CLASS CHARACTER_CLASS}
@@ -345,16 +355,33 @@
                       (.getDeclaredMethods c)))))]
     (let [class-name (type->symbol class)]
       (if-let [entry (get-in cenv [:classes class-name])]
-        (concat (get-in entry [:methods name])
-                (walk (:parent entry))
-                (map walk (:interfaces entry)))
+        (concat (map #(assoc % :class class) (get-in entry [:methods name]))
+                (mapcat (comp walk type->class) (:interfaces entry))
+                (walk (type->class (:parent entry))))
         (walk (type->class class))))))
 
-(defn find-method [cenv ^Type class name arg-types]
-  (let [methods (get-methods cenv class name (count arg-types))]
-    (->> methods
-         (filter #(= (:param-types %) arg-types))
-         first)))
+(defn maximally-specific-methods [methods]
+  ;; TODO: implement algorithm to choose maximally specific methods
+  methods)
+
+(defn filter-methods [cenv arg-types methods]
+  (letfn [(conv-with [f]
+            (fn [m]
+              (when-let [cs (->> (:param-types m)
+                                 (map vector arg-types)
+                                 (reduce (fn [acc [t p]]
+                                           (if-let [cs (f cenv t p)]
+                                             (conj acc cs)
+                                             (reduced nil)))
+                                         []))]
+                (assoc m :conversions cs))))]
+    (->> (or (seq (keep (conv-with strict-invocation-conversion) methods))
+             (seq (keep (conv-with loose-invocation-conversion) methods)))
+         maximally-specific-methods)))
+
+(defn find-methods [cenv ^Type class name arg-types]
+  (->> (get-methods cenv class name (count arg-types))
+       (filter-methods cenv arg-types)))
 
 (defn find-ctor [cenv ^Type class arg-types]
   (let [class-name (type->symbol class)

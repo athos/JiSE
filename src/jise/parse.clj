@@ -941,7 +941,8 @@
 
 (defn parse-method-invocation [cenv target target-type mname args]
   (let [args' (map (partial parse-expr (with-context cenv :expression)) args)
-        method (t/find-method cenv target-type mname (map :type args'))]
+        methods (t/find-methods cenv target-type mname (map :type args'))
+        method (first methods)]
     (-> {:op :method-invocation
          :interface? (:interface? method false)
          :type (:return-type method)
@@ -949,7 +950,7 @@
          :param-types (:param-types method)
          :class (:class method)
          :name mname
-         :args args'}
+         :args (mapv apply-conversions (:conversions method) args')}
         (inherit-context cenv)
         (cond-> target (assoc :target target)))))
 
