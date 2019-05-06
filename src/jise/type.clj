@@ -1,7 +1,7 @@
 (ns jise.type
   (:require [clojure.string :as str])
   (:import [clojure.asm Opcodes Type]
-           [java.lang.reflect Constructor Field Modifier]))
+           [java.lang.reflect Constructor Field Method Modifier]))
 
 (set! *warn-on-reflection* true)
 
@@ -295,43 +295,66 @@
                     widen (conj widen))))]
         [(f t1' unbox1) (f t2' unbox2)]))))
 
+(defn walk-class-hierarchy [^Class class f]
+  (letfn [(walk [^Class c]
+            (when c
+              (concat (f c)
+                      (mapcat walk (.getInterfaces c))
+                      (walk (.getSuperclass c)))))]
+   (walk class)))
+
 (defn find-field [cenv ^Type class name]
-  (letfn [(lookup [^Class c]
-            (if-let [[^Field f] (->> (.getDeclaredFields c)
-                                     (filter #(= (.getName ^Field %) name))
-                                     seq)]
-              {:class (tag->type cenv (.getDeclaringClass f))
-               :type (tag->type cenv (.getType f))
-               :access (modifiers->access-flags (.getModifiers f))}
-              (or (some lookup (.getInterfaces c))
-                  (some-> (.getSuperclass c) lookup))))]
+  (letfn [(field->map [^Field f]
+            {:class (tag->type cenv (.getDeclaringClass f))
+             :type (tag->type cenv (.getType f))
+             :access (modifiers->access-flags (.getModifiers f))})
+          (walk [^Class c]
+            (-> (walk-class-hierarchy c
+                  (fn [^Class c]
+                    (some->> (.getDeclaredFields c)
+                             (filter #(= (.getName ^Field %) name))
+                             first
+                             field->map
+                             vector)))
+                first))]
     (let [class-name (type->symbol class)]
       (if-let [entry (get-in cenv [:classes class-name])]
         (if-let [{:keys [type access]} (get-in entry [:fields name])]
           {:class class :type type :access access}
           ;; Here we assume all the superclasses and interfaces are defined outside of JiSE
           (let [{:keys [parent interfaces]} entry]
-            (or (some lookup (map type->class interfaces))
-                (lookup (type->class parent)))))
-        (lookup (type->class class))))))
+            (or (some walk (map type->class interfaces))
+                (walk (type->class parent)))))
+        (walk (type->class class))))))
+
+(defn get-methods [cenv ^Type class name nargs]
+  (letfn [(method->map [^Class c ^Method m]
+            {:class (tag->type cenv (.getDeclaringClass m))
+             :interface? (.isInterface c)
+             :param-types (->> (.getParameterTypes m)
+                               (mapv (partial tag->type cenv)))
+             :return-type (tag->type cenv (.getReturnType m))
+             :access (modifiers->access-flags (.getModifiers m))})
+          (walk [^Class c]
+            (walk-class-hierarchy c
+              (fn [^Class c]
+                (keep (fn [^Method m]
+                        (when (and (= (.getName m) name)
+                                   (= (.getParameterCount m) nargs))
+                          (method->map c m)))
+                      (.getDeclaredMethods c)))))]
+    (let [class-name (type->symbol class)]
+      (if-let [entry (get-in cenv [:classes class-name])]
+        (concat (get-in entry [:methods name])
+                (walk (:parent entry))
+                (map walk (:interfaces entry)))
+        (walk (type->class class))))))
 
 (defn find-method [cenv ^Type class name arg-types]
-  ;; TODO: needs to search class hierarchy as well
-  (let [class-name (type->symbol class)
-        methods (get-in cenv [:classes class-name :methods name])]
-    (or (and (seq methods)
-             (-> (filter #(= (:param-types %) arg-types) methods)
-                 first
-                 (assoc :class class)))
-        (let [target-class (type->class class)
-              arg-classes (into-array Class (map type->class arg-types))
-              m (.getMethod target-class name arg-classes)]
-          {:class (tag->type cenv (.getDeclaringClass m))
-           :interface? (.isInterface target-class)
-           :param-types (->> (.getParameterTypes m)
-                             (mapv (partial tag->type cenv)))
-           :return-type (tag->type cenv (.getReturnType m))
-           :access (modifiers->access-flags (.getModifiers m))}))))
+  (let [methods (get-methods cenv class name (count arg-types))]
+    (->> methods
+         (filter #(= (:param-types %) arg-types))
+         first)))
 
 (defn find-ctor [cenv ^Type class arg-types]
   (let [class-name (type->symbol class)
