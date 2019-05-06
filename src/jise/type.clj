@@ -266,7 +266,7 @@
 (defn strict-invocation-conversion [cenv from to]
   (if (= from to)
     []
-    (when-let [c (or (widening-reference-conversion from to)
+    (when-let [c (or (widening-primitive-conversion from to)
                      (widening-reference-conversion cenv from to))]
       [c])))
 
