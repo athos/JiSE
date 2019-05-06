@@ -128,6 +128,8 @@
                                  (find-field cenv (:class-type cenv) (str op)))]
         (when (t/array-type? (:type maybe-array))
           (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))))
+      (when (find-in-current-class cenv :methods (str op))
+        (parse-expr cenv (with-meta `(. ~'this ~expr) (meta expr))))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
         (when-not (:macro (meta var))
           (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
