@@ -134,7 +134,7 @@
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
         (when-not (:macro (meta var))
           (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
-                               ~@(map (fn [x] `(~'cast Object ~x)) (rest expr)))]
+                               ~@(rest expr))]
             (parse-expr cenv (with-meta form (meta expr))))))))
 
 (defn parse-seq [cenv expr]
@@ -345,7 +345,7 @@
             enclosing-env)
     (reduce (fn [fields [_ {:keys [field-name var-name]}]]
               (conj fields `(def ~(with-meta field-name {:tag 'clojure.lang.Var :private true :static true})
-                              (~'cast clojure.lang.Var (Clojure/var (~'cast Object ~(str var-name)))))))
+                              (~'cast clojure.lang.Var (Clojure/var ~(str var-name))))))
             fields
             (:var->entry @vars))))
 
@@ -628,8 +628,7 @@
     (parse-cast cenv t' x)))
 
 (defmethod parse-expr* '= [cenv [_ x y :as expr]]
-  ;; FIXME: Remove explicit cast here once we could invoke "loosely" matching method
-  (parse-expr cenv (with-meta `(.equals ~x (~'cast Object ~y)) (meta expr))))
+  (parse-expr cenv (with-meta `(.equals ~x ~y) (meta expr))))
 
 (defmethod parse-expr* 'nil? [cenv [_ arg :as expr]]
   (parse-expr cenv (with-meta `(~'== ~arg nil) (meta expr))))
