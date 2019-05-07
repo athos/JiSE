@@ -314,20 +314,21 @@
    (walk class)))
 
 (defn find-field [cenv ^Type class name]
-  (letfn [(field->map [^Field f]
-            {:class (tag->type cenv (.getDeclaringClass f))
-             :type (tag->type cenv (.getType f))
-             :access (modifiers->access-flags (.getModifiers f))})
-          (walk [^Class c]
-            (-> (walk-class-hierarchy c
-                  (fn [^Class c]
-                    (some->> (.getDeclaredFields c)
-                             (filter #(= (.getName ^Field %) name))
-                             first
-                             field->map
-                             vector)))
-                first))]
-    (let [class-name (type->symbol class)]
+  (let [class-name (type->symbol class)
+        name' (munge name)]
+    (letfn [(field->map [^Field f]
+              {:class (tag->type cenv (.getDeclaringClass f))
+               :type (tag->type cenv (.getType f))
+               :access (modifiers->access-flags (.getModifiers f))})
+            (walk [^Class c]
+              (-> (walk-class-hierarchy c
+                    (fn [^Class c]
+                      (some->> (.getDeclaredFields c)
+                               (filter #(= (.getName ^Field %) name'))
+                               first
+                               field->map
+                               vector)))
+                  first))]
       (if-let [entry (get-in cenv [:classes class-name])]
         (if-let [{:keys [type access]} (get-in entry [:fields name])]
           {:class class :type type :access access}
@@ -338,22 +339,23 @@
         (walk (type->class class))))))
 
 (defn get-methods [cenv ^Type class name nargs]
-  (letfn [(method->map [^Class c ^Method m]
-            {:class (tag->type cenv (.getDeclaringClass m))
-             :interface? (.isInterface c)
-             :param-types (->> (.getParameterTypes m)
-                               (mapv (partial tag->type cenv)))
-             :return-type (tag->type cenv (.getReturnType m))
-             :access (modifiers->access-flags (.getModifiers m))})
-          (walk [^Class c]
-            (walk-class-hierarchy c
-              (fn [^Class c]
-                (keep (fn [^Method m]
-                        (when (and (= (.getName m) name)
-                                   (= (.getParameterCount m) nargs))
-                          (method->map c m)))
-                      (.getDeclaredMethods c)))))]
-    (let [class-name (type->symbol class)]
+  (let [class-name (type->symbol class)
+        name' (munge name)]
+    (letfn [(method->map [^Class c ^Method m]
+              {:class (tag->type cenv (.getDeclaringClass m))
+               :interface? (.isInterface c)
+               :param-types (->> (.getParameterTypes m)
+                                 (mapv (partial tag->type cenv)))
+               :return-type (tag->type cenv (.getReturnType m))
+               :access (modifiers->access-flags (.getModifiers m))})
+            (walk [^Class c]
+              (walk-class-hierarchy c
+                (fn [^Class c]
+                  (keep (fn [^Method m]
+                          (when (and (= (.getName m) name')
+                                     (= (.getParameterCount m) nargs))
+                            (method->map c m)))
+                        (.getDeclaredMethods c)))))]
       (if-let [entry (get-in cenv [:classes class-name])]
         (concat (map #(assoc % :class class) (get-in entry [:methods name]))
                 (mapcat (comp walk type->class) (:interfaces entry))
