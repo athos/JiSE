@@ -351,7 +351,7 @@
 
 (defn parse-class [enclosing-env [_ cname & body :as class]]
   (let [alias (class-alias cname)
-        proto-cenv {:class-name cname :classes {}
+        proto-cenv {:class-name cname :classes {cname {}}
                     :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
         {:keys [parent interfaces body]} (parse-supers proto-cenv body)
         {:keys [ctors fields methods initializer]} (parse-class-body cname body)
