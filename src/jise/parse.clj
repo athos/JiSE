@@ -943,18 +943,18 @@
 
 (defn parse-method-invocation [cenv target target-type mname args]
   (let [args' (map (partial parse-expr (with-context cenv :expression)) args)
-        methods (t/find-methods cenv target-type mname (map :type args'))
-        method (first methods)]
-    (-> {:op :method-invocation
-         :interface? (:interface? method false)
-         :type (:return-type method)
-         :access (:access method)
-         :param-types (:param-types method)
-         :class (:class method)
-         :name mname
-         :args (mapv apply-conversions (:conversions method) args')}
-        (inherit-context cenv)
-        (cond-> target (assoc :target target)))))
+        methods (t/find-methods cenv target-type mname (map :type args'))]
+    (when-let [method (first methods)]
+      (-> {:op :method-invocation
+           :interface? (:interface? method false)
+           :type (:return-type method)
+           :access (:access method)
+           :param-types (:param-types method)
+           :class (:class method)
+           :name mname
+           :args (mapv apply-conversions (:conversions method) args')}
+          (inherit-context cenv)
+          (cond-> target (assoc :target target))))))
 
 (defmethod parse-expr* '. [cenv [_ target property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))
@@ -969,7 +969,10 @@
           pname (name property)]
       (if (str/starts-with? pname "-")
         (parse-field-access cenv target' target-type (subs pname 1))
-        (parse-method-invocation cenv target' target-type pname maybe-args)))))
+        (or (parse-method-invocation cenv target' target-type pname maybe-args)
+            (if (empty? maybe-args)
+              (parse-field-access cenv target' target-type pname)
+              (throw (ex-info (str "No such method: " pname) {:name pname}))))))))
 
 (defn fold-aget [[_ arr index & indices :as expr]]
   (if (empty? indices)
