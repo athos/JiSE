@@ -68,7 +68,7 @@
   (defn gen [[_ cname & body :as class] filename]
     (let [qname (with-meta (qualify-cname cname) (meta cname))
           qname' (str qname)
-          bytecode (compile-to-bytecode (meta class) {} qname body)]
+          bytecode (compile-to-bytecode nil (meta class) {} qname body)]
       (with-open [out (DataOutputStream. (io/output-stream filename))]
         (.write out bytecode)
         (.flush out))))
