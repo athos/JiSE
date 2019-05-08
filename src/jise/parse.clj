@@ -131,6 +131,8 @@
           (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))))
       (when (find-in-current-class cenv :methods (str op))
         (parse-expr cenv (with-meta `(. ~'this ~expr) (meta expr))))
+      (when ('#{this super} (misc/fixup-ns op))
+        (parse-ctor-invocation cenv expr))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
         (when-not (:macro (meta var))
           (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
@@ -142,12 +144,9 @@
     (parse-expr cenv `(~'cast ~tag ~(vary-meta expr dissoc :tag)))
     (let [{:keys [tag line label]} (meta expr)
           cenv' (if label (inherit-context cenv cenv :return? false) cenv)
-          expr' (let [op (first expr)]
-                  (if ('#{this super} op)
-                    (parse-ctor-invocation cenv' expr)
-                    (and (symbol? op)
-                         (or (parse-sugar cenv' expr)
-                             (parse-expr* cenv' expr)))))]
+          expr' (and (symbol? (first expr))
+                     (or (parse-sugar cenv' expr)
+                         (parse-expr* cenv' expr)))]
       (as-> expr' expr'
         (if line
           (assoc expr' :line line)
