@@ -27,7 +27,9 @@
     (cond-> {:name (str fname)
              :type type
              :access access}
-      (not (nil? value)) (assoc :value value))))
+      (and (:static access)
+           (or (number? value) (char? value) (boolean? value) (string? value)))
+      (assoc :value value))))
 
 (defn context-of [{:keys [context]}]
   (if (:conditional context)
