@@ -357,7 +357,10 @@
                             (method->map c m)))
                         (.getDeclaredMethods c)))))]
       (if-let [entry (get-in cenv [:classes class-name])]
-        (concat (map #(assoc % :class class) (get-in entry [:methods name]))
+        (concat (->> (get-in entry [:methods name])
+                     (keep (fn [m]
+                             (when (= (count (:param-types m)) nargs)
+                               (assoc m :class class)))))
                 (mapcat (comp walk type->class) (:interfaces entry))
                 (walk (type->class (:parent entry))))
         (walk (type->class class))))))
