@@ -703,6 +703,7 @@
              (or (= type t/INT)
                  (when-let [{:keys [to]} (t/widening-primitive-conversion type t/INT)]
                    (= to t/INT)))
+             (int? by)
              (<= 0 by Byte/MAX_VALUE))
       (-> {:op :increment, :target target', :type type, :by by}
           (inherit-context cenv))
@@ -715,6 +716,7 @@
              (or (= type t/INT)
                  (when-let [{:keys [to]} (t/widening-primitive-conversion type t/INT)]
                    (= to t/INT)))
+             (int? by)
              (<= 0 by (- Byte/MIN_VALUE)))
       (-> {:op :increment, :target target', :type type, :by (- by)}
           (inherit-context cenv))
