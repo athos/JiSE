@@ -124,10 +124,29 @@
     (or (primitive-type->symbol t)
         (symbol (.getClassName t)))))
 
+(def wider-primitive-types
+  {BYTE #{SHORT INT LONG FLOAT}
+   SHORT #{INT LONG FLOAT DOUBLE}
+   CHAR #{INT LONG FLOAT DOUBLE}
+   INT #{LONG FLOAT DOUBLE}
+   LONG #{FLOAT DOUBLE}
+   FLOAT #{DOUBLE}})
+
+(def narrower-primitive-types
+  {SHORT #{BYTE CHAR}
+   CHAR #{BYTE SHORT}
+   INT #{BYTE SHORT CHAR}
+   LONG #{BYTE SHORT CHAR INT}
+   FLOAT #{BYTE SHORT CHAR INT LONG}
+   DOUBLE #{BYTE SHORT CHAR INT LONG FLOAT}})
+
+(defn proper-primitive-super? [t1 t2]
+  (get-in narrower-primitive-types [t1 t2]))
+
 (def CLONEABLE (Type/getType Cloneable))
 (def SERIARIZABLE (Type/getType java.io.Serializable))
 
-(defn super? [cenv t1 t2]
+(defn proper-reference-super? [cenv t1 t2]
   (or (= t1 OBJECT)
       (= t2 nil)
       (if (array-type? t2)
@@ -135,7 +154,7 @@
             (let [et (element-type t2)]
               (and (not (primitive-type? et))
                    (array-type? t1)
-                   (super? cenv (element-type t1) et))))
+                   (proper-reference-super? cenv (element-type t1) et))))
         (loop [t t2]
           (if-let [{:keys [parent interfaces]} (get-in cenv [:classes (type->symbol t)])]
             (cond (or (= parent t1) (contains? interfaces t1)) true
@@ -144,6 +163,13 @@
             (when-let [c (type->class t)]
               (when-let [c1 (type->class t1)]
                 (contains? (supers c) c1))))))))
+
+(defn super? [cenv t1 t2]
+  (or (= t1 t2)
+      (case [(primitive-type? t1) (primitive-type? t2)]
+        [true  true ] (proper-primitive-super? t1 t2)
+        [false false] (proper-reference-super? cenv t1 t2)
+        false)))
 
 (defn ^Type object-type [obj]
   (cond (boolean? obj) BOOLEAN
@@ -164,22 +190,6 @@
     (Modifier/isProtected ms) (conj :protected)
     (Modifier/isPublic ms) (conj :public)
     (Modifier/isStatic ms) (conj :static)))
-
-(def wider-primitive-types
-  {BYTE #{SHORT INT LONG FLOAT}
-   SHORT #{INT LONG FLOAT DOUBLE}
-   CHAR #{INT LONG FLOAT DOUBLE}
-   INT #{LONG FLOAT DOUBLE}
-   LONG #{FLOAT DOUBLE}
-   FLOAT #{DOUBLE}})
-
-(def narrower-primitive-types
-  {SHORT #{BYTE CHAR}
-   CHAR #{BYTE SHORT}
-   INT #{BYTE SHORT CHAR}
-   LONG #{BYTE SHORT CHAR INT}
-   FLOAT #{BYTE SHORT CHAR INT LONG}
-   DOUBLE #{BYTE SHORT CHAR INT LONG FLOAT}})
 
 (defn widening-primitive-conversion [from to]
   (when (get-in wider-primitive-types [from to])
@@ -213,14 +223,14 @@
 (defn widening-reference-conversion [cenv from to]
   (when (and (not (primitive-type? from))
              (not (primitive-type? to))
-             (super? cenv to from))
+             (proper-reference-super? cenv to from))
     {:conversion :widening-reference :from from :to to}))
 
 (defn narrowing-reference-conversion [cenv from to]
   ;; FIXME: there are tons of rules to allow narrowing reference conversion
   (when (and (not (primitive-type? from))
              (not (primitive-type? to))
-             (not (super? cenv to from)))
+             (not (proper-reference-super? cenv to from)))
     {:conversion :narrowing-reference :from from :to to}))
 
 (defn assignment-conversion [cenv from to]
@@ -365,9 +375,13 @@
                 (walk (type->class (:parent entry))))
         (walk (type->class class))))))
 
-(defn maximally-specific-methods [methods]
-  ;; TODO: implement algorithm to choose maximally specific methods
-  methods)
+(defn maximally-specific-methods [cenv methods]
+  (filter (fn [m1]
+            (every? (fn [m2]
+                      (->> (map vector (:param-types m1) (:param-types m2))
+                           (every? (fn [[p1 p2]] (super? cenv p2 p1)))))
+                    methods))
+          methods))
 
 (defn filter-methods [cenv arg-types methods]
   (letfn [(conv-with [f]
@@ -382,7 +396,7 @@
                 (assoc m :conversions cs))))]
     (->> (or (seq (keep (conv-with strict-invocation-conversion) methods))
              (seq (keep (conv-with loose-invocation-conversion) methods)))
-         maximally-specific-methods)))
+         (maximally-specific-methods cenv))))
 
 (defn find-methods [cenv ^Type class name arg-types]
   (->> (get-methods cenv class name (count arg-types))
