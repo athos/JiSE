@@ -348,6 +348,15 @@
                 (walk (type->class parent)))))
         (walk (type->class class))))))
 
+(defn remove-overridden-methods [cenv methods]
+  (->> methods
+       (reduce (fn [ms {:keys [param-types] :as m}]
+                 (if-let [m' (get ms param-types)]
+                   (cond-> ms (super? cenv (:class m') (:class m)) (assoc param-types m))
+                   (assoc ms param-types m)))
+               {})
+       vals))
+
 (defn get-methods [cenv ^Type class name nargs]
   (let [class-name (type->symbol class)
         name' (munge name)]
@@ -366,14 +375,15 @@
                                      (= (.getParameterCount m) nargs))
                             (method->map c m)))
                         (.getDeclaredMethods c)))))]
-      (if-let [entry (get-in cenv [:classes class-name])]
-        (concat (->> (get-in entry [:methods name])
-                     (keep (fn [m]
-                             (when (= (count (:param-types m)) nargs)
-                               (assoc m :class class)))))
-                (mapcat (comp walk type->class) (:interfaces entry))
-                (walk (type->class (:parent entry))))
-        (walk (type->class class))))))
+      (->> (if-let [entry (get-in cenv [:classes class-name])]
+             (concat (->> (get-in entry [:methods name])
+                          (keep (fn [m]
+                                  (when (= (count (:param-types m)) nargs)
+                                    (assoc m :class class)))))
+                     (mapcat (comp walk type->class) (:interfaces entry))
+                     (walk (type->class (:parent entry))))
+             (walk (type->class class)))
+           (remove-overridden-methods cenv)))))
 
 (defn maximally-specific-methods [cenv methods]
   (filter (fn [m1]
