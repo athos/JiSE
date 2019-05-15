@@ -273,16 +273,6 @@
                                      (narrowing-reference-conversion cenv from to))]
                       [c]))))
 
-(defn strict-invocation-conversion [cenv from to]
-  (if (= from to)
-    []
-    (when-let [c (or (widening-primitive-conversion from to)
-                     (widening-reference-conversion cenv from to))]
-      [c])))
-
-(defn loose-invocation-conversion [cenv from to]
-  (assignment-conversion cenv from to))
-
 (defn unary-numeric-promotion [t]
   (condp contains? t
     #{BYTE_CLASS SHORT_CLASS CHARACTER_CLASS}
@@ -363,6 +353,7 @@
     (letfn [(method->map [^Class c ^Method m]
               {:class (tag->type cenv (.getDeclaringClass m))
                :interface? (.isInterface c)
+               :varargs? (.isVarArgs m)
                :param-types (->> (.getParameterTypes m)
                                  (mapv (partial tag->type cenv)))
                :return-type (tag->type cenv (.getReturnType m))
@@ -372,7 +363,9 @@
                 (fn [^Class c]
                   (keep (fn [^Method m]
                           (when (and (= (.getName m) name')
-                                     (= (.getParameterCount m) nargs))
+                                     (let [nparams (.getParameterCount m)]
+                                       (or (= nargs nparams)
+                                           (and (.isVarArgs m) (>= nargs (dec nparams))))))
                             (method->map c m)))
                         (.getDeclaredMethods c)))))]
       (->> (if-let [entry (get-in cenv [:classes class-name])]
@@ -385,6 +378,49 @@
              (walk (type->class class)))
            (remove-overridden-methods cenv)))))
 
+(defn convert-arg-types-with [f param-types arg-types]
+  (->> (map vector arg-types param-types)
+       (reduce (fn [acc [at pt]]
+                 (if-let [cs (f at pt)]
+                   (conj acc cs)
+                   (reduced nil)))
+               [])))
+
+(defn strict-invocation-conversion [cenv arg-types method]
+  (letfn [(f [from to]
+            (if (= from to)
+              []
+              (when-let [c (or (widening-primitive-conversion from to)
+                               (widening-reference-conversion cenv from to))]
+                [c])))]
+    (when-let [cs (convert-arg-types-with f (:param-types method) arg-types)]
+      (assoc method :conversions cs))))
+
+(defn loose-invocation-conversion [cenv arg-types method]
+  (when-let [cs (convert-arg-types-with (partial assignment-conversion cenv)
+                                        (:param-types method)
+                                        arg-types)]
+    (assoc method :conversions cs)))
+
+(defn variable-arity-invocation-conversion [cenv arg-types {:keys [param-types] :as method}]
+  (let [required-param-types (butlast param-types)
+        vararg-type (last param-types)]
+    (when-let [cs (convert-arg-types-with (partial assignment-conversion cenv)
+                                          required-param-types
+                                          arg-types)]
+      (let [nargs (count arg-types)
+            nparams (count param-types)]
+        (or (when-let [cs' (if (< nargs nparams)
+                             []
+                             (when-let [cs (and (= nargs nparams)
+                                                (assignment-conversion cenv (last arg-types) vararg-type))]
+                               [cs]))]
+              (assoc method :conversions (into cs cs')))
+            (when (convert-arg-types-with (partial assignment-conversion cenv)
+                                          (repeat (element-type vararg-type))
+                                          (drop (dec nparams) arg-types))
+              (assoc method :conversions cs)))))))
+
 (defn maximally-specific-methods [cenv methods]
   (filter (fn [m1]
             (every? (fn [m2]
@@ -394,19 +430,12 @@
           methods))
 
 (defn filter-methods [cenv arg-types methods]
-  (letfn [(conv-with [f]
-            (fn [m]
-              (when-let [cs (->> (:param-types m)
-                                 (map vector arg-types)
-                                 (reduce (fn [acc [t p]]
-                                           (if-let [cs (f cenv t p)]
-                                             (conj acc cs)
-                                             (reduced nil)))
-                                         []))]
-                (assoc m :conversions cs))))]
-    (->> (or (seq (keep (conv-with strict-invocation-conversion) methods))
-             (seq (keep (conv-with loose-invocation-conversion) methods)))
-         (maximally-specific-methods cenv))))
+  (let [{fixed-arity's false, variable-arity's true} (group-by #(:varargs? % false) methods)
+        filter-with #(seq (keep (partial %1 cenv arg-types) %2))]
+    (some->> (or (filter-with strict-invocation-conversion fixed-arity's)
+                 (filter-with loose-invocation-conversion fixed-arity's)
+                 (filter-with variable-arity-invocation-conversion variable-arity's))
+             (maximally-specific-methods cenv))))
 
 (defn find-methods [cenv ^Type class name arg-types]
   (->> (get-methods cenv class name (count arg-types))

@@ -945,19 +945,29 @@
             (cond-> target (assoc :target target)))))))
 
 (defn parse-method-invocation [cenv target target-type mname args]
-  (let [args' (map (partial parse-expr (with-context cenv :expression)) args)
+  (let [cenv' (with-context cenv :expression)
+        args' (map (partial parse-expr cenv') args)
         methods (t/find-methods cenv target-type mname (map :type args'))]
-    (when-let [method (first methods)]
-      (-> {:op :method-invocation
-           :interface? (:interface? method false)
-           :type (:return-type method)
-           :access (:access method)
-           :param-types (:param-types method)
-           :class (:class method)
-           :name mname
-           :args (mapv apply-conversions (:conversions method) args')}
-          (inherit-context cenv)
-          (cond-> target (assoc :target target))))))
+    (when-let [{:keys [param-types] :as method} (first methods)]
+      (let [nargs (count args')
+            ncs (count (:conversions method))
+            varargs (when (not= (count param-types) ncs)
+                      (let [vararg-type (peek param-types)
+                            varargs-form `(new ~(t/type->tag vararg-type)
+                                               ~(vec (drop ncs args)))]
+                        (parse-expr cenv' varargs-form)))]
+        (-> {:op :method-invocation
+             :interface? (:interface? method false)
+             :type (:return-type method)
+             :access (:access method)
+             :param-types param-types
+             :class (:class method)
+             :name mname
+             :args (cond-> (mapv apply-conversions (:conversions method) args')
+                     varargs
+                     (conj varargs))}
+            (inherit-context cenv)
+            (cond-> target (assoc :target target)))))))
 
 (defmethod parse-expr* '. [cenv [_ target property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))
