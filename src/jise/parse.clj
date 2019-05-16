@@ -131,7 +131,7 @@
                                  (find-field cenv (:class-type cenv) (str op)))]
         (when (t/array-type? (:type maybe-array))
           (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))))
-      (when (find-in-current-class cenv :methods (str op))
+      (when (t/get-methods cenv (:class-type cenv) (str op) (count (rest expr)))
         (parse-expr cenv (with-meta `(. ~'this ~expr) (meta expr))))
       (when ('#{this super} (misc/fixup-ns op))
         (parse-ctor-invocation cenv expr))
