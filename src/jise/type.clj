@@ -88,6 +88,7 @@
                               (throw (ex-info "vararg param type not allowed here" {})))))
         (class? tag) (Type/getType ^Class tag)
         (vector? tag) (tag->array-type cenv tag)
+        (string? tag) (Type/getType ^String tag)
         :else nil))
 
 (def primitive-iname->class
