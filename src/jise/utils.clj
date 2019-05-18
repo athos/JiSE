@@ -1,7 +1,8 @@
 (ns jise.utils
   (:refer-clojure :exclude [defn fn let])
   (:require [clojure.core :as c]
-            [jise.core :as jise]))
+            [jise.core :as jise])
+  (:import [clojure.lang Compiler$LocalBinding]))
 
 (defn- primitive-type [t]
   (case t
@@ -96,11 +97,25 @@
     `(def ~(with-meta name {:arglists `'(~args')})
        (fn ~args ~@body))))
 
+(defmacro let-internal [names body]
+  (c/let [types (map (c/fn [name]
+                       (c/let [^Compiler$LocalBinding lb (get &env name)]
+                         (when (.hasJavaClass lb)
+                           (.getJavaClass lb))))
+                     names)
+          names' (map (c/fn [name type]
+                        (cond-> name
+                          (and type (nil? (:tag (meta name))))
+                          (with-meta {:tag type})))
+                      names types)]
+    `((fn ~(vec names') ~@body) ~@names)))
+
 (defmacro let [bindings & body]
   (c/let [bindings' (partition 2 bindings)
-          params (map first bindings')
-          args (map second bindings')]
-    `((fn ~(vec params) ~@body) ~@args)))
+          names (map first bindings')
+          inits (map second bindings')]
+    `(c/let [~@(interleave names inits)]
+       (let-internal ~names ~body))))
 
 (defmacro do [& body]
   `((fn [] ~@body)))
