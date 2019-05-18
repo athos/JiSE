@@ -357,11 +357,11 @@
     (letfn [(method->map [^Class c ^Method m]
               {:class (tag->type cenv (.getDeclaringClass m))
                :interface? (.isInterface c)
-               :varargs? (.isVarArgs m)
                :param-types (->> (.getParameterTypes m)
                                  (mapv (partial tag->type cenv)))
                :return-type (tag->type cenv (.getReturnType m))
-               :access (modifiers->access-flags (.getModifiers m))})
+               :access (cond-> (modifiers->access-flags (.getModifiers m))
+                         (.isVarArgs m) (conj :varargs))})
             (walk [^Class c]
               (walk-class-hierarchy c
                 (fn [^Class c]
@@ -377,7 +377,8 @@
                           (keep (fn [m]
                                   (let [nparams (count (:param-types m))]
                                     (when (or (= nargs nparams)
-                                              (and (:varargs? m) (>= nargs (dec nparams))))
+                                              (and (:varargs (:access m))
+                                                   (>= nargs (dec nparams))))
                                       (assoc m :class class))))))
                      (mapcat (comp walk type->class) (:interfaces entry))
                      (walk (type->class (:parent entry))))
@@ -436,7 +437,7 @@
           methods))
 
 (defn filter-methods [cenv arg-types methods]
-  (let [{fixed-arity's false, variable-arity's true} (group-by #(:varargs? % false) methods)
+  (let [{fixed-arity's false, variable-arity's true} (group-by #(boolean (:varargs (:access %))) methods)
         filter-with #(seq (keep (partial %1 cenv arg-types) %2))]
     (some->> (or (filter-with strict-invocation-conversion fixed-arity's)
                  (filter-with loose-invocation-conversion fixed-arity's)

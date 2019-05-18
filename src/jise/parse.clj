@@ -255,8 +255,7 @@
                                       :method-params? true)
         return-type (if ctor? t/VOID type)
         context (if (= return-type t/VOID) :statement :expression)]
-    (cond-> {:varargs? (boolean (some #{'&} args))
-             :return-type return-type
+    (cond-> {:return-type return-type
              :args args'
              :access access
              :body (when-not (:abstract access)
@@ -265,6 +264,7 @@
                                              :context #{context :tail :return}))
                                   body))}
       ctor? (assoc :ctor? ctor?)
+      (some #{'&} args) (update :access conj :varargs)
       (not ctor?) (assoc :name (str mname)))))
 
 (defn parse-supers [proto-cenv [maybe-supers & body]]
@@ -329,7 +329,9 @@
                                        (conj pts)))))
                             []
                             (partition 2 1 (cons nil args)))]
-    {:access access :return-type type :param-types param-types :varargs? @varargs?}))
+    {:access (cond-> access @varargs? (conj :varargs))
+     :return-type type
+     :param-types param-types}))
 
 (defn init-cenv [proto-cenv cname parent interfaces fields ctors methods initializer]
   (let [fields' (into {} (map (fn [[_ name :as field]]
