@@ -20,7 +20,8 @@
                :private Opcodes/ACC_PRIVATE
                :final Opcodes/ACC_FINAL
                :transient Opcodes/ACC_TRANSIENT
-               :volatile Opcodes/ACC_VOLATILE}]
+               :volatile Opcodes/ACC_VOLATILE
+               :varargs Opcodes/ACC_VARARGS}]
     (apply + (keep attrs flags))))
 
 (defn emit-field [^ClassWriter cw {:keys [access name type value]}]
@@ -61,14 +62,14 @@
       (emit-expr emitter initializer))))
 
 (defn emit-method
-  [^ClassWriter cw parent {:keys [name access return-type args body static-initializer? ctor?]}]
+  [^ClassWriter cw parent {:keys [name access return-type args body static-initializer? ctor? varargs?]}]
   (let [desc (->> (map :type args)
                   (into-array Type)
                   (Type/getMethodDescriptor return-type))
         mname (cond static-initializer? "<clinit>"
                     ctor? "<init>"
                     :else (munge name))
-        mv (.visitMethod cw (access-value access) mname desc nil nil)
+        mv (.visitMethod cw (access-value (cond-> access varargs? (conj :varargs))) mname desc nil nil)
         emitter (make-emitter mv)]
     (doseq [arg args]
       (.visitParameter mv (:name arg) (access-value (:access arg))))

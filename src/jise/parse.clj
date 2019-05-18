@@ -15,10 +15,11 @@
       keys
       set))
 
-(defn parse-modifiers [proto-cenv {:keys [tag] :as modifiers} & {:keys [default-type]}]
+(defn parse-modifiers
+  [proto-cenv {:keys [tag] :as modifiers} & {:keys [default-type allow-vararg-param?]}]
   {:type (if (nil? tag)
            (or default-type t/OBJECT)
-           (t/tag->type proto-cenv tag))
+           (t/tag->type proto-cenv tag :allow-vararg-param-type? allow-vararg-param?))
    :access (access-flags modifiers)})
 
 (defn parse-field [proto-cenv [_ fname value :as field]]
@@ -201,8 +202,10 @@
          :exprs (conj exprs' last')}
         (inherit-context cenv :return? false))))
 
-(defn parse-name [proto-cenv name & {:keys [default-type]}]
-  (let [{:keys [access type]} (parse-modifiers proto-cenv (meta name) :default-type default-type)]
+(defn parse-name [proto-cenv name & {:keys [default-type allow-vararg-param?]}]
+  (let [{:keys [access type]} (parse-modifiers proto-cenv (meta name)
+                                               :default-type default-type
+                                               :allow-vararg-param? allow-vararg-param?)]
     {:name name
      :type type
      :access access}))
@@ -210,9 +213,11 @@
 (defn next-index [cenv type]
   (first (swap-vals! (:next-index cenv) + (t/type-category type))))
 
-(defn parse-binding [cenv lname init]
+(defn parse-binding [cenv lname init allow-vararg-param?]
   (let [init' (some->> init (parse-expr (with-context cenv :expression)))
-        lname' (parse-name cenv lname :default-type (:type init'))
+        lname' (parse-name cenv lname
+                           :default-type (:type init')
+                           :allow-vararg-param? allow-vararg-param?)
         init' (if-let [cs (and init' (t/casting-conversion cenv (:type init') (:type lname')))]
                 (apply-conversions cs init')
                 init')]
@@ -221,14 +226,19 @@
         (assoc :index (next-index cenv (:type lname')))
         (cond-> init' (assoc :init init')))))
 
-(defn parse-bindings [cenv bindings]
+(defn parse-bindings [cenv bindings & {:keys [method-params?]}]
   (loop [[lname init & bindings] bindings
          cenv' (with-context cenv :expression)
+         allow-vararg-param? false
          ret []]
     (if lname
-      (let [b (parse-binding cenv' lname init)
-            cenv' (assoc-in cenv' [:lenv (:name b)] b)]
-        (recur bindings cenv' (conj ret b)))
+      (if (= lname '&)
+        (if method-params?
+          (recur bindings cenv' true ret)
+          (throw (ex-info "vararg params are only allowed in method parameters" {})))
+        (let [b (parse-binding cenv' lname init (and allow-vararg-param? (empty? bindings)))
+              cenv' (assoc-in cenv' [:lenv (:name b)] b)]
+          (recur bindings cenv' allow-vararg-param? (conj ret b))))
       [(inherit-context cenv' cenv) ret])))
 
 (defn parse-method [cenv ctor? [_ mname args & body :as method]]
@@ -241,10 +251,12 @@
         [cenv' args'] (parse-bindings (assoc cenv
                                              :lenv (merge init-lenv (:enclosing-env cenv))
                                              :next-index (atom init-index))
-                                      (interleave args (repeat nil)))
+                                      (interleave args (repeat nil))
+                                      :method-params? true)
         return-type (if ctor? t/VOID type)
         context (if (= return-type t/VOID) :statement :expression)]
-    (cond-> {:return-type return-type
+    (cond-> {:varargs? (boolean (some #{'&} args))
+             :return-type return-type
              :args args'
              :access access
              :body (when-not (:abstract access)
@@ -303,6 +315,22 @@
                 (recur decls ret)))
             (recur decls ret)))))))
 
+(defn parse-method-signature [proto-cenv [_ name args :as method]]
+  (let [modifiers (modifiers-of method)
+        {:keys [type access]} (parse-modifiers proto-cenv modifiers :default-type t/VOID)
+        varargs? (volatile! false)
+        param-types (reduce (fn [pts [prev arg]]
+                              (if (= arg '&)
+                                pts
+                                (let [vararg-param? (= prev '&)]
+                                  (when vararg-param? (vreset! varargs? true))
+                                  (->> (parse-name proto-cenv arg :allow-vararg-param? vararg-param?)
+                                       :type
+                                       (conj pts)))))
+                            []
+                            (partition 2 1 (cons nil args)))]
+    {:access access :return-type type :param-types param-types :varargs? @varargs?}))
+
 (defn init-cenv [proto-cenv cname parent interfaces fields ctors methods initializer]
   (let [fields' (into {} (map (fn [[_ name :as field]]
                                 (let [modifiers (modifiers-of field)
@@ -314,13 +342,9 @@
                                param-types (mapv #(:type (parse-name proto-cenv %)) args)]
                            (conj cs {:access access :param-types param-types})))
                        [] ctors)
-        methods' (reduce (fn [m [_ name args :as method]]
-                           (let [modifiers (modifiers-of method)
-                                 {:keys [type access]} (parse-modifiers proto-cenv modifiers
-                                                                        :default-type t/VOID)]
-                             (update m (str name) (fnil conj [])
-                                     {:access access :return-type type
-                                      :param-types (mapv #(:type (parse-name proto-cenv %)) args)})))
+        methods' (reduce (fn [m [_ name :as method]]
+                           (let [method' (parse-method-signature proto-cenv method)]
+                             (update m (str name) (fnil conj []) method')))
                          {} methods)
         class-entry  {:parent parent :interfaces (set interfaces) :initializer initializer
                       :fields fields' :ctors ctors' :methods methods'}]

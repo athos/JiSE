@@ -75,13 +75,17 @@
     (when (contains? (:classes cenv) tag)
       (Type/getType (str \L (str/replace (str tag) \. \/) \;)))))
 
-(defn ^Type tag->type [cenv tag]
+(defn ^Type tag->type [cenv tag & {:keys [allow-vararg-param-type?]}]
   (cond (symbol? tag) (or (primitive->type tag)
                           (some->> (get primitive-array-types tag) (tag->type cenv))
                           (find-in-cenv cenv tag)
                           (when-let [c (resolve tag)]
                             (when (class? c)
-                              (Type/getType ^Class c))))
+                              (Type/getType ^Class c)))
+                          (when-let [[_ name] (re-matches #"(.+)\.\.\.$" (name tag))]
+                            (if allow-vararg-param-type?
+                              (tag->array-type cenv [(symbol name)])
+                              (throw (ex-info "vararg param type not allowed here" {})))))
         (class? tag) (Type/getType ^Class tag)
         (vector? tag) (tag->array-type cenv tag)
         :else nil))
@@ -371,8 +375,10 @@
       (->> (if-let [entry (get-in cenv [:classes class-name])]
              (concat (->> (get-in entry [:methods name])
                           (keep (fn [m]
-                                  (when (= (count (:param-types m)) nargs)
-                                    (assoc m :class class)))))
+                                  (let [nparams (count (:param-types m))]
+                                    (when (or (= nargs nparams)
+                                              (and (:varargs? m) (>= nargs (dec nparams))))
+                                      (assoc m :class class))))))
                      (mapcat (comp walk type->class) (:interfaces entry))
                      (walk (type->class (:parent entry))))
              (walk (type->class class)))
