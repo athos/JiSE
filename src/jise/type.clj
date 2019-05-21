@@ -352,6 +352,10 @@
                {})
        vals))
 
+(defn params-compatible? [nargs nparams varargs?]
+  (or (= nargs nparams)
+      (and varargs? (>= nargs (dec nparams)))))
+
 (defn get-methods [cenv ^Type class name nargs]
   (let [class-name (type->symbol class)
         name' (munge name)]
@@ -368,19 +372,14 @@
                 (fn [^Class c]
                   (keep (fn [^Method m]
                           (when (and (= (.getName m) name')
-                                     (let [nparams (.getParameterCount m)]
-                                       (or (= nargs nparams)
-                                           (and (.isVarArgs m) (>= nargs (dec nparams))))))
+                                     (params-compatible? nargs (.getParameterCount m) (.isVarArgs m)))
                             (method->map c m)))
                         (.getDeclaredMethods c)))))]
       (->> (if-let [entry (get-in cenv [:classes class-name])]
              (concat (->> (get-in entry [:methods name])
-                          (keep (fn [m]
-                                  (let [nparams (count (:param-types m))]
-                                    (when (or (= nargs nparams)
-                                              (and (:varargs (:access m))
-                                                   (>= nargs (dec nparams))))
-                                      (assoc m :class class))))))
+                          (keep (fn [{:keys [param-types access] :as m}]
+                                  (when (params-compatible? nargs (count param-types) (:varargs access))
+                                    (assoc m :class class)))))
                      (mapcat (comp walk type->class) (:interfaces entry))
                      (walk (type->class (:parent entry))))
              (walk (type->class class)))
