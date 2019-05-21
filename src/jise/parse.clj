@@ -83,7 +83,7 @@
                  (get-in @(:vars cenv) [:fields fname]))
         {:class class :type VAR_TYPE :access #{:public :static}})))
 
-(declare parse-expr)
+(declare parse-expr parse-method-invocation)
 
 (defn parse-sugar [cenv [op :as expr]]
   (or (when-let [maybe-array (or (find-lname cenv op)
@@ -91,7 +91,7 @@
         (when (t/array-type? (:type maybe-array))
           (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))))
       (when (t/get-methods cenv (:class-type cenv) (str op) (count (rest expr)))
-        (parse-expr cenv (with-meta `(. ~'this ~expr) (meta expr))))
+        (parse-method-invocation cenv nil (:class-type cenv) (str op) (rest expr)))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
         (when-not (:macro (meta var))
           (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
@@ -985,7 +985,10 @@
                       (let [vararg-type (peek param-types)
                             varargs-form `(new ~(t/type->tag vararg-type)
                                                ~(vec (drop ncs args)))]
-                        (parse-expr cenv' varargs-form)))]
+                        (parse-expr cenv' varargs-form)))
+            target' (if (and (nil? target) (not (:static (:access method))))
+                      (parse-expr cenv' 'this)
+                      target)]
         (-> {:op :method-invocation
              :interface? (:interface? method false)
              :type (:return-type method)
@@ -997,7 +1000,7 @@
                      varargs
                      (conj varargs))}
             (inherit-context cenv)
-            (cond-> target (assoc :target target)))))))
+            (cond-> target' (assoc :target target')))))))
 
 (defmethod parse-expr* '. [cenv [_ target property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))
