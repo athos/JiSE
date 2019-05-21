@@ -448,17 +448,23 @@
   (->> (get-methods cenv class name (count arg-types))
        (filter-methods cenv arg-types)))
 
-(defn find-ctor [cenv ^Type class arg-types]
-  (let [class-name (type->symbol class)
-        ctors (get-in cenv [:classes class-name :ctors])]
-    (or (some->> (seq ctors)
-                 (filter #(= (:param-types %) arg-types))
-                 first)
-        (let [target-class (type->class class)
-              arg-classes (map type->class arg-types)]
-          (when-first [^Constructor ctor (->> (.getDeclaredConstructors target-class)
-                                              (filter #(= (seq (.getParameterTypes ^Constructor %))
-                                                          arg-classes)))]
-            {:param-types (->> (.getParameterTypes ctor)
-                               (mapv (partial tag->type cenv)))
-             :access (modifiers->access-flags (.getModifiers ctor))})))))
+(defn get-ctors [cenv ^Type class nargs]
+  (let [class-name (type->symbol class)]
+    (or (->> (get-in cenv [:classes class-name :ctors])
+             (filter (fn [{:keys [param-types access]}]
+                       (params-compatible? nargs (count param-types) (:varargs access))))
+             seq)
+        (->> (.getDeclaredConstructors (type->class class))
+             (keep (fn [^Constructor ctor]
+                     (let [nparams (.getParameterCount ctor)
+                           varargs? (.isVarArgs ctor)]
+                       (when (params-compatible? nargs nparams varargs?)
+                         {:param-types (->> (.getParameterTypes ctor)
+                                            (mapv (partial tag->type cenv)))
+                          :access (cond-> (modifiers->access-flags (.getModifiers ctor))
+                                    varargs? (conj :varargs))}))))
+             seq))))
+
+(defn find-ctors [cenv ^Type class arg-types]
+  (some->> (get-ctors cenv class (count arg-types))
+           (filter-methods cenv arg-types)))

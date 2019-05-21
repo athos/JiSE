@@ -916,19 +916,31 @@
                          args)}
           (inherit-context cenv)))))
 
+(defn args-for [cenv {:keys [param-types] :as ctor-or-method} args args']
+  (let [ncs (count (:conversions ctor-or-method))
+        varargs (when (not= (count param-types) ncs)
+                  (let [vararg-type (peek param-types)
+                        varargs-form `(new ~(t/type->tag vararg-type)
+                                           ~(vec (drop ncs args)))]
+                    (parse-expr cenv varargs-form)))]
+    (cond-> (mapv apply-conversions (:conversions ctor-or-method) args')
+      varargs
+      (conj varargs))))
+
 (defmethod parse-expr* 'new [cenv [_ type & args]]
   (let [type' (t/tag->type cenv type)]
     (if (t/array-type? type')
       (parse-array-creation cenv type type' args)
       (let [cenv' (with-context cenv :expression)
             args' (map (partial parse-expr cenv') args)
-            ctor (t/find-ctor cenv type' (map :type args'))]
-        (-> {:op :new
-             :type type'
-             :access (:access ctor)
-             :param-types (:param-types ctor)
-             :args args'}
-            (inherit-context cenv))))))
+            ctors (t/find-ctors cenv type' (map :type args'))]
+        (when-let [ctor (first ctors)]
+          (-> {:op :new
+               :type type'
+               :access (:access ctor)
+               :param-types (:param-types ctor)
+               :args (args-for cenv' ctor args args')}
+              (inherit-context cenv)))))))
 
 (defn parse-ctor-invocation [cenv super? [_ & args]]
   (let [cenv' (with-context cenv :expression)
@@ -936,15 +948,16 @@
         class (if super?
                 (find-in-current-class cenv :parent)
                 (:class-type cenv))
-        ctor (t/find-ctor cenv class (map :type args'))
+        ctors (t/find-ctors cenv class (map :type args'))
         initializer (when super? (find-in-current-class cenv :initializer))]
-    (-> {:op :ctor-invocation
-         :class class
-         :access (:access ctor)
-         :param-types (:param-types ctor)
-         :args args'}
-        (inherit-context (cond-> cenv initializer (with-context :statement)))
-        (cond-> initializer (assoc :initializer (parse-expr cenv initializer))))))
+    (when-let [ctor (first ctors)]
+      (-> {:op :ctor-invocation
+           :class class
+           :access (:access ctor)
+           :param-types (:param-types ctor)
+           :args (args-for cenv' ctor args args')}
+          (inherit-context (cond-> cenv initializer (with-context :statement)))
+          (cond-> initializer (assoc :initializer (parse-expr cenv initializer)))))))
 
 (defmethod parse-expr* 'this [cenv expr]
   (parse-ctor-invocation cenv false expr))
@@ -978,27 +991,18 @@
   (let [cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
         methods (t/find-methods cenv target-type mname (map :type args'))]
-    (when-let [{:keys [param-types] :as method} (first methods)]
-      (let [nargs (count args')
-            ncs (count (:conversions method))
-            varargs (when (not= (count param-types) ncs)
-                      (let [vararg-type (peek param-types)
-                            varargs-form `(new ~(t/type->tag vararg-type)
-                                               ~(vec (drop ncs args)))]
-                        (parse-expr cenv' varargs-form)))
-            target' (if (and (nil? target) (not (:static (:access method))))
+    (when-let [method (first methods)]
+      (let [target' (if (and (nil? target) (not (:static (:access method))))
                       (parse-expr cenv' 'this)
                       target)]
         (-> {:op :method-invocation
              :interface? (:interface? method false)
              :type (:return-type method)
              :access (:access method)
-             :param-types param-types
+             :param-types (:param-types method)
              :class (:class method)
              :name mname
-             :args (cond-> (mapv apply-conversions (:conversions method) args')
-                     varargs
-                     (conj varargs))}
+             :args (args-for cenv' method args args')}
             (inherit-context cenv)
             (cond-> target' (assoc :target target')))))))
 
