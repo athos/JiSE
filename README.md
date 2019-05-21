@@ -30,6 +30,10 @@ JiSE is Clojure's embedded DSL for making it as easy (or maybe even easier?) to 
 ^:public
 (defclass Qsort
   ^:public ^:static
+  (defm qsort [^{:tag [int]} xs]
+    (qsort xs 0 (- (alength xs) 1)))
+
+  ^:private ^:static
   (defm qsort [^{:tag [int]} xs ^int left ^int right]
     (when (< left right)
       (let [p (aget xs (/ (+ left right) 2))
@@ -44,11 +48,11 @@ JiSE is Clojure's embedded DSL for making it as easy (or maybe even easier?) to 
               (aset xs r tmp)
               (inc! l)
               (dec! r))))
-        (Qsort/qsort xs left r)
-        (Qsort/qsort xs l right)))))
+        (qsort xs left r)
+        (qsort xs l right)))))
 
 (def arr (int-array [3 1 4 1 5 9 2]))
-(Qsort/qsort arr 0 (dec (count arr)))
+(Qsort/qsort arr)
 (seq arr)
 ;=> (1 1 2 3 4 5 9)
 ```

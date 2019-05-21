@@ -4,6 +4,10 @@
 
 ^:public
 (defclass Qsort
+  ^:public ^:static
+  (defm qsort [^ints xs]
+    (qsort xs 0 (- (alength xs) 1)))
+
   ^:private ^:static
   (defm qsort [^ints xs ^int left ^int right]
     (when (< left right)
@@ -19,11 +23,8 @@
               (set! (xs r) tmp)
               (inc! l)
               (dec! r))))
-        (Qsort/qsort xs left r)
-        (Qsort/qsort xs l right))))
-  ^:public ^:static
-  (defm qsort [^ints xs]
-    (Qsort/qsort xs 0 (- (.-length xs) 1))))
+        (qsort xs left r)
+        (qsort xs l right)))))
 
 (defn -main [& args]
   (let [arr (int-array (map #(Integer/parseInt %) args))]
