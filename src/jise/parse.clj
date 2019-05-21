@@ -85,12 +85,26 @@
 
 (declare parse-expr)
 
+(defn parse-sugar [cenv [op :as expr]]
+  (or (when-let [maybe-array (or (find-lname cenv op)
+                                 (find-field cenv (:class-type cenv) (str op)))]
+        (when (t/array-type? (:type maybe-array))
+          (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))))
+      (when (t/get-methods cenv (:class-type cenv) (str op) (count (rest expr)))
+        (parse-expr cenv (with-meta `(. ~'this ~expr) (meta expr))))
+      (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
+        (when-not (:macro (meta var))
+          (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
+                               ~@(rest expr))]
+            (parse-expr cenv (with-meta form (meta expr))))))))
+
 (defmulti parse-expr* (fn [cenv expr] (misc/fixup-ns (first expr))))
 (defmethod parse-expr* :default [cenv expr]
   (let [expanded (misc/macroexpand cenv expr)]
     (if-not (identical? expanded expr)
       (parse-expr cenv expanded)
-      (throw (ex-info (str "unsupported expr: " (pr-str expr)) {:expr expr})))))
+      (or (parse-sugar cenv expr)
+          (throw (ex-info (str "unsupported expr: " (pr-str expr)) {:expr expr}))))))
 
 (defn parse-symbol [cenv sym]
   (if-let [tag (:tag (meta sym))]
@@ -111,45 +125,13 @@
               (parse-as-field cenv target))
             (throw (ex-info (str "unknown variable found: " sym) {:variable sym}))))))))
 
-(defn parse-ctor-invocation [cenv [op & args]]
-  (let [cenv' (with-context cenv :expression)
-        args' (map (partial parse-expr cenv') args)
-        class (if (= op 'this)
-                (:class-type cenv)
-                (find-in-current-class cenv :parent))
-        ctor (t/find-ctor cenv class (map :type args'))
-        initializer (when (= op 'super) (find-in-current-class cenv :initializer))]
-    (-> {:op :ctor-invocation
-         :class class
-         :access (:access ctor)
-         :param-types (:param-types ctor)
-         :args args'}
-        (inherit-context (cond-> cenv initializer (with-context :statement)))
-        (cond-> initializer (assoc :initializer (parse-expr cenv initializer))))))
-
-(defn parse-sugar [cenv [op :as expr]]
-  (or (when-let [maybe-array (or (find-lname cenv op)
-                                 (find-field cenv (:class-type cenv) (str op)))]
-        (when (t/array-type? (:type maybe-array))
-          (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))))
-      (when (t/get-methods cenv (:class-type cenv) (str op) (count (rest expr)))
-        (parse-expr cenv (with-meta `(. ~'this ~expr) (meta expr))))
-      (when ('#{this super} (misc/fixup-ns op))
-        (parse-ctor-invocation cenv expr))
-      (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
-        (when-not (:macro (meta var))
-          (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
-                               ~@(rest expr))]
-            (parse-expr cenv (with-meta form (meta expr))))))))
-
 (defn parse-seq [cenv expr]
   (if-let [tag (:tag (meta expr))]
     (parse-expr cenv `(~'cast ~tag ~(vary-meta expr dissoc :tag)))
     (let [{:keys [tag line label]} (meta expr)
           cenv' (if label (inherit-context cenv cenv :return? false) cenv)
-          expr' (and (symbol? (first expr))
-                     (or (parse-sugar cenv' expr)
-                         (parse-expr* cenv' expr)))]
+          expr' (when (symbol? (first expr))
+                  (parse-expr* cenv' expr))]
       (as-> expr' expr'
         (if line
           (assoc expr' :line line)
@@ -947,6 +929,28 @@
              :param-types (:param-types ctor)
              :args args'}
             (inherit-context cenv))))))
+
+(defn parse-ctor-invocation [cenv super? [_ & args]]
+  (let [cenv' (with-context cenv :expression)
+        args' (map (partial parse-expr cenv') args)
+        class (if super?
+                (find-in-current-class cenv :parent)
+                (:class-type cenv))
+        ctor (t/find-ctor cenv class (map :type args'))
+        initializer (when super? (find-in-current-class cenv :initializer))]
+    (-> {:op :ctor-invocation
+         :class class
+         :access (:access ctor)
+         :param-types (:param-types ctor)
+         :args args'}
+        (inherit-context (cond-> cenv initializer (with-context :statement)))
+        (cond-> initializer (assoc :initializer (parse-expr cenv initializer))))))
+
+(defmethod parse-expr* 'this [cenv expr]
+  (parse-ctor-invocation cenv false expr))
+
+(defmethod parse-expr* 'super [cenv expr]
+  (parse-ctor-invocation cenv true expr))
 
 (defn parse-field-access [cenv target target-type fname]
   (if (and (t/array-type? target-type) (= fname "length"))
