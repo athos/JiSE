@@ -6,6 +6,14 @@
   (:import [clojure.asm Type]
            [clojure.java.api Clojure]))
 
+(def ^:dynamic *line*)
+(def ^:dynamic *column*)
+
+(defmacro error [msg & [data]]
+  `(let [msg# (str "Error: " ~msg " (" *file* \: *line* \: *column* ")")
+         data# (merge {:line *line* :column *column*} ~data)]
+     (throw (ex-info msg# data#))))
+
 (defn modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
 
@@ -123,15 +131,18 @@
           (if-let [f (find-field cenv (:class-type cenv) (name sym))]
             (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
               (parse-as-field cenv target))
-            (throw (ex-info (str "unknown variable found: " sym) {:variable sym}))))))))
+            (error (str "cannot find symbol: " sym) {:variable sym})))))))
 
 (defn parse-seq [cenv expr]
   (if-let [tag (:tag (meta expr))]
     (parse-expr cenv `(~'cast ~tag ~(vary-meta expr dissoc :tag)))
     (let [{:keys [tag line label]} (meta expr)
           cenv' (if label (inherit-context cenv cenv :return? false) cenv)
-          expr' (when (symbol? (first expr))
-                  (parse-expr* cenv' expr))]
+          expr' (if (symbol? (first expr))
+                  (binding [*line* (or (:line (meta expr)) *line*)
+                            *column* (or (:column (meta expr)) *column*)]
+                    (parse-expr* cenv' expr))
+                  (error (str "malformed expression: " (pr-str expr)) {:expr expr}))]
       (as-> expr' expr'
         (if line
           (assoc expr' :line line)
@@ -156,7 +167,8 @@
                #{t/FLOAT t/DOUBLE}
                {:type t/DOUBLE :value v}
 
-               {:type t :value v})))))
+               {:type t :value v}))
+      (error (str (pr-str v) " cannot be used as literal")))))
 
 (defn parse-expr [{:keys [return-type] :as cenv} expr]
   (let [expr' (cond (symbol? expr) (parse-symbol cenv expr)
@@ -242,10 +254,12 @@
              :args args'
              :access access
              :body (when-not (:abstract access)
-                     (parse-exprs (-> cenv'
-                                      (assoc :return-type return-type
-                                             :context #{context :tail :return}))
-                                  body))}
+                     (binding [*line* (:line (meta method))
+                               *column* (:column (meta method))]
+                       (parse-exprs (-> cenv'
+                                        (assoc :return-type return-type
+                                               :context #{context :tail :return}))
+                                    body)))}
       ctor? (assoc :ctor? ctor?)
       (some #{'&} args) (update :access conj :varargs)
       (not ctor?) (assoc :name (str mname)))))
@@ -398,35 +412,42 @@
       :fields (mapv (partial parse-field cenv)
                     (concat fields synthesized-fields))})))
 
-(defn parse-unary-op [cenv [_ x] op]
+(defn ensure-unary [cenv x op-name]
+  (if-let [cs (t/unary-numeric-promotion (:type x))]
+    (-> (apply-conversions cs x)
+        (inherit-context cenv))
+    (error (format "bad operand type %s for unary operator '%s'"
+                   (t/type->tag (:type x)) op-name))))
+
+(defn parse-unary-op [cenv [op-name x] op]
   (let [cenv' (with-context cenv :expression)
-        x' (parse-expr cenv' x)
-        cs (t/unary-numeric-promotion (:type x'))]
+        x' (ensure-unary cenv' (parse-expr cenv' x) op-name)]
     (-> {:op op
          :type (:type x')
-         :operand (apply-conversions cs x')}
+         :operand x'}
         (inherit-context cenv))))
 
 (defn parse-binary-op
-  ([cenv [_ x y] op]
+  ([cenv [_ x y] op op-name]
    (let [cenv' (with-context cenv :expression)
          lhs (parse-expr cenv' x)
          rhs (parse-expr cenv' y)]
-     (parse-binary-op cenv lhs rhs op)))
-  ([cenv lhs rhs op]
-   (let [[cl cr] (t/binary-numeric-promotion (:type lhs) (:type rhs))]
+     (parse-binary-op cenv lhs rhs op op-name)))
+  ([cenv lhs rhs op op-name]
+   (if-let [[cl cr] (t/binary-numeric-promotion (:type lhs) (:type rhs))]
      (-> {:op op
           :lhs (apply-conversions cl lhs)
           :rhs (apply-conversions cr rhs)}
-         (inherit-context cenv)))))
+         (inherit-context cenv))
+     (error (format "bad operand types for binary operator '%s'" op-name)))))
 
-(defn parse-arithmetic [cenv expr op]
-  (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op)]
+(defn parse-arithmetic [cenv expr op op-name]
+  (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op op-name)]
     (assoc ret :type (:type lhs))))
 
-(defn coerce-to-primitive [cenv [_ x]]
-  (let [x' (parse-expr cenv x)]
-    (apply-conversions (t/unary-numeric-promotion (:type x')) x')))
+(defn coerce-to-primitive [cenv [op x]]
+  (let [cenv' (with-context cenv :expression)]
+    (ensure-unary cenv (parse-expr cenv' x) op)))
 
 (defn fold-binary-op [[op x y & more :as expr]]
   (if more
@@ -435,37 +456,37 @@
 
 (defmethod parse-expr* '+ [cenv [_ x y & more :as expr]]
   (cond more (parse-expr cenv (fold-binary-op expr))
-        y (parse-arithmetic cenv expr :add)
+        y (parse-arithmetic cenv expr :add '+)
         x (coerce-to-primitive cenv expr)
         :else (parse-expr cenv 0)))
 
 (defmethod parse-expr* '- [cenv [_ x y & more :as expr]]
   (cond more (parse-expr cenv (fold-binary-op expr))
-        y (parse-arithmetic cenv expr :sub)
+        y (parse-arithmetic cenv expr :sub '-)
         x (parse-unary-op cenv expr :neg)))
 
 (defmethod parse-expr* '* [cenv [_ x y & more :as expr]]
   (cond more (parse-expr cenv (fold-binary-op expr))
-        y (parse-arithmetic cenv expr :mul)
+        y (parse-arithmetic cenv expr :mul '*)
         x (coerce-to-primitive cenv expr)
         :else (parse-expr cenv 1)))
 
 (defmethod parse-expr* '/ [cenv [_ x y & more :as expr]]
   (cond more (parse-expr cenv (fold-binary-op expr))
-        y (parse-arithmetic cenv expr :div)
+        y (parse-arithmetic cenv expr :div '/)
         :else (parse-expr cenv (with-meta `(~'/ 1 ~x) (meta expr)))))
 
 (defmethod parse-expr* '% [cenv expr]
-  (parse-arithmetic cenv expr :rem))
+  (parse-arithmetic cenv expr :rem '%))
 
 (defmethod parse-expr* '& [cenv expr]
-  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-and))
+  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-and '&))
 
 (defmethod parse-expr* '| [cenv expr]
-  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-or))
+  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-or '|))
 
 (defmethod parse-expr* 'xor [cenv expr]
-  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-xor))
+  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-xor 'xor))
 
 (defmethod parse-expr* '! [cenv [_ operand :as expr]]
   (parse-expr cenv (with-meta `(~'xor ~operand -1) (meta expr))))
@@ -502,20 +523,20 @@
     (meta expr)))
 
 (defn parse-comparison
-  ([cenv [_ x y & more :as expr] op]
+  ([cenv [_ x y & more :as expr] op op-name]
    (if (:conditional (:context cenv))
      (if more
        (parse-expr cenv (fold-comparison expr))
        (let [cenv' (with-context cenv :expression)
              x' (parse-expr cenv' x)
              y' (parse-expr cenv' y)]
-         (parse-comparison cenv' x' y' op)))
+         (parse-comparison cenv' x' y' op op-name)))
      (parse-expr cenv `(if ~expr true false))))
-  ([cenv lhs rhs op]
-   (-> (parse-binary-op cenv lhs rhs op)
+  ([cenv lhs rhs op op-name]
+   (-> (parse-binary-op cenv lhs rhs op op-name)
        (assoc :type t/BOOLEAN))))
 
-(defn parse-cmp-0 [cenv x op default-op default]
+(defn parse-cmp-0 [cenv x op default-op default-op-name default]
   (if (= x 0)
     (parse-expr cenv default)
     (let [cenv' (with-context cenv :expression)
@@ -524,7 +545,7 @@
         {:op op
          :type t/BOOLEAN
          :operand x'}
-        (parse-comparison cenv' x' (parse-literal cenv' 0) default-op)))))
+        (parse-comparison cenv' x' (parse-literal cenv' 0) default-op default-op-name)))))
 
 (defn parse-eq-null [cenv x op]
   (if (nil? x)
@@ -536,35 +557,35 @@
 
 (defmethod parse-expr* '== [cenv [_ x y & more :as expr]]
   (or (when-not more
-        (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv (if (= x 0) y x) :eq-0 :eq true)
+        (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv (if (= x 0) y x) :eq-0 :eq '== true)
               (or (nil? x) (nil? y)) (parse-eq-null cenv (if (nil? x) y x) :eq-null)))
-      (parse-comparison cenv expr :eq)))
+      (parse-comparison cenv expr :eq '==)))
 
 (defmethod parse-expr* '!= [cenv [_ x y & more :as expr]]
   (or (when-not more
-        (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv (if (= x 0) y x) :ne-0 :ne false)
+        (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv (if (= x 0) y x) :ne-0 :ne '!= false)
               (or (nil? x) (nil? y)) (parse-eq-null cenv (if (nil? x) y x) :ne-null)))
-      (parse-comparison cenv expr :ne)))
+      (parse-comparison cenv expr :ne '!=)))
 
 (defmethod parse-expr* '< [cenv [_ x y & more :as expr]]
   (if (and (nil? more) (or (= x 0) (= y 0)))
-    (parse-cmp-0 cenv (if (= x 0) y x) :lt-0 :lt false)
-    (parse-comparison cenv expr :lt)))
+    (parse-cmp-0 cenv (if (= x 0) y x) :lt-0 :lt '< false)
+    (parse-comparison cenv expr :lt '<)))
 
 (defmethod parse-expr* '> [cenv [_ x y & more :as expr]]
   (if (and (nil? more) (or (= x 0) (= y 0)))
-    (parse-cmp-0 cenv (if (= x 0) y x) :gt-0 :gt false)
-    (parse-comparison cenv expr :gt)))
+    (parse-cmp-0 cenv (if (= x 0) y x) :gt-0 :gt '> false)
+    (parse-comparison cenv expr :gt '>)))
 
 (defmethod parse-expr* '<= [cenv [_ x y & more :as expr]]
   (if (and (nil? more) (or (= x 0) (= y 0)))
-    (parse-cmp-0 cenv (if (= x 0) y x) :le-0 :le true)
-    (parse-comparison cenv expr :le)))
+    (parse-cmp-0 cenv (if (= x 0) y x) :le-0 :le '<= true)
+    (parse-comparison cenv expr :le '<=)))
 
 (defmethod parse-expr* '>= [cenv [_ x y & more :as expr]]
   (if (and (nil? more) (or (= x 0) (= y 0)))
-    (parse-cmp-0 cenv (if (= x 0) y x) :ge-0 :ge true)
-    (parse-comparison cenv expr :ge)))
+    (parse-cmp-0 cenv (if (= x 0) y x) :ge-0 :ge '>= true)
+    (parse-comparison cenv expr :ge '>=)))
 
 (defmethod parse-expr* 'and [cenv [_ & exprs :as expr]]
   (if (:conditional (:context cenv))
@@ -606,10 +627,17 @@
     (negate-expr (parse-expr cenv operand))
     (parse-expr cenv `(if ~expr true false))))
 
+(defn ensure-type [cenv type src]
+  (if-let [cs (t/casting-conversion cenv (:type src) type)]
+    (-> (apply-conversions cs src)
+        (inherit-context cenv))
+    (error (format "incompatible types: %s cannot be converted to %s"
+                   (t/type->tag (:type src))
+                   (t/type->tag type)))))
+
 (defn parse-cast [cenv type x]
-  (let [x' (parse-expr cenv x)
-        cs (t/casting-conversion cenv (:type x') type)]
-    (apply-conversions cs x')))
+  (let [cenv' (with-context cenv :expression)]
+    (ensure-type cenv type (parse-expr cenv' x))))
 
 (defmethod parse-expr* 'boolean [cenv [_ x]]
   (parse-cast cenv t/BOOLEAN x))
@@ -707,45 +735,33 @@
            :rhs rhs'}
           (inherit-context cenv)))))
 
-(defmethod parse-expr* 'inc! [cenv [_ target by]]
+(defn parse-increment [cenv target by max-value default-op op-name]
   (let [by (or by 1)
         {:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
+    (when-not (t/numeric-type? type)
+      (error (format "bad operand type %s for unary operator %s" (t/type->tag type) op-name)))
     (if (and (= (:op target') :local)
              (or (= type t/INT)
                  (when-let [{:keys [to]} (t/widening-primitive-conversion type t/INT)]
                    (= to t/INT)))
              (int? by)
-             (<= 0 by Byte/MAX_VALUE))
+             (<= 0 by max-value))
       (-> {:op :increment, :target target', :type type, :by by}
           (inherit-context cenv))
-      (parse-expr cenv `(set! ~target (~'+ ~target ~by))))))
+      (parse-expr cenv `(set! ~target (~default-op ~target ~by))))))
+
+(defmethod parse-expr* 'inc! [cenv [_ target by]]
+  (parse-increment cenv target by Byte/MAX_VALUE '+ 'inc!))
 
 (defmethod parse-expr* 'dec! [cenv [_ target by]]
-  (let [by (or by 1)
-        {:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
-    (if (and (= (:op target') :local)
-             (or (= type t/INT)
-                 (when-let [{:keys [to]} (t/widening-primitive-conversion type t/INT)]
-                   (= to t/INT)))
-             (int? by)
-             (<= 0 by (- Byte/MIN_VALUE)))
-      (-> {:op :increment, :target target', :type type, :by (- by)}
-          (inherit-context cenv))
-      (parse-expr cenv `(set! ~target (~'- ~target ~by))))))
-
-(defn unbox-if-possible [x]
-  (if-let [unbox (t/unboxing-conversion (:type x))]
-    (apply-conversions [unbox] x)
-    x))
+  (parse-increment cenv target by (- Byte/MIN_VALUE) '- 'dec!))
 
 (defmethod parse-expr* 'if [cenv [_ test then else]]
   (cond (true? test) (parse-expr cenv then)
         (false? test) (parse-expr cenv else)
         :else
-        (let [test' (parse-expr (with-context cenv :conditional) test)
-              test' (if-let [cs (t/casting-conversion cenv (:type test') t/BOOLEAN)]
-                      (apply-conversions cs test')
-                      test')
+        (let [test' (->> (parse-expr (with-context cenv :conditional) test)
+                         (ensure-type cenv t/BOOLEAN))
               cenv' (if (and (:tail (:context cenv)) (nil? else))
                       (with-context cenv :statement)
                       cenv)
@@ -805,10 +821,8 @@
 
 (defmethod parse-expr* 'while [cenv [_ cond & body :as expr]]
   (let [label (extract-label expr)
-        cond' (parse-expr (with-context cenv :conditional) cond)
-        cond' (if-let [cs (t/casting-conversion cenv (:type cond') t/BOOLEAN)]
-                (apply-conversions cs cond')
-                cond')]
+        cond' (->> (parse-expr (with-context cenv :conditional) cond)
+                   (ensure-type cenv t/BOOLEAN))]
     (-> {:op :while
          :cond cond'
          :body (parse-exprs (with-context cenv :statement) body)}
@@ -833,10 +847,8 @@
       (parse-expr cenv (with-meta form' (meta form))))
     (let [[lname init cond step] args
           [cenv' bindings'] (parse-bindings cenv [lname init])
-          cond' (parse-expr (with-context cenv' :conditional) cond)
-          cond' (if-let [cs (t/casting-conversion cenv' (:type cond') t/BOOLEAN)]
-                  (apply-conversions cs cond')
-                  cond')
+          cond' (->> (parse-expr (with-context cenv' :conditional) cond)
+                     (ensure-type cenv t/BOOLEAN))
           label (extract-label form)]
       (-> {:op :let
            :bindings bindings'
