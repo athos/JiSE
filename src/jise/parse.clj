@@ -62,6 +62,15 @@
           src
           conversions))
 
+(defn ensure-type [cenv type src & {:keys [allow-casting?]}]
+  (let [conv (if allow-casting? t/casting-conversion t/assignment-conversion)]
+    (if-let [cs (conv cenv (:type src) type)]
+      (-> (apply-conversions cs src)
+          (inherit-context cenv))
+      (error (format "incompatible types: %s cannot be converted to %s"
+                     (t/type->tag (:type src))
+                     (t/type->tag type))))))
+
 (defn find-in-current-class [cenv & ks]
   (get-in cenv (into [:classes (:class-name cenv)] ks)))
 
@@ -174,20 +183,19 @@
   (let [expr' (cond (symbol? expr) (parse-symbol cenv expr)
                     (seq? expr) (parse-seq cenv expr)
                     :else (parse-literal cenv expr))]
-    (or (when (and (:return (:context expr'))
-                   (not= (or (:type expr') t/VOID) return-type))
-          (let [conv (fn [e]
-                       (when-let [cs (t/assignment-conversion cenv (:type e) return-type)]
-                         (apply-conversions cs e)))]
-            (if (= (:type expr') t/VOID)
-              ;; insert implicit (do ... nil)
-              (-> {:op :do
-                   :type return-type
-                   :exprs [(with-context expr' :statement)
-                           (conv (parse-literal cenv nil))]}
-                  (inherit-context cenv :return? false))
-              (conv expr'))))
-        expr')))
+    (if (and (:return (:context expr'))
+             (not= return-type t/VOID)
+             (not= (or (:type expr') t/VOID) return-type))
+      (let [conv #(ensure-type cenv return-type %)]
+        (if (= (:type expr') t/VOID)
+          ;; insert implicit (do ... nil)
+          (-> {:op :do
+               :type return-type
+               :exprs [(with-context expr' :statement)
+                       (conv (parse-literal cenv nil))]}
+              (inherit-context cenv :return? false))
+          (conv expr')))
+      expr')))
 
 (defn  parse-exprs [cenv body]
   (let [cenv' (with-context cenv :statement)
@@ -207,15 +215,6 @@
 
 (defn next-index [cenv type]
   (first (swap-vals! (:next-index cenv) + (t/type-category type))))
-
-(defn ensure-type [cenv type src & {:keys [allow-casting?]}]
-  (let [conv (if allow-casting? t/casting-conversion t/assignment-conversion)]
-    (if-let [cs (conv cenv (:type src) type)]
-      (-> (apply-conversions cs src)
-          (inherit-context cenv))
-      (error (format "incompatible types: %s cannot be converted to %s"
-                     (t/type->tag (:type src))
-                     (t/type->tag type))))))
 
 (defn parse-binding [cenv lname init allow-vararg-param?]
   (let [init' (some->> init (parse-expr (with-context cenv :expression)))
