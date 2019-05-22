@@ -359,42 +359,44 @@
             fields
             (:var->entry @vars))))
 
-(defn parse-class [enclosing-env [_ cname & body :as class]]
-  (let [alias (class-alias cname)
-        proto-cenv {:class-name cname :classes {cname {}}
-                    :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
-        {:keys [parent interfaces body]} (parse-supers proto-cenv body)
-        {:keys [ctors fields methods initializer]} (parse-class-body cname body)
-        {initializer :non-static static-initializer :static} (filter-static initializer)
-        parent (or parent t/OBJECT)
-        ctors' (if (empty? ctors)
-                 [(with-meta `(~'defm ~alias [] (~'super))
-                    (select-keys (modifiers-of class) [:public :protected :private]))]
-                 ctors)
-        cenv (-> proto-cenv
-                 (init-cenv cname parent interfaces fields ctors' methods
-                            (when (seq initializer) `(do ~@initializer)))
-                 (assoc :enclosing-env enclosing-env
-                        :vars (atom {:var->entry {} :fields #{}}))
-                 (as-> cenv (assoc cenv :class-type (t/tag->type cenv cname))))
-        ctors' (mapv (partial parse-method cenv true) ctors')
-        methods' (mapv (partial parse-method cenv false) methods)
-        synthesized-fields (synthesize-fields cenv)]
-    {:name (str/replace (str cname) \. \/)
-     :access (access-flags (modifiers-of class))
-     :parent parent
-     :interfaces interfaces
-     :static-initializer (when-let [init (->> (:static (filter-static synthesized-fields))
-                                              (keep (partial convert-def-to-set alias))
-                                              (concat static-initializer)
-                                              seq)]
-                           (let [m `^:static (~'defm ~'<clinit> [] ~@init)]
-                             (-> (parse-method cenv false m)
-                                 (assoc :static-initializer? true))))
-     :ctors ctors'
-     :methods methods'
-     :fields (mapv (partial parse-field cenv)
-                   (concat fields synthesized-fields))}))
+(defn parse-class
+  ([class] (parse-class {} class))
+  ([enclosing-env [_ cname & body :as class]]
+   (let [alias (class-alias cname)
+         proto-cenv {:class-name cname :classes {cname {}}
+                     :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
+         {:keys [parent interfaces body]} (parse-supers proto-cenv body)
+         {:keys [ctors fields methods initializer]} (parse-class-body cname body)
+         {initializer :non-static static-initializer :static} (filter-static initializer)
+         parent (or parent t/OBJECT)
+         ctors' (if (empty? ctors)
+                  [(with-meta `(~'defm ~alias [] (~'super))
+                     (select-keys (modifiers-of class) [:public :protected :private]))]
+                  ctors)
+         cenv (-> proto-cenv
+                  (init-cenv cname parent interfaces fields ctors' methods
+                             (when (seq initializer) `(do ~@initializer)))
+                  (assoc :enclosing-env enclosing-env
+                         :vars (atom {:var->entry {} :fields #{}}))
+                  (as-> cenv (assoc cenv :class-type (t/tag->type cenv cname))))
+         ctors' (mapv (partial parse-method cenv true) ctors')
+         methods' (mapv (partial parse-method cenv false) methods)
+         synthesized-fields (synthesize-fields cenv)]
+     {:name (str/replace (str cname) \. \/)
+      :access (access-flags (modifiers-of class))
+      :parent parent
+      :interfaces interfaces
+      :static-initializer (when-let [init (->> (:static (filter-static synthesized-fields))
+                                               (keep (partial convert-def-to-set alias))
+                                               (concat static-initializer)
+                                               seq)]
+                            (let [m `^:static (~'defm ~'<clinit> [] ~@init)]
+                              (-> (parse-method cenv false m)
+                                  (assoc :static-initializer? true))))
+      :ctors ctors'
+      :methods methods'
+      :fields (mapv (partial parse-field cenv)
+                    (concat fields synthesized-fields))})))
 
 (defn parse-unary-op [cenv [_ x] op]
   (let [cenv' (with-context cenv :expression)

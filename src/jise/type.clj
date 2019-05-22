@@ -75,21 +75,23 @@
     (when (contains? (:classes cenv) tag)
       (Type/getType (str \L (str/replace (str tag) \. \/) \;)))))
 
-(defn ^Type tag->type [cenv tag & {:keys [allow-vararg-param-type?]}]
-  (cond (symbol? tag) (or (primitive->type tag)
-                          (some->> (get primitive-array-types tag) (tag->type cenv))
-                          (find-in-cenv cenv tag)
-                          (when-let [c (resolve tag)]
-                            (when (class? c)
-                              (Type/getType ^Class c)))
-                          (when-let [[_ name] (re-matches #"(.+)\.\.\.$" (name tag))]
-                            (if allow-vararg-param-type?
-                              (tag->array-type cenv [(symbol name)])
-                              (throw (ex-info "vararg param type not allowed here" {})))))
-        (class? tag) (Type/getType ^Class tag)
-        (vector? tag) (tag->array-type cenv tag)
-        (string? tag) (Type/getType ^String tag)
-        :else nil))
+(defn ^Type tag->type
+  ([tag] (tag->type {} tag))
+  ([cenv tag & {:keys [allow-vararg-param-type?]}]
+   (cond (symbol? tag) (or (primitive->type tag)
+                           (some->> (get primitive-array-types tag) (tag->type cenv))
+                           (find-in-cenv cenv tag)
+                           (when-let [c (resolve tag)]
+                             (when (class? c)
+                               (Type/getType ^Class c)))
+                           (when-let [[_ name] (re-matches #"(.+)\.\.\.$" (name tag))]
+                             (if allow-vararg-param-type?
+                               (tag->array-type cenv [(symbol name)])
+                               (throw (ex-info "vararg param type not allowed here" {})))))
+         (class? tag) (Type/getType ^Class tag)
+         (vector? tag) (tag->array-type cenv tag)
+         (string? tag) (Type/getType ^String tag)
+         :else nil)))
 
 (def primitive-iname->class
   {"Z" Boolean/TYPE
@@ -444,9 +446,12 @@
                  (filter-with variable-arity-invocation-conversion variable-arity's))
              (maximally-specific-methods cenv))))
 
-(defn find-methods [cenv ^Type class name arg-types]
-  (->> (get-methods cenv class name (count arg-types))
-       (filter-methods cenv arg-types)))
+(defn find-methods
+  ([class name arg-types]
+   (find-methods {} class name arg-types))
+  ([cenv ^Type class name arg-types]
+   (->> (get-methods cenv class name (count arg-types))
+        (filter-methods cenv arg-types))))
 
 (defn get-ctors [cenv ^Type class nargs]
   (let [class-name (type->symbol class)]
@@ -465,6 +470,9 @@
                                     varargs? (conj :varargs))}))))
              seq))))
 
-(defn find-ctors [cenv ^Type class arg-types]
-  (some->> (get-ctors cenv class (count arg-types))
-           (filter-methods cenv arg-types)))
+(defn find-ctors
+  ([class arg-types]
+   (find-ctors {} class arg-types))
+  ([cenv ^Type class arg-types]
+   (some->> (get-ctors cenv class (count arg-types))
+            (filter-methods cenv arg-types))))
