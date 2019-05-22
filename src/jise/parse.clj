@@ -124,10 +124,10 @@
           (let [form `(.deref (. ~(:class-name cenv) ~(symbol (str \- field-name))))]
             (parse-expr cenv (with-meta form (meta sym))))
           (parse-as-field cenv (symbol cname)))
-        (if-let [{:keys [index type foreign?]} (find-lname cenv sym)]
+        (if-let [{:keys [index type access param? foreign?]} (find-lname cenv sym)]
           (if foreign?
             (parse-as-field cenv 'this)
-            (inherit-context {:op :local :index index :type type} cenv))
+            (inherit-context {:op :local :index index :type type :access access :param? param?} cenv))
           (if-let [f (find-field cenv (:class-type cenv) (name sym))]
             (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
               (parse-as-field cenv target))
@@ -208,14 +208,21 @@
 (defn next-index [cenv type]
   (first (swap-vals! (:next-index cenv) + (t/type-category type))))
 
+(defn ensure-type [cenv type src & {:keys [allow-casting?]}]
+  (let [conv (if allow-casting? t/casting-conversion t/assignment-conversion)]
+    (if-let [cs (conv cenv (:type src) type)]
+      (-> (apply-conversions cs src)
+          (inherit-context cenv))
+      (error (format "incompatible types: %s cannot be converted to %s"
+                     (t/type->tag (:type src))
+                     (t/type->tag type))))))
+
 (defn parse-binding [cenv lname init allow-vararg-param?]
   (let [init' (some->> init (parse-expr (with-context cenv :expression)))
         lname' (parse-name cenv lname
                            :default-type (:type init')
                            :allow-vararg-param? allow-vararg-param?)
-        init' (if-let [cs (and init' (t/casting-conversion cenv (:type init') (:type lname')))]
-                (apply-conversions cs init')
-                init')]
+        init' (when init' (ensure-type cenv (:type lname') init' :allow-casting? true))]
     (-> lname'
         (update :name name)
         (assoc :index (next-index cenv (:type lname')))
@@ -232,7 +239,8 @@
           (recur bindings cenv' true ret)
           (throw (ex-info "vararg params are only allowed in method parameters" {})))
         (let [b (parse-binding cenv' lname init (and allow-vararg-param? (empty? bindings)))
-              cenv' (assoc-in cenv' [:lenv (:name b)] b)]
+              cenv' (assoc-in cenv' [:lenv (:name b)]
+                              (cond-> b method-params? (assoc :param? true)))]
           (recur bindings cenv' allow-vararg-param? (conj ret b))))
       [(inherit-context cenv' cenv) ret])))
 
@@ -241,7 +249,8 @@
         {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
         init-lenv (if (:static access)
                     {}
-                    {"this" {:index 0 :type (:class-type cenv)}})
+                    {"this" {:index 0 :type (:class-type cenv)
+                             :access #{} :param? true}})
         init-index (count init-lenv)
         [cenv' args'] (parse-bindings (assoc cenv
                                              :lenv (merge init-lenv (:enclosing-env cenv))
@@ -627,17 +636,9 @@
     (negate-expr (parse-expr cenv operand))
     (parse-expr cenv `(if ~expr true false))))
 
-(defn ensure-type [cenv type src]
-  (if-let [cs (t/casting-conversion cenv (:type src) type)]
-    (-> (apply-conversions cs src)
-        (inherit-context cenv))
-    (error (format "incompatible types: %s cannot be converted to %s"
-                   (t/type->tag (:type src))
-                   (t/type->tag type)))))
-
 (defn parse-cast [cenv type x]
   (let [cenv' (with-context cenv :expression)]
-    (ensure-type cenv type (parse-expr cenv' x))))
+    (ensure-type cenv type (parse-expr cenv' x) :allow-casting? true)))
 
 (defmethod parse-expr* 'boolean [cenv [_ x]]
   (parse-cast cenv t/BOOLEAN x))
@@ -708,32 +709,37 @@
 (defmethod parse-expr* 'set! [cenv [_ target expr]]
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' target)
-        rhs (parse-expr cenv' expr)
-        cs (t/assignment-conversion cenv (:type rhs) (:type lhs))
-        rhs' (apply-conversions cs rhs)]
+        rhs (->> (parse-expr cenv' expr)
+                 (ensure-type cenv' (:type lhs)))]
     (case (:op lhs)
       :field-access
-      (-> {:op :field-update
-           :type (:type lhs)
-           :class (:class lhs)
-           :name (:name lhs)
-           :rhs rhs'}
-          (inherit-context cenv)
-          (cond-> (:target lhs) (assoc :target (:target lhs))))
+      (if (:final (:access lhs))
+        (error (str "cannot assign a value to final variable " (:name lhs)))
+        (-> {:op :field-update
+             :type (:type lhs)
+             :class (:class lhs)
+             :name (:name lhs)
+             :rhs rhs}
+            (inherit-context cenv)
+            (cond-> (:target lhs) (assoc :target (:target lhs)))))
 
       :array-access
       (-> {:op :array-update
            :type (:type lhs)
            :array (:array lhs)
            :index (:index lhs)
-           :expr rhs'}
+           :expr rhs}
           (inherit-context cenv))
 
-      (-> {:op :assignment
-           :type (:type lhs)
-           :lhs lhs
-           :rhs rhs'}
-          (inherit-context cenv)))))
+      (if (:final (:access lhs))
+        (if (:param? lhs)
+          (error (str "final parameter " target " may not be assigned"))
+          (error (str "cannot assign a value to final variable " target)))
+        (-> {:op :assignment
+             :type (:type lhs)
+             :lhs lhs
+             :rhs rhs}
+            (inherit-context cenv))))))
 
 (defn parse-increment [cenv target by max-value default-op op-name]
   (let [by (or by 1)
@@ -746,8 +752,12 @@
                    (= to t/INT)))
              (int? by)
              (<= 0 by max-value))
-      (-> {:op :increment, :target target', :type type, :by by}
-          (inherit-context cenv))
+      (if (:final (:access target'))
+        (if (:param? target')
+          (error (str "final parameter " target " may not be assigned"))
+          (error (str "cannot assign a value to final variable " target)))
+        (-> {:op :increment, :target target', :type type, :by by}
+            (inherit-context cenv)))
       (parse-expr cenv `(set! ~target (~default-op ~target ~by))))))
 
 (defmethod parse-expr* 'inc! [cenv [_ target by]]
@@ -760,8 +770,9 @@
   (cond (true? test) (parse-expr cenv then)
         (false? test) (parse-expr cenv else)
         :else
-        (let [test' (->> (parse-expr (with-context cenv :conditional) test)
-                         (ensure-type cenv t/BOOLEAN))
+        (let [test' (as-> (parse-expr (with-context cenv :conditional) test) test'
+                      (ensure-type (with-context cenv :expression)
+                                   t/BOOLEAN test' :allow-casting? true))
               cenv' (if (and (:tail (:context cenv)) (nil? else))
                       (with-context cenv :statement)
                       cenv)
@@ -821,8 +832,9 @@
 
 (defmethod parse-expr* 'while [cenv [_ cond & body :as expr]]
   (let [label (extract-label expr)
-        cond' (->> (parse-expr (with-context cenv :conditional) cond)
-                   (ensure-type cenv t/BOOLEAN))]
+        cond' (as-> (parse-expr (with-context cenv :conditional) cond) cond'
+                (ensure-type (with-context cenv :expression)
+                             t/BOOLEAN cond' :allow-casting? true))]
     (-> {:op :while
          :cond cond'
          :body (parse-exprs (with-context cenv :statement) body)}
@@ -847,8 +859,9 @@
       (parse-expr cenv (with-meta form' (meta form))))
     (let [[lname init cond step] args
           [cenv' bindings'] (parse-bindings cenv [lname init])
-          cond' (->> (parse-expr (with-context cenv' :conditional) cond)
-                     (ensure-type cenv t/BOOLEAN))
+          cond' (as-> (parse-expr (with-context cenv' :conditional) cond) cond'
+                  (ensure-type (with-context cenv :expression)
+                               t/BOOLEAN cond' :allow-casting? true))
           label (extract-label form)]
       (-> {:op :let
            :bindings bindings'
@@ -997,6 +1010,7 @@
       (let [field (find-field cenv target-type fname)]
         (-> {:op :field-access
              :type (:type field)
+             :access (:access field)
              :class (:class field)
              :name fname}
             (inherit-context cenv)
