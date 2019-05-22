@@ -275,9 +275,9 @@
   (emit-expr emitter body))
 
 (defn emit-dup [{:keys [^MethodVisitor mv]} type]
-  (let [opcode (case type
-               (long double) Opcodes/DUP2
-               Opcodes/DUP)]
+  (let [opcode (case (t/type-category type)
+                 1 Opcodes/DUP
+                 2 Opcodes/DUP2)]
     (.visitInsn mv opcode)))
 
 (defn dup-unless-statement [emitter context type]
