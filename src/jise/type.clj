@@ -112,6 +112,9 @@
             (resolve (symbol (.getClassName t)))))
       (catch ClassNotFoundException _))))
 
+(defn ^Type class->type [^Class class]
+  (Type/getType class))
+
 (defn type->symbol [^Type t]
   (symbol (.getClassName t)))
 
@@ -324,8 +327,8 @@
   (let [class-name (type->symbol class)
         name' (munge name)]
     (letfn [(field->map [^Field f]
-              {:class (tag->type cenv (.getDeclaringClass f))
-               :type (tag->type cenv (.getType f))
+              {:class (class->type (.getDeclaringClass f))
+               :type (class->type (.getType f))
                :access (modifiers->access-flags (.getModifiers f))})
             (walk [^Class c]
               (-> (walk-class-hierarchy c
@@ -362,11 +365,10 @@
   (let [class-name (type->symbol class)
         name' (munge name)]
     (letfn [(method->map [^Class c ^Method m]
-              {:class (tag->type cenv (.getDeclaringClass m))
+              {:class (class->type (.getDeclaringClass m))
                :interface? (.isInterface c)
-               :param-types (->> (.getParameterTypes m)
-                                 (mapv (partial tag->type cenv)))
-               :return-type (tag->type cenv (.getReturnType m))
+               :param-types (mapv class->type (.getParameterTypes m))
+               :return-type (class->type (.getReturnType m))
                :access (cond-> (modifiers->access-flags (.getModifiers m))
                          (.isVarArgs m) (conj :varargs))})
             (walk [^Class c]
@@ -464,8 +466,7 @@
                      (let [nparams (.getParameterCount ctor)
                            varargs? (.isVarArgs ctor)]
                        (when (params-compatible? nargs nparams varargs?)
-                         {:param-types (->> (.getParameterTypes ctor)
-                                            (mapv (partial tag->type cenv)))
+                         {:param-types (mapv class->type (.getParameterTypes ctor))
                           :access (cond-> (modifiers->access-flags (.getModifiers ctor))
                                     varargs? (conj :varargs))}))))
              seq))))
