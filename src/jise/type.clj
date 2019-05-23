@@ -296,7 +296,7 @@
     #{BYTE SHORT CHAR}
     [(widening-primitive-conversion t INT)]
 
-    #{INT LONG}
+    #{INT LONG DOUBLE}
     []
 
     nil))
