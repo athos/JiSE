@@ -62,7 +62,7 @@
 
 (defn- emit-ordinary-fn-class [fname args args' body]
   `^:public
-  (jise/class ~fname [clojure.lang.IFn]
+  (jise/class ~fname [clojure.lang.AFunction clojure.lang.IFn]
     ^:public ^Object
     (jise/defm ~'invoke ~(vec args')
       ~@(emit-fn-body args args' body))))
@@ -70,7 +70,7 @@
 (defn- emit-prim-fn-class [fname prim return-type args args' body]
   (c/let [args'' (fixup-type-hints args :allow-primitive? false)]
     `^:public
-    (jise/class ~fname [clojure.lang.IFn ~prim]
+    (jise/class ~fname [clojure.lang.AFunction clojure.lang.IFn ~prim]
       ~(with-meta
          `(jise/defm ~'invokePrim ~(vec args')
             ~@(emit-fn-body args args' body))
