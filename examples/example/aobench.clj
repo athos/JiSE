@@ -233,9 +233,9 @@
             (set! (fimg (+ offset 0)) (/ (fimg (+ offset 0)) nsub*nsub))
             (set! (fimg (+ offset 1)) (/ (fimg (+ offset 1)) nsub*nsub))
             (set! (fimg (+ offset 2)) (/ (fimg (+ offset 2)) nsub*nsub))
-            (set! (image (+ offset 0)) (clamp (fimg (+ offset 0))))
-            (set! (image (+ offset 1)) (clamp (fimg (+ offset 1))))
-            (set! (image (+ offset 2)) (clamp (fimg (+ offset 2))))))))
+            (set! (image (+ offset 0)) (byte (clamp (fimg (+ offset 0)))))
+            (set! (image (+ offset 1)) (byte (clamp (fimg (+ offset 1)))))
+            (set! (image (+ offset 2)) (byte (clamp (fimg (+ offset 2)))))))))
     image)
 
   )
