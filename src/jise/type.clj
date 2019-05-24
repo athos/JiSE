@@ -139,10 +139,10 @@
    DOUBLE 'double})
 
 (defn type->tag [^Type t]
-  (if (array-type? t)
-    [(type->tag (element-type t))]
-    (or (primitive-type->symbol t)
-        (symbol (.getClassName t)))))
+  (cond (nil? t) nil
+        (array-type? t) [(type->tag (element-type t))]
+        :else (or (primitive-type->symbol t)
+                  (symbol (.getClassName t)))))
 
 (def wider-primitive-types
   {BYTE #{SHORT INT LONG FLOAT}
