@@ -123,8 +123,9 @@
 (defn parse-sugar [cenv [op :as expr]]
   (or (when-let [maybe-array (or (find-lname cenv op)
                                  (find-field cenv (:class-type cenv) (str op)))]
-        (when (t/array-type? (:type maybe-array))
-          (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))))
+        (if (t/array-type? (:type maybe-array))
+          (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))
+          (error (format "array required, but %s found" (t/type->tag (:type maybe-array))))))
       (when (t/get-methods cenv (:class-type cenv) (str op) (count (rest expr)))
         (parse-method-invocation cenv nil (:class-type cenv) (str op) (rest expr)))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
@@ -944,25 +945,30 @@
        :exception (parse-expr (with-context cenv :expression) ex)}
       (inherit-context cenv :return? false)))
 
-(defn parse-array-creation [cenv type type' args]
+(defn ensure-numeric-int [cenv x]
+  (or (when-let [x' (try
+                      (ensure-numeric cenv x nil)
+                      (catch Exception _))]
+        (when (= (:type x') t/INT)
+          x'))
+      (error (str "incompatible types: " (t/type->tag (:type x)) " cannot be converted to int"))))
+
+(defn parse-array-creation [cenv type' [_ type & args :as expr]]
   (if (vector? (first args))
     (let [elems (first args)
-          arr (gensym)]
-      (parse-expr cenv `(let* [~arr (new ~type ~(count elems))]
-                          ~@(for [[i init] (map-indexed vector elems)
-                                  :let [init' (if (vector? init)
-                                                `(new ~(first type) ~init)
-                                                init)]]
-                              `(~'aset ~arr ~i ~init'))
-                          ~arr)))
+          arr (gensym)
+          form `(let* [~arr (new ~type ~(count elems))]
+                  ~@(for [[i init] (map-indexed vector elems)
+                          :let [init' (if (vector? init)
+                                        `(new ~(first type) ~init)
+                                        init)]]
+                      `(~'aset ~arr ~i ~init'))
+                  ~arr)]
+      (parse-expr cenv (with-meta form (meta expr))))
     (let [cenv' (with-context cenv :expression)]
       (-> {:op :new-array
            :type type'
-           :lengths (map (fn [arg]
-                           (let [arg' (parse-expr cenv' arg)
-                                 cs (t/unary-numeric-promotion (:type arg'))]
-                             (apply-conversions cs arg')))
-                         args)}
+           :lengths (map #(ensure-numeric-int cenv' (parse-expr cenv' %)) args)}
           (inherit-context cenv)))))
 
 (defn args-for [cenv {:keys [param-types] :as ctor-or-method} args args']
@@ -976,10 +982,10 @@
       varargs
       (conj varargs))))
 
-(defmethod parse-expr* 'new [cenv [_ type & args]]
+(defmethod parse-expr* 'new [cenv [_ type & args :as expr]]
   (let [type' (resolve-type cenv type)]
     (if (t/array-type? type')
-      (parse-array-creation cenv type type' args)
+      (parse-array-creation cenv type' expr)
       (let [cenv' (with-context cenv :expression)
             args' (map (partial parse-expr cenv') args)
             ctors (t/find-ctors cenv type' (map :type args'))]
@@ -1087,8 +1093,9 @@
     (parse-expr cenv (fold-aget expr))
     (let [cenv' (with-context cenv :expression)
           arr (parse-expr cenv' arr)
-          index' (as-> (parse-expr cenv' index) index'
-                   (apply-conversions (t/unary-numeric-promotion (:type index')) index'))]
+          _ (when-not (t/array-type? (:type arr))
+              (error (format "array required, but %s found" (t/type->tag (:type arr)))))
+          index' (ensure-numeric-int cenv' (parse-expr cenv' index))]
       (-> {:op :array-access
            :type (t/element-type (:type arr))
            :array arr
@@ -1104,14 +1111,14 @@
       (parse-expr cenv form))
     (let [cenv' (with-context cenv :expression)
           arr (parse-expr cenv' arr)
+          _ (when-not (t/array-type? (:type arr))
+              (error (format "array required, but %s found" (t/type->tag (:type arr)))))
           elem-type (t/element-type (:type arr))
-          index' (as-> (parse-expr cenv' index) index'
-                   (apply-conversions (t/unary-numeric-promotion (:type index')) index'))
-          expr' (parse-expr cenv' (first more))
-          cs (t/assignment-conversion cenv' (:type expr') elem-type)]
+          index' (ensure-numeric-int cenv' (parse-expr cenv' index))
+          expr' (ensure-type cenv' elem-type (parse-expr cenv' (first more)))]
       (-> {:op :array-update
            :type elem-type
            :array arr
            :index index'
-           :expr (apply-conversions cs expr')}
+           :expr expr'}
           (inherit-context cenv)))))
