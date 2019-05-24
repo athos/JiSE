@@ -6,13 +6,20 @@
   (:import [clojure.asm Type]
            [clojure.java.api Clojure]))
 
-(def ^:dynamic *line*)
-(def ^:dynamic *column*)
+(def ^:dynamic *line* nil)
+(def ^:dynamic *column* nil)
 
 (defmacro error [msg & [data]]
   `(let [msg# (str "Error: " ~msg " (" *file* \: *line* \: *column* ")")
          data# (merge {:line *line* :column *column*} ~data)]
      (throw (ex-info msg# data#))))
+
+(defmacro with-line&column-of [x & body]
+  `(let [{line# :line column# :column} (meta ~x)]
+     (if (and line# column#)
+       (binding [*line* line# *column* column#]
+         ~@body)
+       (do ~@body))))
 
 (defn modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
@@ -271,8 +278,7 @@
              :args args'
              :access access
              :body (when-not (:abstract access)
-                     (binding [*line* (:line (meta method))
-                               *column* (:column (meta method))]
+                     (with-line&column-of method
                        (parse-exprs (-> cenv'
                                         (assoc :return-type return-type
                                                :context #{context :tail :return}))
@@ -349,18 +355,21 @@
 
 (defn init-cenv [proto-cenv cname parent interfaces fields ctors methods initializer]
   (let [fields' (into {} (map (fn [[_ name :as field]]
-                                (let [modifiers (modifiers-of field)
-                                      {:keys [type access]} (parse-modifiers proto-cenv modifiers)]
-                                  [(str name) {:type type :access access}])))
+                                (with-line&column-of field
+                                  (let [modifiers (modifiers-of field)
+                                        {:keys [type access]} (parse-modifiers proto-cenv modifiers)]
+                                    [(str name) {:type type :access access :initialized? (atom false)}]))))
                       fields)
         ctors' (reduce (fn [cs [_ _ args :as ctor]]
-                         (let [access (access-flags (modifiers-of ctor))
-                               param-types (mapv #(:type (parse-name proto-cenv %)) args)]
-                           (conj cs {:access access :param-types param-types})))
+                         (with-line&column-of ctor
+                           (let [access (access-flags (modifiers-of ctor))
+                                 param-types (mapv #(:type (parse-name proto-cenv %)) args)]
+                             (conj cs {:access access :param-types param-types}))))
                        [] ctors)
         methods' (reduce (fn [m [_ name :as method]]
-                           (let [method' (parse-method-signature proto-cenv method)]
-                             (update m (str name) (fnil conj []) method')))
+                           (with-line&column-of method
+                             (let [method' (parse-method-signature proto-cenv method)]
+                               (update m (str name) (fnil conj []) method'))))
                          {} methods)
         class-entry  {:parent parent :interfaces (set interfaces) :initializer initializer
                       :fields fields' :ctors ctors' :methods methods'}]
@@ -421,9 +430,10 @@
                                                (keep (partial convert-def-to-set alias))
                                                (concat static-initializer)
                                                seq)]
-                            (let [m `^:static (~'defm ~'<clinit> [] ~@init)]
-                              (-> (parse-method cenv false m)
-                                  (assoc :static-initializer? true))))
+                            (with-line&column-of class
+                              (let [m `^:static (~'defm ~'<clinit> [] ~@init)]
+                                (-> (parse-method cenv false m)
+                                    (assoc :static-initializer? true)))))
       :ctors ctors'
       :methods methods'
       :fields (mapv (partial parse-field cenv)
