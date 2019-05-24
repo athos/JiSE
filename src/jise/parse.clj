@@ -78,8 +78,10 @@
           src
           conversions))
 
-(defn ensure-type [cenv type src & {:keys [allow-casting?]}]
-  (let [conv (if allow-casting? t/casting-conversion t/assignment-conversion)]
+(defn ensure-type [cenv type src & {:keys [context] :or {context :assignment}}]
+  (let [conv (case context
+               :assignment t/assignment-conversion
+               :casting t/casting-conversion)]
     (if-let [cs (conv cenv (:type src) type)]
       (-> (apply-conversions cs src)
           (inherit-context cenv))
@@ -237,7 +239,7 @@
         lname' (parse-name cenv lname
                            :default-type (:type init')
                            :allow-vararg-param? allow-vararg-param?)
-        init' (when init' (ensure-type cenv (:type lname') init' :allow-casting? true))]
+        init' (when init' (ensure-type cenv (:type lname') init' :context :casting))]
     (-> lname'
         (update :name name)
         (assoc :index (next-index cenv (:type lname')))
@@ -439,7 +441,7 @@
       :fields (mapv (partial parse-field cenv)
                     (concat fields synthesized-fields))})))
 
-(defn ensure-unary [cenv x op-name]
+(defn ensure-numeric [cenv x op-name]
   (if-let [cs (t/unary-numeric-promotion (:type x))]
     (-> (apply-conversions cs x)
         (inherit-context cenv))
@@ -448,7 +450,7 @@
 
 (defn parse-unary-op [cenv [op-name x] op]
   (let [cenv' (with-context cenv :expression)
-        x' (ensure-unary cenv' (parse-expr cenv' x) op-name)]
+        x' (ensure-numeric cenv' (parse-expr cenv' x) op-name)]
     (-> {:op op
          :type (:type x')
          :operand x'}
@@ -476,7 +478,7 @@
 
 (defn coerce-to-primitive [cenv [op x]]
   (let [cenv' (with-context cenv :expression)]
-    (ensure-unary cenv (parse-expr cenv' x) op)))
+    (ensure-numeric cenv (parse-expr cenv' x) op)))
 
 (defn fold-binary-op [[op x y & more :as expr]]
   (if more
@@ -658,7 +660,7 @@
 
 (defn parse-cast [cenv type x]
   (let [cenv' (with-context cenv :expression)]
-    (ensure-type cenv type (parse-expr cenv' x) :allow-casting? true)))
+    (ensure-type cenv type (parse-expr cenv' x) :context :casting)))
 
 (defmethod parse-expr* 'boolean [cenv [_ x]]
   (parse-cast cenv t/BOOLEAN x))
@@ -791,7 +793,7 @@
         :else
         (let [test' (as-> (parse-expr (with-context cenv :conditional) test) test'
                       (ensure-type (with-context cenv :expression)
-                                   t/BOOLEAN test' :allow-casting? true))
+                                   t/BOOLEAN test' :context :casting))
               cenv' (if (and (:tail (:context cenv)) (nil? else))
                       (with-context cenv :statement)
                       cenv)
@@ -853,7 +855,7 @@
   (let [label (extract-label expr)
         cond' (as-> (parse-expr (with-context cenv :conditional) cond) cond'
                 (ensure-type (with-context cenv :expression)
-                             t/BOOLEAN cond' :allow-casting? true))]
+                             t/BOOLEAN cond' :context :casting))]
     (-> {:op :while
          :cond cond'
          :body (parse-exprs (with-context cenv :statement) body)}
@@ -880,7 +882,7 @@
           [cenv' bindings'] (parse-bindings cenv [lname init])
           cond' (as-> (parse-expr (with-context cenv' :conditional) cond) cond'
                   (ensure-type (with-context cenv :expression)
-                               t/BOOLEAN cond' :allow-casting? true))
+                               t/BOOLEAN cond' :context :casting))
           label (extract-label form)]
       (-> {:op :let
            :bindings bindings'
