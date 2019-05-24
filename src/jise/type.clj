@@ -64,9 +64,9 @@
 
 (declare tag->type)
 
-(defn tag->array-type [cenv tag]
+(defn tag->array-type [cenv tag & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
   (let [elem-type (first tag)]
-    (when-let [t (tag->type cenv elem-type)]
+    (when-let [t (tag->type cenv elem-type :throws-on-failure? throws-on-failure?)]
       (array-type t))))
 
 (defn find-in-cenv [cenv tag]
@@ -77,21 +77,31 @@
 
 (defn ^Type tag->type
   ([tag] (tag->type {} tag))
-  ([cenv tag & {:keys [allow-vararg-param-type?]}]
-   (cond (symbol? tag) (or (primitive->type tag)
-                           (some->> (get primitive-array-types tag) (tag->type cenv))
-                           (find-in-cenv cenv tag)
-                           (when-let [c (resolve tag)]
-                             (when (class? c)
-                               (Type/getType ^Class c)))
-                           (when-let [[_ name] (re-matches #"(.+)\.\.\.$" (name tag))]
-                             (if allow-vararg-param-type?
-                               (tag->array-type cenv [(symbol name)])
-                               (throw (ex-info "vararg param type not allowed here" {})))))
-         (class? tag) (Type/getType ^Class tag)
-         (vector? tag) (tag->array-type cenv tag)
-         (string? tag) (Type/getType ^String tag)
-         :else nil)))
+  ([cenv tag & {:keys [allow-vararg-param-type? throws-on-failure?] :or {throws-on-failure? true}}]
+   (letfn [(fail []
+             (when throws-on-failure?
+               (throw (ex-info (str "cannot resolve type " (pr-str tag))
+                               {:cause :unresolved-type :tag tag}))))]
+     (cond (symbol? tag) (or (primitive->type tag)
+                             (as-> (get primitive-array-types tag) t
+                               (tag->type cenv t
+                                          :allow-vararg-param-type? allow-vararg-param-type?
+                                          :throws-on-failure? throws-on-failure?))
+                             (find-in-cenv cenv tag)
+                             (when-let [c (resolve tag)]
+                               (when (class? c)
+                                 (Type/getType ^Class c)))
+                             (when-let [[_ name] (re-matches #"(.+)\.\.\.$" (name tag))]
+                               (if allow-vararg-param-type?
+                                 (tag->array-type cenv [(symbol name)]
+                                                  :throws-on-failure? throws-on-failure?)
+                                 (throw (ex-info "vararg param type not allowed here" {}))))
+                             (fail))
+           (class? tag) (Type/getType ^Class tag)
+           (vector? tag) (tag->array-type cenv tag :throws-on-failure? throws-on-failure?)
+           (string? tag) (Type/getType ^String tag)
+           (nil? tag) nil
+           :else (fail)))))
 
 (def primitive-iname->class
   {"Z" Boolean/TYPE

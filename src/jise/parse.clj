@@ -23,11 +23,20 @@
       keys
       set))
 
+(defn resolve-type [proto-cenv tag & {:keys [allow-vararg-param-type?]}]
+  (try
+    (t/tag->type proto-cenv tag
+                 :allow-vararg-param-type? allow-vararg-param-type?)
+    (catch Exception e
+      (if (= (:cause (ex-data e)) :unresolved-type)
+        (error (ex-message e) (dissoc (ex-data e) :cause))
+        (throw e)))))
+
 (defn parse-modifiers
   [proto-cenv {:keys [tag] :as modifiers} & {:keys [default-type allow-vararg-param?]}]
   {:type (if (nil? tag)
            (or default-type t/OBJECT)
-           (t/tag->type proto-cenv tag :allow-vararg-param-type? allow-vararg-param?))
+           (resolve-type proto-cenv tag :allow-vararg-param-type? allow-vararg-param?))
    :access (access-flags modifiers)})
 
 (defn parse-field [proto-cenv [_ fname value :as field]]
@@ -274,7 +283,7 @@
 
 (defn parse-supers [proto-cenv [maybe-supers & body]]
   (let [supers (when (vector? maybe-supers) maybe-supers)
-        supers' (map (partial t/tag->type proto-cenv) supers)
+        supers' (map (partial resolve-type proto-cenv) supers)
         {[parent] false
          interfaces true} (group-by #(.isInterface (t/type->class %)) supers')]
     {:parent parent
@@ -400,7 +409,7 @@
                              (when (seq initializer) `(do ~@initializer)))
                   (assoc :enclosing-env enclosing-env
                          :vars (atom {:var->entry {} :fields #{}}))
-                  (as-> cenv (assoc cenv :class-type (t/tag->type cenv cname))))
+                  (as-> cenv (assoc cenv :class-type (resolve-type cenv cname))))
          ctors' (mapv (partial parse-method cenv true) ctors')
          methods' (mapv (partial parse-method cenv false) methods)
          synthesized-fields (synthesize-fields cenv)]
@@ -664,8 +673,7 @@
   (parse-cast cenv t/DOUBLE x))
 
 (defmethod parse-expr* 'cast [cenv [_ t x]]
-  (let [t' (t/tag->type cenv t)]
-    (parse-cast cenv t' x)))
+  (parse-cast cenv (resolve-type cenv t) x))
 
 (defmethod parse-expr* '= [cenv [_ x y :as expr]]
   (parse-expr cenv (with-meta `(.equals ~x ~y) (meta expr))))
@@ -687,7 +695,7 @@
 (defmethod parse-expr* 'instance? [cenv [_ c x]]
   (-> {:op :instance?
        :type t/BOOLEAN
-       :class (t/tag->type cenv c)
+       :class (resolve-type cenv c)
        :operand (parse-expr (with-context cenv :expression) x)}
       (inherit-context cenv)))
 
@@ -884,7 +892,7 @@
     `(do ~@exprs)))
 
 (defn parse-catch-clause [cenv finally-clause [_ class lname & body]]
-  (let [class' (t/tag->type cenv class)
+  (let [class' (resolve-type cenv class)
         [cenv' [b]] (parse-bindings cenv [(with-meta lname {:tag class}) nil])
         body' (parse-expr cenv' (append-finally cenv finally-clause body))]
     {:class class'
@@ -955,7 +963,7 @@
       (conj varargs))))
 
 (defmethod parse-expr* 'new [cenv [_ type & args]]
-  (let [type' (t/tag->type cenv type)]
+  (let [type' (resolve-type cenv type)]
     (if (t/array-type? type')
       (parse-array-creation cenv type type' args)
       (let [cenv' (with-context cenv :expression)
@@ -1041,9 +1049,9 @@
           target' (when-not (and (symbol? target)
                                  (not (namespace target))
                                  (not (find-lname cenv target))
-                                 (t/tag->type cenv target))
+                                 (t/tag->type cenv target :throws-on-failure? false))
                     (parse-expr cenv' target))
-          target-type (or (:type target') (t/tag->type cenv target))
+          target-type (or (:type target') (resolve-type cenv target))
           pname (name property)]
       (if (str/starts-with? pname "-")
         (parse-field-access cenv target' target-type (subs pname 1))
