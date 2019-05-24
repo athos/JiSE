@@ -9,17 +9,27 @@
 (def ^:dynamic *line* nil)
 (def ^:dynamic *column* nil)
 
-(defmacro error [msg & [data]]
-  `(let [msg# (str "Error: " ~msg " (" *file* \: *line* \: *column* ")")
-         data# (merge {:line *line* :column *column*} ~data)]
-     (throw (ex-info msg# data#))))
-
 (defmacro with-line&column-of [x & body]
   `(let [{line# :line column# :column} (meta ~x)]
      (if (and line# column#)
        (binding [*line* line# *column* column#]
          ~@body)
        (do ~@body))))
+
+(defn stringify-type [t]
+  (if (nil? t)
+    (str "<null>")
+    (str (t/type->tag t))))
+
+(defmacro error [msg & [data]]
+  `(let [msg# (str "Error: " ~msg " (" *file* \: *line* \: *column* ")")
+         data# (merge {:line *line* :column *column*} ~data)]
+     (throw (ex-info msg# data#))))
+
+(defmacro error-on-incompatible-types [expected actual]
+  `(error (format "incompatible types: %s cannot be converted to %s"
+                  (stringify-type ~actual)
+                  (stringify-type ~expected))))
 
 (defn modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
@@ -85,9 +95,7 @@
     (if-let [cs (conv cenv (:type src) type)]
       (-> (apply-conversions cs src)
           (inherit-context cenv))
-      (error (format "incompatible types: %s cannot be converted to %s"
-                     (t/type->tag (:type src))
-                     (t/type->tag type))))))
+      (error-on-incompatible-types type (:type src)))))
 
 (defn find-in-current-class [cenv & ks]
   (get-in cenv (into [:classes (:class-name cenv)] ks)))
@@ -125,7 +133,7 @@
                                  (find-field cenv (:class-type cenv) (str op)))]
         (if (t/array-type? (:type maybe-array))
           (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))
-          (error (format "array required, but %s found" (t/type->tag (:type maybe-array))))))
+          (error (format "array required, but %s found" (stringify-type (:type maybe-array))))))
       (when (t/get-methods cenv (:class-type cenv) (str op) (count (rest expr)))
         (parse-method-invocation cenv nil (:class-type cenv) (str op) (rest expr)))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
@@ -447,7 +455,7 @@
     (-> (apply-conversions cs x)
         (inherit-context cenv))
     (error (format "bad operand type %s for unary operator '%s'"
-                   (t/type->tag (:type x)) op-name))))
+                   (stringify-type (:type x)) op-name))))
 
 (defn parse-unary-op [cenv [op-name x] op]
   (let [cenv' (with-context cenv :expression)
@@ -456,6 +464,11 @@
          :type (:type x')
          :operand x'}
         (inherit-context cenv))))
+
+(defmacro error-on-bad-operand-types [op-name t1 t2]
+  `(error (str "bad operand types for binary operator '" ~op-name "'\n"
+               "  first type: " (stringify-type ~t1) "\n"
+               "  second type: " (stringify-type ~t2))))
 
 (defn parse-binary-op
   ([cenv [_ x y] op op-name]
@@ -469,9 +482,7 @@
           :lhs (apply-conversions cl lhs)
           :rhs (apply-conversions cr rhs)}
          (inherit-context cenv))
-     (error (str "bad operand types for binary operator '" op-name "'\n"
-                 "  first type: " (t/type->tag (:type lhs)) "\n"
-                 "  second type: " (t/type->tag (:type rhs)))))))
+     (error-on-bad-operand-types op-name (:type lhs) (:type rhs)))))
 
 (defn parse-arithmetic [cenv expr op op-name]
   (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op op-name)]
@@ -767,7 +778,7 @@
   (let [by (or by 1)
         {:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
     (when-not (t/numeric-type? type)
-      (error (format "bad operand type %s for unary operator %s" (t/type->tag type) op-name)))
+      (error (format "bad operand type %s for unary operator %s" (stringify-type type) op-name)))
     (if (and (= (:op target') :local)
              (or (= type t/INT)
                  (when-let [{:keys [to]} (t/widening-primitive-conversion type t/INT)]
@@ -951,7 +962,7 @@
                       (catch Exception _))]
         (when (= (:type x') t/INT)
           x'))
-      (error (str "incompatible types: " (t/type->tag (:type x)) " cannot be converted to int"))))
+      (error-on-incompatible-types t/INT (:type x))))
 
 (defn parse-array-creation [cenv type' [_ type & args :as expr]]
   (if (vector? (first args))
@@ -1094,7 +1105,7 @@
     (let [cenv' (with-context cenv :expression)
           arr (parse-expr cenv' arr)
           _ (when-not (t/array-type? (:type arr))
-              (error (format "array required, but %s found" (t/type->tag (:type arr)))))
+              (error (format "array required, but %s found" (stringify-type (:type arr)))))
           index' (ensure-numeric-int cenv' (parse-expr cenv' index))]
       (-> {:op :array-access
            :type (t/element-type (:type arr))
@@ -1112,7 +1123,7 @@
     (let [cenv' (with-context cenv :expression)
           arr (parse-expr cenv' arr)
           _ (when-not (t/array-type? (:type arr))
-              (error (format "array required, but %s found" (t/type->tag (:type arr)))))
+              (error (format "array required, but %s found" (stringify-type (:type arr)))))
           elem-type (t/element-type (:type arr))
           index' (ensure-numeric-int cenv' (parse-expr cenv' index))
           expr' (ensure-type cenv' elem-type (parse-expr cenv' (first more)))]
