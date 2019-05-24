@@ -466,7 +466,9 @@
           :lhs (apply-conversions cl lhs)
           :rhs (apply-conversions cr rhs)}
          (inherit-context cenv))
-     (error (format "bad operand types for binary operator '%s'" op-name)))))
+     (error (str "bad operand types for binary operator '" op-name "'\n"
+                 "  first type: " (t/type->tag (:type lhs)) "\n"
+                 "  second type: " (t/type->tag (:type rhs)))))))
 
 (defn parse-arithmetic [cenv expr op op-name]
   (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op op-name)]
