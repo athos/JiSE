@@ -534,31 +534,32 @@
 (defmethod parse-expr* '! [cenv [_ operand :as expr]]
   (parse-expr cenv (with-meta `(~'xor ~operand -1) (meta expr))))
 
-(defn parse-shift [cenv [_ x y] op]
+(defn parse-shift [cenv [_ x y] op op-name]
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' x)
         rhs (parse-expr cenv' y)
-        cl (t/unary-numeric-promotion (:type lhs))
-        cr (t/unary-numeric-promotion (:type rhs))
-        lhs' (apply-conversions cl lhs)
-        rhs' (apply-conversions cr rhs)
-        rhs' (cond->> rhs'
-               (= (:type rhs') t/LONG)
-               (apply-conversions [(t/narrowing-primitive-conversion t/LONG t/INT)]))]
+        lhs' (when-let [cs (t/unary-numeric-promotion (:type lhs))]
+               (apply-conversions cs lhs))
+        rhs' (when-let [cs (t/unary-numeric-promotion (:type rhs))]
+               (apply-conversions cs rhs))]
+    (when-not (and lhs' (t/integral-type? (:type lhs'))
+                   rhs' (t/integral-type? (:type rhs')))
+      (error-on-bad-operand-types op-name (:type lhs) (:type rhs)))
     (-> {:op op
          :type (:type lhs')
          :lhs lhs'
-         :rhs rhs'}
+         :rhs (let [cs (t/casting-conversion cenv' (:type rhs') t/INT)]
+                (apply-conversions cs rhs'))}
         (inherit-context cenv))))
 
 (defmethod parse-expr* '<< [cenv expr]
-  (parse-shift cenv expr :shift-left))
+  (parse-shift cenv expr :shift-left '<<))
 
 (defmethod parse-expr* '>> [cenv expr]
-  (parse-shift cenv expr :shift-right))
+  (parse-shift cenv expr :shift-right '>>))
 
 (defmethod parse-expr* '>>> [cenv expr]
-  (parse-shift cenv expr :logical-shift-right))
+  (parse-shift cenv expr :logical-shift-right '>>>))
 
 (defn parse-equal [cenv lhs rhs op op-name]
   (if (and (not (t/numeric-type? (:type lhs)))
