@@ -746,11 +746,19 @@
       (parse-expr cenv (with-meta form (meta expr))))))
 
 (defmethod parse-expr* 'instance? [cenv [_ c x]]
-  (-> {:op :instance?
-       :type t/BOOLEAN
-       :class (resolve-type cenv c)
-       :operand (parse-expr (with-context cenv :expression) x)}
-      (inherit-context cenv)))
+  (let [c' (resolve-type cenv c)
+        x' (parse-expr (with-context cenv :expression) x)]
+    (when (t/primitive-type? c')
+      (error (str "unexpected type\n"
+                  "  required: class or array\n"
+                  "  found:    " (t/type->tag c'))))
+    (when-not (t/casting-conversion cenv (:type x') c')
+      (error-on-incompatible-types c' (:type x')))
+    (-> {:op :instance?
+         :type t/BOOLEAN
+         :class c'
+         :operand x'}
+        (inherit-context cenv))))
 
 (defmethod parse-expr* 'do [cenv [_ & body]]
   (parse-exprs cenv body))
