@@ -450,12 +450,15 @@
       :fields (mapv (partial parse-field cenv)
                     (concat fields synthesized-fields))})))
 
+(defmacro error-on-bad-operand-type [op-name t]
+  `(error (format "bad operand type %s for unary operator '%s'"
+                  (stringify-type ~t) ~op-name)))
+
 (defn ensure-numeric [cenv x op-name]
   (if-let [cs (t/unary-numeric-promotion (:type x))]
     (-> (apply-conversions cs x)
         (inherit-context cenv))
-    (error (format "bad operand type %s for unary operator '%s'"
-                   (stringify-type (:type x)) op-name))))
+    (error-on-bad-operand-type op-name (:type x))))
 
 (defn parse-unary-op [cenv [op-name x] op]
   (let [cenv' (with-context cenv :expression)
@@ -657,14 +660,26 @@
     (parse-cmp-0 cenv x y :ge-0 :ge '>= true)
     (parse-comparison cenv expr :ge '>=)))
 
+(defn unbox-if-needed [x]
+  (if-let [cs (t/unboxing-conversion (:type x))]
+    (apply-conversions cs x)
+    x))
+
 (defmethod parse-expr* 'and [cenv [_ & exprs :as expr]]
   (if (:conditional (:context cenv))
     (case (count exprs)
       0 (parse-expr cenv true)
       1 (parse-expr cenv (first exprs))
-      {:op :and
-       :type t/BOOLEAN
-       :exprs (mapv (partial parse-expr cenv) exprs)})
+      (let [exprs' (mapv #(unbox-if-needed (parse-expr cenv %)) exprs)]
+        (when-let [[e1 e2] (some (fn [[e1 e2]]
+                                   (when-not (and (= (:type e1) t/BOOLEAN)
+                                                  (= (:type e2) t/BOOLEAN))
+                                     [e1 e2]))
+                                 (partition 2 1 exprs'))]
+          (error-on-bad-operand-types 'and (:type e1) (:type e2)))
+        {:op :and
+         :type t/BOOLEAN
+         :exprs exprs'}))
     (parse-expr cenv `(if ~expr true false))))
 
 (defn negate-expr [{:keys [op] :as expr}]
@@ -686,15 +701,25 @@
     (case (count exprs)
       0 (parse-expr cenv false)
       1 (parse-expr cenv (first exprs))
-      {:op :or
-       :type t/BOOLEAN
-       :exprs (mapv #(negate-expr (parse-expr cenv %)) (butlast exprs))
-       :expr (parse-expr cenv (last exprs))})
+      (let [exprs' (mapv #(unbox-if-needed (parse-expr cenv %)) exprs)]
+        (when-let [[e1 e2] (some (fn [[e1 e2]]
+                                   (when-not (and (= (:type e1) t/BOOLEAN)
+                                                  (= (:type e2) t/BOOLEAN))
+                                     [e1 e2]))
+                                 (partition 2 1 exprs'))]
+          (error-on-bad-operand-types 'and (:type e1) (:type e2)))
+        {:op :or
+         :type t/BOOLEAN
+         :exprs (mapv negate-expr (butlast exprs'))
+         :expr (last exprs')}))
     (parse-expr cenv `(if ~expr true false))))
 
 (defmethod parse-expr* 'not [cenv [_ operand :as expr]]
   (if (:conditional (:context cenv))
-    (negate-expr (parse-expr cenv operand))
+    (let [{:keys [type] :as operand'} (parse-expr cenv operand)]
+      (if (#{t/BOOLEAN t/BOOLEAN_CLASS} type)
+        (negate-expr operand')
+        (error-on-bad-operand-type 'not type)))
     (parse-expr cenv `(if ~expr true false))))
 
 (defn parse-cast [cenv type x]
@@ -813,7 +838,7 @@
   (let [by (or by 1)
         {:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
     (when-not (t/numeric-type? type)
-      (error (format "bad operand type %s for unary operator %s" (stringify-type type) op-name)))
+      (error-on-bad-operand-type op-name type))
     (if (and (= (:op target') :local)
              (or (= type t/INT)
                  (when-let [{:keys [to]} (t/widening-primitive-conversion type t/INT)]
