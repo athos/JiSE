@@ -45,9 +45,11 @@
     (t/tag->type proto-cenv tag
                  :allow-vararg-param-type? allow-vararg-param-type?)
     (catch Exception e
-      (if (= (:cause (ex-data e)) :unresolved-type)
+      (case (:cause (ex-data e))
+        (:unresolved-type :invalid-vararg-param-type)
         (error (ex-message e) (dissoc (ex-data e) :cause))
-        (throw e)))))
+
+        (error (str "cannot resolve type " (pr-str tag)) {:unresolved-type tag})))))
 
 (defn parse-modifiers
   [proto-cenv {:keys [tag] :as modifiers} & {:keys [default-type allow-vararg-param?]}]
@@ -263,11 +265,15 @@
       (if (= lname '&)
         (if method-params?
           (recur bindings cenv' true ret)
-          (throw (ex-info "vararg params are only allowed in method parameters" {})))
-        (let [b (parse-binding cenv' lname init (and allow-vararg-param? (empty? bindings)))
-              cenv' (assoc-in cenv' [:lenv (:name b)]
-                              (cond-> b method-params? (assoc :param? true)))]
-          (recur bindings cenv' allow-vararg-param? (conj ret b))))
+          (error "varargs parameter is only allowed in method signature"))
+        (if (and allow-vararg-param? (seq bindings))
+          (error "varargs parameter must be the last parameter")
+          (let [b (parse-binding cenv' lname init (and allow-vararg-param? (empty? bindings)))
+                cenv' (assoc-in cenv' [:lenv (:name b)]
+                                (cond-> b method-params? (assoc :param? true)))]
+            (when (and allow-vararg-param? (not (t/array-type? (:type b))))
+              (error "varargs parameter must be of array type"))
+            (recur bindings cenv' allow-vararg-param? (conj ret b)))))
       [(inherit-context cenv' cenv) ret])))
 
 (defn parse-method [cenv ctor? [_ mname args & body :as method]]

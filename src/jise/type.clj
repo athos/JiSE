@@ -95,7 +95,8 @@
                                (if allow-vararg-param-type?
                                  (tag->array-type cenv [(symbol name)]
                                                   :throws-on-failure? throws-on-failure?)
-                                 (throw (ex-info "vararg param type not allowed here" {}))))
+                                 (throw (ex-info "vararg param type not allowed here"
+                                                 {:cause :invalid-vararg-param-type}))))
                              (fail))
            (class? tag) (Type/getType ^Class tag)
            (vector? tag) (tag->array-type cenv tag :throws-on-failure? throws-on-failure?)
