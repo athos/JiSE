@@ -117,7 +117,7 @@
     (set! image (new [byte] (* width height 3))))
 
   ^:public ^AOBench
-  (defm spheres [^{:tag [Sphere]} spheres]
+  (defm spheres [& ^Sphere... spheres]
     (set! (.-spheres this) spheres)
     this)
 
@@ -238,22 +238,20 @@
             (set! (image (+ offset 2)) (byte (clamp (fimg (+ offset 2)))))))))
     image)
 
+  ^:static ^:private ^:final (def ^int WIDTH 256)
+  ^:static ^:private ^:final (def ^int HEIGHT 256)
+  ^:static ^:private ^:final (def ^int NSUBSAMPLES 2)
+
+  ^:static ^:public
+  (defm main [& ^String... args]
+    (let [bench (.. (AOBench. WIDTH HEIGHT NSUBSAMPLES)
+                    (spheres (Sphere. (Vec. -2.0 0.0 -3.5) 0.5)
+                             (Sphere. (Vec. -0.5 0.0 -3.0) 0.5)
+                             (Sphere. (Vec.  1.0 0.0 -2.2) 0.5))
+                    (plane (Plane. (Vec. 0.0 -0.5 0.0) (Vec. 0.0 1.0 0.0))))
+          image (.render bench)]
+      (with-open [fos (FileOutputStream. "ao.ppm")]
+        (.write fos (.getBytes (String/format "P6\n%d %d\n255\n" WIDTH HEIGHT)))
+        (.write fos image))))
+
   )
-
-(def ^:const WIDTH 256)
-(def ^:const HEIGHT 256)
-(def ^:const NSUBSAMPLES 2)
-
-(defn save-ppm [width height ^bytes image ^String filename]
-  (with-open [fos (FileOutputStream. filename)]
-    (.write fos (.getBytes (str "P6\n" width \space height "\n255\n")))
-    (.write fos image)))
-
-(defn -main [& args]
-  (let [bench (.. (AOBench. WIDTH HEIGHT NSUBSAMPLES)
-                  (spheres (into-array [(Sphere. (Vec. -2.0 0.0 -3.5) 0.5)
-                                        (Sphere. (Vec. -0.5 0.0 -3.0) 0.5)
-                                        (Sphere. (Vec.  1.0 0.0 -2.2) 0.5)]))
-                  (plane (Plane. (Vec. 0.0 -0.5 0.0) (Vec. 0.0 1.0 0.0))))
-        image (.render bench)]
-    (save-ppm WIDTH HEIGHT image "ao.ppm")))
