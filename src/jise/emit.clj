@@ -50,8 +50,9 @@
       (emit-return emitter t))))
 
 (defn emit-ctor-invocation
-  [{:keys [^MethodVisitor mv] :as emitter} {:keys [class param-types args initializer line]}]
-  (let [method-type (Type/getMethodType t/VOID (into-array Type param-types))
+  [{:keys [^MethodVisitor mv] :as emitter} {:keys [ctor args initializer line]}]
+  (let [{:keys [class param-types]} ctor
+        method-type (Type/getMethodType t/VOID (into-array Type param-types))
         iname (.getInternalName ^Type class)
         desc (.getDescriptor ^Type method-type)]
     (doseq [arg args]
@@ -77,7 +78,7 @@
     ;; FIXME: it might be better to inject implicit ctor invocation in parsing phase
     (when (and ctor? (not= (get-in body [:exprs 0 :op]) :ctor-invocation))
       (.visitVarInsn mv Opcodes/ALOAD 0)
-      (emit-ctor-invocation emitter {:class parent :param-types [] :args []}))
+      (emit-ctor-invocation emitter {:ctor {:class parent :param-types []} :args []}))
     (when-not (:abstract access)
       (emit-expr emitter body))
     (.visitMaxs mv 1 1)
@@ -146,9 +147,9 @@
 (defn emit-load [{:keys [^MethodVisitor mv]} ^Type type index]
   (.visitVarInsn mv (.getOpcode type Opcodes/ILOAD) index))
 
-(defmethod emit-expr* :local [emitter {:keys [type index context]}]
+(defmethod emit-expr* :local [emitter {:keys [type local context]}]
   (when-not (:statement context)
-    (emit-load emitter type index)))
+    (emit-load emitter type (:index local))))
 
 (defn emit-arithmetic [{:keys [^MethodVisitor mv] :as emitter} {:keys [type lhs rhs context line]} op]
   (let [opcode (.getOpcode ^Type type (get insns/arithmetic-insns op))]
@@ -220,12 +221,12 @@
 (defmethod emit-expr* :boxing [emitter {:keys [type src context]}]
   (emit-expr emitter {:op :method-invocation
                       :context context
-                      :class type
                       :interface? false
                       :type type
-                      :access #{:public :static}
-                      :param-types [(:type src)]
-                      :name "valueOf"
+                      :method {:class type
+                               :access #{:public :static}
+                               :name "valueOf"
+                               :param-types [(:type src)]}
                       :args [src]}))
 
 (def unboxing-method-names
@@ -241,12 +242,12 @@
 (defmethod emit-expr* :unboxing [emitter {:keys [type src context]}]
   (emit-expr emitter {:op :method-invocation
                       :context context
-                      :class (:type src)
                       :interface? false
                       :type type
-                      :access #{:public}
-                      :param-types []
-                      :name (unboxing-method-names type)
+                      :method {:class (:type src)
+                               :access #{:public}
+                               :name (unboxing-method-names type)
+                               :param-types []}
                       :target src
                       :args []}))
 
@@ -264,14 +265,14 @@
   (.visitTypeInsn mv Opcodes/INSTANCEOF (.getInternalName ^Type class))
   (drop-if-statement emitter context))
 
-(defn emit-store [{:keys [^MethodVisitor mv]} {:keys [^Type type index]}]
+(defn emit-store [{:keys [^MethodVisitor mv]} ^Type type index]
   (.visitVarInsn mv (.getOpcode type Opcodes/ISTORE) index))
 
 (defmethod emit-expr* :let [emitter {:keys [bindings body line]}]
   (emit-line emitter line)
   (doseq [{:keys [init] :as b} bindings]
     (emit-expr emitter init)
-    (emit-store emitter b))
+    (emit-store emitter (:type b) (:index b)))
   (emit-expr emitter body))
 
 (defn emit-dup [{:keys [^MethodVisitor mv]} type]
@@ -288,14 +289,14 @@
   (emit-expr emitter rhs)
   (dup-unless-statement emitter context (:type rhs))
   (emit-line emitter line)
-  (emit-store emitter lhs))
+  (emit-store emitter (:type lhs) (:index (:local lhs))))
 
 (defmethod emit-expr* :increment [{:keys [^MethodVisitor mv] :as emitter} {:keys [target by context line]}]
-  (let [{:keys [type index]} target]
+  (let [{:keys [type local]} target]
     (emit-line emitter line)
-    (.visitIincInsn mv index by)
+    (.visitIincInsn mv (:index local) by)
     (when-not (:statement context)
-      (emit-load emitter type index))))
+      (emit-load emitter type (:index local)))))
 
 (defmethod emit-expr* :labeled [{:keys [^MethodVisitor mv] :as emitter} {:keys [label target kind]}]
   (let [break-label (Label.)
@@ -445,17 +446,17 @@
         handler-label (Label.)
         end-label (Label.)
         catch-clauses' (map #(assoc % :label (Label.)) catch-clauses)]
-    (doseq [{:keys [class label]} catch-clauses'
-            :let [iname (.getInternalName ^Type class)]]
+    (doseq [{:keys [label local]} catch-clauses'
+            :let [iname (.getInternalName ^Type (:type local))]]
       (.visitTryCatchBlock mv start-label handler-label label iname))
     (.visitLabel mv start-label)
     (emit-expr emitter body)
     (when-not (:tail (:context body))
       (.visitJumpInsn mv Opcodes/GOTO end-label))
     (.visitLabel mv handler-label)
-    (doseq [{:keys [class label index body]} catch-clauses']
+    (doseq [{:keys [label local body]} catch-clauses']
       (.visitLabel mv label)
-      (emit-store emitter {:type class :index index})
+      (emit-store emitter (:type local) (:index local))
       (emit-expr emitter body)
       (when-not (:tail (:context body))
         (.visitJumpInsn mv Opcodes/GOTO end-label)))
@@ -480,21 +481,21 @@
 (defmethod emit-expr* :new [{:keys [^MethodVisitor mv] :as emitter} {:keys [type context] :as expr}]
   (.visitTypeInsn mv Opcodes/NEW (.getInternalName ^Type type))
   (dup-unless-statement emitter context type)
-  (emit-ctor-invocation emitter (assoc expr :class type)))
+  (emit-ctor-invocation emitter expr))
 
 (defmethod emit-expr* :field-access
-  [{:keys [^MethodVisitor mv] :as emitter} {:keys [type name class target context line]}]
+  [{:keys [^MethodVisitor mv] :as emitter} {:keys [type field target context line]}]
   (when target
     (emit-expr emitter target))
   (let [opcode (if target Opcodes/GETFIELD Opcodes/GETSTATIC)
-        owner (.getInternalName ^Type class)
+        owner (.getInternalName ^Type (:class field))
         desc (.getDescriptor ^Type type)]
     (emit-line emitter line)
-    (.visitFieldInsn mv opcode owner (munge name) desc)
+    (.visitFieldInsn mv opcode owner (munge (:name field)) desc)
     (drop-if-statement emitter context)))
 
 (defmethod emit-expr* :field-update
-  [{:keys [^MethodVisitor mv] :as emitter} {:keys [type name class target rhs context line]}]
+  [{:keys [^MethodVisitor mv] :as emitter} {:keys [type field target rhs context line]}]
   (when target
     (emit-expr emitter target))
   (emit-expr emitter rhs)
@@ -505,23 +506,24 @@
           (.visitInsn mv opcode))
         (dup-unless-statement emitter context t))))
   (let [opcode (if target Opcodes/PUTFIELD Opcodes/PUTSTATIC)
-        owner (.getInternalName ^Type class)
+        owner (.getInternalName ^Type (:class field))
         desc (.getDescriptor ^Type type)]
     (emit-line emitter line)
-    (.visitFieldInsn mv opcode owner (munge name) desc)))
+    (.visitFieldInsn mv opcode owner (munge (:name field)) desc)))
 
-(defmethod emit-expr* :ctor-invocation [emitter {:keys [class] :as expr}]
-  (emit-load emitter class 0)
+(defmethod emit-expr* :ctor-invocation [emitter {:keys [ctor] :as expr}]
+  (emit-load emitter (:class ctor) 0)
   (emit-ctor-invocation emitter expr))
 
 (defmethod emit-expr* :method-invocation
   [{:keys [^MethodVisitor mv] :as emitter}
-   {:keys [interface? type name access class param-types target args context line]}]
+   {:keys [interface? type method target args context line]}]
   (when target
     (emit-expr emitter target))
   (doseq [arg args]
     (emit-expr emitter arg))
-  (let [method-type (Type/getMethodType ^Type type (into-array Type param-types))
+  (let [{:keys [class name access param-types]} method
+        method-type (Type/getMethodType ^Type type (into-array Type param-types))
         opcode (cond (:static access) Opcodes/INVOKESTATIC
                      interface? Opcodes/INVOKEINTERFACE
                      (:private access) Opcodes/INVOKESPECIAL
@@ -529,7 +531,7 @@
         iname (.getInternalName ^Type class)
         desc (.getDescriptor method-type)]
     (emit-line emitter line)
-    (.visitMethodInsn mv opcode iname (munge name) desc interface?))
+    (.visitMethodInsn mv opcode iname (munge name) desc (boolean interface?)))
   (if (= type t/VOID)
     (push-null-unless-statement emitter context)
     (drop-if-statement emitter context)))

@@ -162,10 +162,10 @@
           (let [form `(.deref (. ~(:class-name cenv) ~(symbol (str \- field-name))))]
             (parse-expr cenv (with-meta form (meta sym))))
           (parse-as-field cenv (symbol cname)))
-        (if-let [{:keys [index type access param? foreign?]} (find-lname cenv sym)]
+        (if-let [{:keys [type foreign?] :as local} (find-lname cenv sym)]
           (if foreign?
             (parse-as-field cenv 'this)
-            (inherit-context {:op :local :index index :type type :access access :param? param?} cenv))
+            (inherit-context {:op :local :type type :local local} cenv))
           (if-let [f (find-field cenv (:class-type cenv) (name sym))]
             (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
               (parse-as-field cenv target))
@@ -812,15 +812,15 @@
                  (ensure-type cenv' (:type lhs)))]
     (case (:op lhs)
       :field-access
-      (if (:final (:access lhs))
-        (error (str "cannot assign a value to final variable " (:name lhs)))
-        (-> {:op :field-update
-             :type (:type lhs)
-             :class (:class lhs)
-             :name (:name lhs)
-             :rhs rhs}
-            (inherit-context cenv)
-            (cond-> (:target lhs) (assoc :target (:target lhs)))))
+      (let [field (:field lhs)]
+        (if (:final (:access field))
+          (error (str "cannot assign a value to final variable " (:name field)))
+          (-> {:op :field-update
+               :type (:type lhs)
+               :field field
+               :rhs rhs}
+              (inherit-context cenv)
+              (cond-> (:target lhs) (assoc :target (:target lhs))))))
 
       :array-access
       (-> {:op :array-update
@@ -830,15 +830,16 @@
            :expr rhs}
           (inherit-context cenv))
 
-      (if (:final (:access lhs))
-        (if (:param? lhs)
-          (error (str "final parameter " target " may not be assigned"))
-          (error (str "cannot assign a value to final variable " target)))
-        (-> {:op :assignment
-             :type (:type lhs)
-             :lhs lhs
-             :rhs rhs}
-            (inherit-context cenv))))))
+      (let [local (:local lhs)]
+        (if (:final (:access local))
+          (if (:param? local)
+            (error (str "final parameter " target " may not be assigned"))
+            (error (str "cannot assign a value to final variable " target)))
+          (-> {:op :assignment
+               :type (:type lhs)
+               :lhs lhs
+               :rhs rhs}
+              (inherit-context cenv)))))))
 
 (defn parse-increment [cenv target by max-value default-op op-name]
   (let [by (or by 1)
@@ -851,12 +852,13 @@
                    (= to t/INT)))
              (int? by)
              (<= 0 by max-value))
-      (if (:final (:access target'))
-        (if (:param? target')
-          (error (str "final parameter " target " may not be assigned"))
-          (error (str "cannot assign a value to final variable " target)))
-        (-> {:op :increment, :target target', :type type, :by by}
-            (inherit-context cenv)))
+      (let [local (:local target')]
+        (if (:final (:access local))
+          (if (:param? local)
+            (error (str "final parameter " target " may not be assigned"))
+            (error (str "cannot assign a value to final variable " target)))
+          (-> {:op :increment, :target target', :type type, :by by}
+              (inherit-context cenv))))
       (parse-expr cenv `(set! ~target (~default-op ~target ~by))))))
 
 (defmethod parse-expr* 'inc! [cenv [_ target by]]
@@ -987,9 +989,8 @@
   (let [class' (resolve-type cenv class)
         [cenv' [b]] (parse-bindings cenv [(with-meta lname {:tag class}) nil])
         body' (parse-expr cenv' (append-finally cenv finally-clause body))]
-    {:class class'
-     :type (:type body')
-     :index (:index b)
+    {:type (:type body')
+     :local b
      :body body'}))
 
 (defmethod parse-expr* 'try [cenv [_ & body]]
@@ -1069,8 +1070,7 @@
         (when-let [ctor (first ctors)]
           (-> {:op :new
                :type type'
-               :access (:access ctor)
-               :param-types (:param-types ctor)
+               :ctor (assoc ctor :class type')
                :args (args-for cenv' ctor args args')}
               (inherit-context cenv)))))))
 
@@ -1084,9 +1084,7 @@
         initializer (when super? (find-in-current-class cenv :initializer))]
     (when-let [ctor (first ctors)]
       (-> {:op :ctor-invocation
-           :class class
-           :access (:access ctor)
-           :param-types (:param-types ctor)
+           :ctor (assoc ctor :class class)
            :args (args-for cenv' ctor args args')}
           (inherit-context (cond-> cenv initializer (with-context :statement)))
           (cond-> initializer (assoc :initializer (parse-expr cenv initializer)))))))
@@ -1103,20 +1101,17 @@
          :type t/INT
          :array target}
         (inherit-context cenv))
-    (if-let [{:keys [type used?]} (get (:enclosing-env cenv) fname)]
+    (if-let [{:keys [type used?] :as field} (get (:enclosing-env cenv) fname)]
       (do (reset! used? true)
           (-> {:op :field-access
                :type type
-               :class (:class-type cenv)
-               :target target
-               :name fname}
+               :field (assoc field :class (:class-type cenv) :name fname)
+               :target target}
               (inherit-context cenv)))
       (let [field (find-field cenv target-type fname)]
         (-> {:op :field-access
              :type (:type field)
-             :access (:access field)
-             :class (:class field)
-             :name fname}
+             :field (assoc field :name fname)}
             (inherit-context cenv)
             (cond-> target (assoc :target target)))))))
 
@@ -1129,12 +1124,8 @@
                       (parse-expr cenv' 'this)
                       target)]
         (-> {:op :method-invocation
-             :interface? (:interface? method false)
              :type (:return-type method)
-             :access (:access method)
-             :param-types (:param-types method)
-             :class (:class method)
-             :name mname
+             :method (assoc method :name mname)
              :args (args-for cenv' method args args')}
             (inherit-context cenv)
             (cond-> target' (assoc :target target')))))))
