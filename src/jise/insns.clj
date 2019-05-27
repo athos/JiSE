@@ -27,7 +27,8 @@
    :logical-shift-right Opcodes/IUSHR})
 
 (def comparison-insns
-  {t/INT {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]
+  {t/BOOLEAN {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]}
+   t/INT {:eq [Opcodes/IF_ICMPNE], :ne [Opcodes/IF_ICMPEQ]
           :lt [Opcodes/IF_ICMPGE], :gt [Opcodes/IF_ICMPLE]
           :le [Opcodes/IF_ICMPGT], :ge [Opcodes/IF_ICMPLT]}
    t/LONG {:eq [Opcodes/LCMP Opcodes/IFNE], :ne [Opcodes/LCMP Opcodes/IFEQ]
