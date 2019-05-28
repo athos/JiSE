@@ -805,6 +805,23 @@
 (defmethod parse-expr* 'let [cenv expr]
   (parse-expr cenv (with-meta `(let* ~@(rest expr)) (meta expr))))
 
+(defn parse-field-update [cenv {:keys [field] :as lhs} rhs]
+  (cond (and (:final (:access field))
+             (some-> (:initialized? field) deref))
+        (error (str "cannot assign a value to final variable " (:name field)))
+
+        (:foreign? field)
+        (error (str "cannot assign a value to foreign variable " (:name field)))
+
+        :else
+        (do (some-> (:initialized? field) (reset! true))
+            (-> {:op :field-update
+                 :type (:type lhs)
+                 :field field
+                 :rhs rhs}
+                (inherit-context cenv)
+                (cond-> (:target lhs) (assoc :target (:target lhs)))))))
+
 (defmethod parse-expr* 'set! [cenv [_ target expr]]
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' target)
@@ -812,17 +829,7 @@
                  (ensure-type cenv' (:type lhs)))]
     (case (:op lhs)
       :field-access
-      (let [field (:field lhs)]
-        (if (and (:final (:access field))
-                 (some-> (:initialized? field) deref))
-          (error (str "cannot assign a value to final variable " (:name field)))
-          (do (some-> (:initialized? field) (reset! true))
-              (-> {:op :field-update
-                   :type (:type lhs)
-                   :field field
-                   :rhs rhs}
-                  (inherit-context cenv)
-                  (cond-> (:target lhs) (assoc :target (:target lhs)))))))
+      (parse-field-update cenv lhs rhs)
 
       :array-access
       (-> {:op :array-update
