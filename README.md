@@ -1,4 +1,6 @@
 # JiSE: Java in S-Expression
+[![Clojars Project](https://img.shields.io/clojars/v/jise.svg)](https://clojars.org/jise)
+[![CircleCI](https://circleci.com/gh/athos/JiSE.svg?style=shield)](https://circleci.com/gh/athos/JiSE)
 
 JiSE is Clojure's embedded DSL for making it as easy (or maybe even easier?) to write imperative code than in Java.
 
