@@ -221,7 +221,6 @@
 (defmethod emit-expr* :boxing [emitter {:keys [type src context]}]
   (emit-expr emitter {:op :method-invocation
                       :context context
-                      :interface? false
                       :type type
                       :method {:class type
                                :access #{:public :static}
@@ -242,7 +241,6 @@
 (defmethod emit-expr* :unboxing [emitter {:keys [type src context]}]
   (emit-expr emitter {:op :method-invocation
                       :context context
-                      :interface? false
                       :type type
                       :method {:class (:type src)
                                :access #{:public}
@@ -517,12 +515,12 @@
 
 (defmethod emit-expr* :method-invocation
   [{:keys [^MethodVisitor mv] :as emitter}
-   {:keys [interface? type method target args context line]}]
+   {:keys [type method target args context line]}]
   (when target
     (emit-expr emitter target))
   (doseq [arg args]
     (emit-expr emitter arg))
-  (let [{:keys [class name access param-types]} method
+  (let [{:keys [interface? class name access param-types]} method
         method-type (Type/getMethodType ^Type type (into-array Type param-types))
         opcode (cond (:static access) Opcodes/INVOKESTATIC
                      interface? Opcodes/INVOKEINTERFACE
