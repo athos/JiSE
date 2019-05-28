@@ -813,14 +813,16 @@
     (case (:op lhs)
       :field-access
       (let [field (:field lhs)]
-        (if (:final (:access field))
+        (if (and (:final (:access field))
+                 (some-> (:initialized? field) deref))
           (error (str "cannot assign a value to final variable " (:name field)))
-          (-> {:op :field-update
-               :type (:type lhs)
-               :field field
-               :rhs rhs}
-              (inherit-context cenv)
-              (cond-> (:target lhs) (assoc :target (:target lhs))))))
+          (do (some-> (:initialized? field) (reset! true))
+              (-> {:op :field-update
+                   :type (:type lhs)
+                   :field field
+                   :rhs rhs}
+                  (inherit-context cenv)
+                  (cond-> (:target lhs) (assoc :target (:target lhs)))))))
 
       :array-access
       (-> {:op :array-update

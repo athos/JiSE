@@ -351,8 +351,8 @@
                                vector)))
                   first))]
       (if-let [entry (get-in cenv [:classes class-name])]
-        (if-let [{:keys [type access]} (get-in entry [:fields name])]
-          {:class class :type type :access access}
+        (if-let [field (get-in entry [:fields name])]
+          (assoc field :class class)
           ;; Here we assume all the superclasses and interfaces are defined outside of JiSE
           (let [{:keys [parent interfaces]} entry]
             (or (some walk (map type->class interfaces))
