@@ -506,41 +506,65 @@
     (recur (with-meta `(~op (~op ~x ~y) ~@more) (meta expr)))
     expr))
 
-(defmethod parse-expr* '+ [cenv [_ x y & more :as expr]]
-  (cond more (parse-expr cenv (fold-binary-op expr))
-        y (parse-arithmetic cenv expr :add '+)
-        x (coerce-to-primitive cenv expr)
-        :else (parse-expr cenv 0)))
+(defn error-on-missing-arguments [op-name num varargs?]
+  (error (str (when varargs?
+                "at least ")
+              num (if (= num 1) " argument " " arguments ")
+              "required for operator '" op-name "'")))
 
-(defmethod parse-expr* '- [cenv [_ x y & more :as expr]]
-  (cond more (parse-expr cenv (fold-binary-op expr))
-        y (parse-arithmetic cenv expr :sub '-)
-        x (parse-unary-op cenv expr :neg)))
+(defn ensure-sufficient-arguments [num [op-name & args] & {:keys [varargs?]}]
+  (let [nargs (count args)]
+    (when-not (if varargs?
+                (>= nargs num)
+                (= nargs num))
+      (error-on-missing-arguments op-name num varargs?))))
 
-(defmethod parse-expr* '* [cenv [_ x y & more :as expr]]
-  (cond more (parse-expr cenv (fold-binary-op expr))
-        y (parse-arithmetic cenv expr :mul '*)
-        x (coerce-to-primitive cenv expr)
-        :else (parse-expr cenv 1)))
+(defmethod parse-expr* '+ [cenv [_ & args :as expr]]
+  (case (count args)
+    0 (parse-expr cenv 0)
+    1 (coerce-to-primitive cenv expr)
+    2 (parse-arithmetic cenv expr :add '+)
+    (parse-expr cenv (fold-binary-op expr))))
 
-(defmethod parse-expr* '/ [cenv [_ x y & more :as expr]]
-  (cond more (parse-expr cenv (fold-binary-op expr))
-        y (parse-arithmetic cenv expr :div '/)
-        :else (parse-expr cenv (with-meta `(~'/ 1 ~x) (meta expr)))))
+(defmethod parse-expr* '- [cenv [_ & args :as expr]]
+  (ensure-sufficient-arguments 1 expr :varargs? true)
+  (case (count args)
+    1 (parse-unary-op cenv expr :neg)
+    2 (parse-arithmetic cenv expr :sub '-)
+    (parse-expr cenv (fold-binary-op expr))))
+
+(defmethod parse-expr* '* [cenv [_ & args :as expr]]
+  (case (count args)
+    0 (parse-expr cenv 1)
+    1 (coerce-to-primitive cenv expr)
+    2 (parse-arithmetic cenv expr :mul '*)
+    (parse-expr cenv (fold-binary-op expr))))
+
+(defmethod parse-expr* '/ [cenv [_ & args :as expr]]
+  (ensure-sufficient-arguments 1 expr :varargs? true)
+  (case (count args)
+    1 (parse-expr cenv (with-meta `(~'/ 1 ~(first args)) (meta expr)))
+    2 (parse-arithmetic cenv expr :div '/)
+    (parse-expr cenv (fold-binary-op expr))))
 
 (defmethod parse-expr* '% [cenv expr]
+  (ensure-sufficient-arguments 2 expr)
   (parse-arithmetic cenv expr :rem '%))
 
 (defmethod parse-expr* '& [cenv expr]
+  (ensure-sufficient-arguments 2 expr :varargs? true)
   (parse-arithmetic cenv (fold-binary-op expr) :bitwise-and '&))
 
 (defmethod parse-expr* '| [cenv expr]
+  (ensure-sufficient-arguments 2 expr :varargs? true)
   (parse-arithmetic cenv (fold-binary-op expr) :bitwise-or '|))
 
 (defmethod parse-expr* 'xor [cenv expr]
+  (ensure-sufficient-arguments 2 expr :varargs? true)
   (parse-arithmetic cenv (fold-binary-op expr) :bitwise-xor 'xor))
 
 (defmethod parse-expr* '! [cenv [_ operand :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-expr cenv (with-meta `(~'xor ~operand -1) (meta expr))))
 
 (defn parse-shift [cenv [_ x y] op op-name]
