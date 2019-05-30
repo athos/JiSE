@@ -567,7 +567,8 @@
   (ensure-sufficient-arguments 1 expr)
   (parse-expr cenv (with-meta `(~'xor ~operand -1) (meta expr))))
 
-(defn parse-shift [cenv [_ x y] op op-name]
+(defn parse-shift [cenv [_ x y :as expr] op op-name]
+  (ensure-sufficient-arguments 2 expr)
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' x)
         rhs (parse-expr cenv' y)
@@ -659,33 +660,39 @@
             (error-on-bad-operand-types op-name t1 t2)))))))
 
 (defmethod parse-expr* '== [cenv [_ x y & more :as expr]]
+  (ensure-sufficient-arguments 2 expr :varargs? true)
   (or (when-not more
         (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv x y :eq-0 :eq '== true)
               (or (nil? x) (nil? y)) (parse-eq-null cenv x y :eq-null '== true)))
       (parse-comparison cenv expr :eq '==)))
 
 (defmethod parse-expr* '!= [cenv [_ x y & more :as expr]]
+  (ensure-sufficient-arguments 2 expr :varargs? true)
   (or (when-not more
         (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv x y :ne-0 :ne '!= false)
               (or (nil? x) (nil? y)) (parse-eq-null cenv x y :ne-null '!= false)))
       (parse-comparison cenv expr :ne '!=)))
 
 (defmethod parse-expr* '< [cenv [_ x y & more :as expr]]
+  (ensure-sufficient-arguments 2 expr :varargs? true)
   (if (and (nil? more) (or (= x 0) (= y 0)))
     (parse-cmp-0 cenv x y :lt-0 :lt '< false)
     (parse-comparison cenv expr :lt '<)))
 
 (defmethod parse-expr* '> [cenv [_ x y & more :as expr]]
+  (ensure-sufficient-arguments 2 expr :varargs? true)
   (if (and (nil? more) (or (= x 0) (= y 0)))
     (parse-cmp-0 cenv x y :gt-0 :gt '> false)
     (parse-comparison cenv expr :gt '>)))
 
 (defmethod parse-expr* '<= [cenv [_ x y & more :as expr]]
+  (ensure-sufficient-arguments 2 expr :varargs? true)
   (if (and (nil? more) (or (= x 0) (= y 0)))
     (parse-cmp-0 cenv x y :le-0 :le '<= true)
     (parse-comparison cenv expr :le '<=)))
 
 (defmethod parse-expr* '>= [cenv [_ x y & more :as expr]]
+  (ensure-sufficient-arguments 2 expr :varargs? true)
   (if (and (nil? more) (or (= x 0) (= y 0)))
     (parse-cmp-0 cenv x y :ge-0 :ge '>= true)
     (parse-comparison cenv expr :ge '>=)))
@@ -745,6 +752,7 @@
     (parse-expr cenv `(if ~expr true false))))
 
 (defmethod parse-expr* 'not [cenv [_ operand :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (if (:conditional (:context cenv))
     (let [{:keys [type] :as operand'} (parse-expr cenv operand)]
       (if (#{t/BOOLEAN t/BOOLEAN_CLASS} type)
@@ -756,40 +764,52 @@
   (let [cenv' (with-context cenv :expression)]
     (ensure-type cenv type (parse-expr cenv' x) :context :casting)))
 
-(defmethod parse-expr* 'boolean [cenv [_ x]]
+(defmethod parse-expr* 'boolean [cenv [_ x :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-cast cenv t/BOOLEAN x))
 
-(defmethod parse-expr* 'byte [cenv [_ x]]
+(defmethod parse-expr* 'byte [cenv [_ x :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-cast cenv t/BYTE x))
 
-(defmethod parse-expr* 'char [cenv [_ x]]
+(defmethod parse-expr* 'char [cenv [_ x :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-cast cenv t/CHAR x))
 
-(defmethod parse-expr* 'short [cenv [_ x]]
+(defmethod parse-expr* 'short [cenv [_ x :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-cast cenv t/SHORT x))
 
-(defmethod parse-expr* 'int [cenv [_ x]]
+(defmethod parse-expr* 'int [cenv [_ x :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-cast cenv t/INT x))
 
-(defmethod parse-expr* 'long [cenv [_ x]]
+(defmethod parse-expr* 'long [cenv [_ x :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-cast cenv t/LONG x))
 
-(defmethod parse-expr* 'float [cenv [_ x]]
+(defmethod parse-expr* 'float [cenv [_ x :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-cast cenv t/FLOAT x))
 
-(defmethod parse-expr* 'double [cenv [_ x]]
+(defmethod parse-expr* 'double [cenv [_ x :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-cast cenv t/DOUBLE x))
 
-(defmethod parse-expr* 'cast [cenv [_ t x]]
+(defmethod parse-expr* 'cast [cenv [_ t x :as expr]]
+  (ensure-sufficient-arguments 2 expr)
   (parse-cast cenv (resolve-type cenv t) x))
 
 (defmethod parse-expr* '= [cenv [_ x y :as expr]]
+  (ensure-sufficient-arguments 2 expr)
   (parse-expr cenv (with-meta `(.equals ~x ~y) (meta expr))))
 
 (defmethod parse-expr* 'nil? [cenv [_ arg :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-expr cenv (with-meta `(~'== ~arg nil) (meta expr))))
 
 (defmethod parse-expr* `nil? [cenv [_ arg :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-expr cenv (with-meta `(~'== ~arg nil) (meta expr))))
 
 (defmethod parse-expr* 'str [cenv [_ & args :as expr]]
@@ -800,7 +820,8 @@
                     .toString)]
       (parse-expr cenv (with-meta form (meta expr))))))
 
-(defmethod parse-expr* 'instance? [cenv [_ c x]]
+(defmethod parse-expr* 'instance? [cenv [_ c x :as expr]]
+  (ensure-sufficient-arguments 2 expr)
   (let [c' (resolve-type cenv c)
         x' (parse-expr (with-context cenv :expression) x)]
     (when (t/primitive-type? c')
@@ -1051,7 +1072,8 @@
       (inherit-context cenv :return? false)
       (cond-> label (assoc :label label))))
 
-(defmethod parse-expr* 'throw [cenv [_ ex]]
+(defmethod parse-expr* 'throw [cenv [_ ex :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (-> {:op :throw
        :exception (parse-expr (with-context cenv :expression) ex)}
       (inherit-context cenv :return? false)))
@@ -1187,9 +1209,11 @@
     (recur (with-meta `(~'aget (~'aget ~arr ~index) ~@indices) (meta expr)))))
 
 (defmethod parse-expr* 'alength [cenv [_ arr :as expr]]
+  (ensure-sufficient-arguments 1 expr)
   (parse-expr cenv (with-meta `(.-length ~arr) (meta expr))))
 
 (defmethod parse-expr* 'aget [cenv [_ arr index & indices :as expr]]
+  (ensure-sufficient-arguments 2 expr :varargs? true)
   (if indices
     (parse-expr cenv (fold-aget expr))
     (let [cenv' (with-context cenv :expression)
@@ -1204,6 +1228,7 @@
           (inherit-context cenv)))))
 
 (defmethod parse-expr* 'aset [cenv [_ arr index & more :as expr]]
+  (ensure-sufficient-arguments 3 expr :varargs? true)
   (if (next more)
     (let [indices (cons index (butlast more))
           form (with-meta
