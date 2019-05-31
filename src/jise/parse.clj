@@ -1163,12 +1163,14 @@
                :field (assoc field :class (:class-type cenv) :name fname)
                :target target}
               (inherit-context cenv)))
-      (let [field (find-field cenv target-type fname)]
-        (-> {:op :field-access
-             :type (:type field)
-             :field (assoc field :name fname)}
-            (inherit-context cenv)
-            (cond-> target (assoc :target target)))))))
+      (let [{:keys [access] :as field} (find-field cenv target-type fname)]
+        (if (and (:final access) (contains? field :value))
+          (parse-literal cenv (:value field))
+          (-> {:op :field-access
+               :type (:type field)
+               :field (assoc field :name fname)}
+              (inherit-context cenv)
+              (cond-> target (assoc :target target))))))))
 
 (defn parse-method-invocation [cenv target target-type mname args]
   (let [cenv' (with-context cenv :expression)
