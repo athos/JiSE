@@ -521,7 +521,7 @@
 
 (defmethod parse-expr* '+ [cenv [_ & args :as expr]]
   (case (count args)
-    0 (parse-expr cenv 0)
+    0 (parse-literal cenv 0)
     1 (coerce-to-primitive cenv expr)
     2 (parse-arithmetic cenv expr :add '+)
     (parse-expr cenv (fold-binary-op expr))))
@@ -535,7 +535,7 @@
 
 (defmethod parse-expr* '* [cenv [_ & args :as expr]]
   (case (count args)
-    0 (parse-expr cenv 1)
+    0 (parse-literal cenv 1)
     1 (coerce-to-primitive cenv expr)
     2 (parse-arithmetic cenv expr :mul '*)
     (parse-expr cenv (fold-binary-op expr))))
@@ -650,7 +650,7 @@
   (let [x-nil? (nil? x)
         z (if x-nil? y x)]
     (if (nil? z)
-      (parse-expr cenv default)
+      (parse-literal cenv default)
       (let [{:keys [type] :as z'} (parse-expr (with-context cenv :expression) z)]
         (if-not (t/primitive-type? type)
           {:op op
@@ -705,7 +705,7 @@
 (defmethod parse-expr* 'and [cenv [_ & exprs :as expr]]
   (if (:conditional (:context cenv))
     (case (count exprs)
-      0 (parse-expr cenv true)
+      0 (parse-literal cenv true)
       1 (parse-expr cenv (first exprs))
       (let [exprs' (mapv #(unbox-if-needed (parse-expr cenv %)) exprs)]
         (when-let [[e1 e2] (some (fn [[e1 e2]]
@@ -736,7 +736,7 @@
 (defmethod parse-expr* 'or [cenv [_ & exprs :as expr]]
   (if (:conditional (:context cenv))
     (case (count exprs)
-      0 (parse-expr cenv false)
+      0 (parse-literal cenv false)
       1 (parse-expr cenv (first exprs))
       (let [exprs' (mapv #(unbox-if-needed (parse-expr cenv %)) exprs)]
         (when-let [[e1 e2] (some (fn [[e1 e2]]
