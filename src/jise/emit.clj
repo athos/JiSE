@@ -26,8 +26,14 @@
 
 (defn emit-field [^ClassWriter cw {:keys [access name type value]}]
   (let [access (access-value access)
-        desc (.getDescriptor ^Type type)]
-   (doto (.visitField cw access (munge name) desc nil nil)
+        desc (.getDescriptor ^Type type)
+        value' (when value
+                 ((get {t/BYTE byte t/SHORT short t/INT int
+                        t/LONG long t/FLOAT float t/DOUBLE double}
+                       type
+                       identity)
+                  value))]
+   (doto (.visitField cw access (munge name) desc nil value')
      (.visitEnd))))
 
 (defmulti emit-expr* (fn [emitter expr] (:op expr)))

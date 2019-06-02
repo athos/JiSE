@@ -58,14 +58,22 @@
            (resolve-type proto-cenv tag :allow-vararg-param-type? allow-vararg-param?))
    :access (access-flags modifiers)})
 
+(defn field-has-init-value?
+  ([field]
+   (let [access (access-flags (modifiers-of field))]
+     (field-has-init-value? access field)))
+  ([access [_ _ value :as field]]
+   (and (:static access) value
+        (or (int? value) (float? value) (string? value)
+            (boolean? value) (char? value)))))
+
 (defn parse-field [proto-cenv [_ fname value :as field]]
   (let [modifiers (modifiers-of field)
         {:keys [access type]} (parse-modifiers proto-cenv modifiers)]
     (cond-> {:name (str fname)
              :type type
              :access access}
-      (and (:static access)
-           (or (number? value) (char? value) (boolean? value) (string? value)))
+      (field-has-init-value? access field)
       (assoc :value value))))
 
 (defn context-of [{:keys [context]}]
@@ -317,7 +325,7 @@
   (symbol (str/replace cname #"^.*\.([^.]+)" "$1")))
 
 (defn convert-def-to-set [alias [_ name init :as def]]
-  (when init
+  (when (and init (not (field-has-init-value? def)))
     (let [static? (:static (modifiers-of def))]
       (cond-> `(set! (. ~(if static? alias 'this)
                         ~(symbol (str \- name)))
@@ -373,9 +381,7 @@
 (defn init-cenv [proto-cenv cname parent interfaces fields ctors methods initializer]
   (let [fields' (into {} (map (fn [[_ name :as field]]
                                 (with-line&column-of field
-                                  (let [modifiers (modifiers-of field)
-                                        {:keys [type access]} (parse-modifiers proto-cenv modifiers)]
-                                    [(str name) {:type type :access access :initialized? (atom false)}]))))
+                                  [(str name) (parse-field proto-cenv field)])))
                       fields)
         ctors' (reduce (fn [cs [_ _ args :as ctor]]
                          (with-line&column-of ctor
