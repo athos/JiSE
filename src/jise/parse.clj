@@ -2,6 +2,7 @@
   (:refer-clojure :exclude [find-var])
   (:require [clojure.string :as str]
             [jise.misc :as misc]
+            [jise.simplify :as simp]
             [jise.type :as t])
   (:import [clojure.asm Type]
            [clojure.java.api Clojure]))
@@ -58,23 +59,22 @@
            (resolve-type proto-cenv tag :allow-vararg-param-type? allow-vararg-param?))
    :access (access-flags modifiers)})
 
-(defn field-has-init-value?
+(defn field-init-value
   ([field]
    (let [access (access-flags (modifiers-of field))]
-     (field-has-init-value? access field)))
+     (field-init-value access field)))
   ([access [_ _ value :as field]]
-   (and (:static access) value
-        (or (int? value) (float? value) (string? value)
-            (boolean? value) (char? value)))))
+   (and (:static access) value (simp/simplify {} value))))
 
 (defn parse-field [proto-cenv [_ fname value :as field]]
   (let [modifiers (modifiers-of field)
-        {:keys [access type]} (parse-modifiers proto-cenv modifiers)]
+        {:keys [access type]} (parse-modifiers proto-cenv modifiers)
+        value' (field-init-value access field)]
     (cond-> {:name (str fname)
              :type type
              :access access}
-      (field-has-init-value? access field)
-      (assoc :value value))))
+      value'
+      (assoc :value value'))))
 
 (defn context-of [{:keys [context]}]
   (if (:conditional context)
@@ -325,7 +325,7 @@
   (symbol (str/replace cname #"^.*\.([^.]+)" "$1")))
 
 (defn convert-def-to-set [alias [_ name init :as def]]
-  (when (and init (not (field-has-init-value? def)))
+  (when (and init (not (field-init-value def)))
     (let [static? (:static (modifiers-of def))]
       (cond-> `(set! (. ~(if static? alias 'this)
                         ~(symbol (str \- name)))
