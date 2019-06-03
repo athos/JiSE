@@ -19,7 +19,7 @@
 
 (defn stringify-type [t]
   (if (nil? t)
-    (str "<null>")
+    "<null>"
     (str (t/type->tag t))))
 
 (defmacro error [msg & [data]]
