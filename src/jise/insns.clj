@@ -35,11 +35,11 @@
            :lt [Opcodes/LCMP Opcodes/IFGE], :gt [Opcodes/LCMP Opcodes/IFLE]
            :le [Opcodes/LCMP Opcodes/IFGT], :ge [Opcodes/LCMP Opcodes/IFLT]}
    t/FLOAT {:eq [Opcodes/FCMPL Opcodes/IFNE], :ne [Opcodes/FCMPL Opcodes/IFEQ]
-            :lt [Opcodes/FCMPL Opcodes/IFGE], :gt [Opcodes/FCMPL Opcodes/IFLE]
-            :le [Opcodes/FCMPL Opcodes/IFGT], :ge [Opcodes/FCMPL Opcodes/IFLT]}
+            :lt [Opcodes/FCMPG Opcodes/IFGE], :gt [Opcodes/FCMPL Opcodes/IFLE]
+            :le [Opcodes/FCMPG Opcodes/IFGT], :ge [Opcodes/FCMPL Opcodes/IFLT]}
    t/DOUBLE {:eq [Opcodes/DCMPL Opcodes/IFNE], :ne [Opcodes/DCMPL Opcodes/IFEQ]
-             :lt [Opcodes/DCMPL Opcodes/IFGE], :gt [Opcodes/DCMPL Opcodes/IFLE]
-             :le [Opcodes/DCMPL Opcodes/IFGT], :ge [Opcodes/DCMPL Opcodes/IFLT]}})
+             :lt [Opcodes/DCMPG Opcodes/IFGE], :gt [Opcodes/DCMPL Opcodes/IFLE]
+             :le [Opcodes/DCMPG Opcodes/IFGT], :ge [Opcodes/DCMPL Opcodes/IFLT]}})
 
 (def constant-comparison-insns
   {:eq-null Opcodes/IFNONNULL :ne-null Opcodes/IFNULL
