@@ -158,7 +158,7 @@
     (if-not (identical? expanded expr)
       (parse-expr cenv expanded)
       (or (parse-sugar cenv expr)
-          (throw (ex-info (str "unsupported expr: " (pr-str expr)) {:expr expr}))))))
+          (error (str "unsupported expression: " (pr-str expr)) {:expr expr})))))
 
 (defn parse-symbol [cenv sym]
   (if-let [tag (:tag (meta sym))]
@@ -188,7 +188,7 @@
                   (binding [*line* (or (:line (meta expr)) *line*)
                             *column* (or (:column (meta expr)) *column*)]
                     (parse-expr* cenv' expr))
-                  (error (str "malformed expression: " (pr-str expr)) {:expr expr}))]
+                  (error (str "unsupported expression: " (pr-str expr)) {:expr expr}))]
       (as-> expr' expr'
         (if line
           (assoc expr' :line line)
