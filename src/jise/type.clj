@@ -338,9 +338,14 @@
   (let [class-name (type->symbol class)
         name' (munge name)]
     (letfn [(field->map [^Field f]
-              {:class (class->type (.getDeclaringClass f))
-               :type (class->type (.getType f))
-               :access (modifiers->access-flags (.getModifiers f))})
+              (let [type (class->type (.getType f))
+                    access (modifiers->access-flags (.getModifiers f))]
+                (cond-> {:class (class->type (.getDeclaringClass f))
+                         :type type
+                         :access access}
+                  (and (:static access) (:final access)
+                       (or (primitive-type? type) (= type STRING)))
+                  (assoc :value (.get f nil)))))
             (walk [^Class c]
               (-> (walk-class-hierarchy c
                     (fn [^Class c]

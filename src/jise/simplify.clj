@@ -1,5 +1,6 @@
 (ns jise.simplify
-  (:require [jise.misc :as misc]))
+  (:require [jise.misc :as misc]
+            [jise.type :as t]))
 
 (declare simplify)
 
@@ -14,6 +15,15 @@
         (int? expr) (int expr)
         (float? expr) (double expr)
         (seq? expr) (simplify* cenv expr)
+        (symbol? expr) (let [ns (namespace expr)
+                             class (if ns
+                                     (t/tag->type cenv (symbol ns) :throws-on-failure? false)
+                                     (when (not (contains? (:locals cenv) expr))
+                                       (:class-type cenv)))]
+                         (when-let [field (and class (t/find-field cenv class (name expr)))]
+                           (let [{:keys [access value]} field]
+                             (when (and (:static access) (:final access) value)
+                               value))))
         :else nil))
 
 (defn simplify-exprs [cenv exprs]
