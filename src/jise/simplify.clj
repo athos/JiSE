@@ -14,7 +14,7 @@
   (cond (or (boolean? expr) (char? expr) (string? expr)) expr
         (int? expr) (int expr)
         (float? expr) (double expr)
-        (seq? expr) (simplify* cenv expr)
+        (seq? expr) (try (simplify* cenv expr) (catch Exception _))
         (symbol? expr) (let [ns (namespace expr)
                              class (if ns
                                      (t/tag->type cenv (symbol ns) :throws-on-failure? false)
