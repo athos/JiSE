@@ -134,21 +134,23 @@
 
 (defmethod emit-expr* :literal [{:keys [^MethodVisitor mv]} {:keys [type value context]}]
   (when-not (:statement context)
-    (if-let [opcode (get-in insns/const-insns [(primitive-type type) value])]
-      (.visitInsn mv opcode)
-      (cond (and (#{t/BYTE t/SHORT t/CHAR t/INT} type)
-                 (<= Byte/MIN_VALUE (long value) Byte/MAX_VALUE))
-            (.visitIntInsn mv Opcodes/BIPUSH (int value))
+    (let [v (condp = type
+              t/INT (int value)
+              t/LONG (long value)
+              t/FLOAT (float value)
+              t/DOUBLE (double value)
+              value)]
+      (if-let [opcode (get-in insns/const-insns [(primitive-type type) v])]
+        (.visitInsn mv opcode)
+        (cond (and (#{t/BYTE t/SHORT t/CHAR t/INT} type)
+                   (<= Byte/MIN_VALUE (long v) Byte/MAX_VALUE))
+              (.visitIntInsn mv Opcodes/BIPUSH (int value))
 
-            (and (#{t/SHORT t/INT} type)
-                 (<= Short/MIN_VALUE (long value) Short/MAX_VALUE))
-            (.visitIntInsn mv Opcodes/SIPUSH (int value))
+              (and (#{t/SHORT t/INT} type)
+                   (<= Short/MIN_VALUE (long v) Short/MAX_VALUE))
+              (.visitIntInsn mv Opcodes/SIPUSH (int value))
 
-            :else (let [v (condp = type
-                            t/INT (int value)
-                            t/FLOAT (float value)
-                            value)]
-                    (.visitLdcInsn mv v))))))
+              :else (.visitLdcInsn mv v))))))
 
 (defn emit-load [{:keys [^MethodVisitor mv]} ^Type type index]
   (.visitVarInsn mv (.getOpcode type Opcodes/ILOAD) index))
@@ -205,7 +207,7 @@
   (emit-arithmetic emitter expr :logical-shift-right))
 
 (defmethod emit-expr* :widening-primitive [{:keys [^MethodVisitor mv] :as emitter} {:keys [type src context]}]
-  (if (and (= (:op src) :literal) (= type t/LONG))
+  (if (and (= (:op src) :literal) (#{t/LONG t/DOUBLE} type))
     (emit-expr emitter (assoc src :context context :type type))
     (do (emit-expr emitter src)
         (when-let [opcode (get-in insns/widening-insns [(:type src) type])]
