@@ -89,6 +89,11 @@
          (cond-> (context-of y)
            (not (nil? return?)) ((if return? conj disj) :return))))
 
+(defn first-meaningful-node [node]
+  (if (= (:op node) :do)
+    (recur (first (:exprs node)))
+    node))
+
 (defn apply-conversions [conversions src]
   (reduce (fn [src {:keys [conversion to]}]
             (-> {:op conversion
@@ -284,6 +289,17 @@
             (recur bindings cenv' allow-vararg-param? (conj ret b)))))
       [(inherit-context cenv' cenv) ret])))
 
+(declare parse-ctor-invocation)
+
+(defn inject-ctor-invocation [cenv body]
+  (or (when-let [node (first-meaningful-node body)]
+        (when-not (= (:op node) :ctor-invocation)
+          (let [cenv' (with-context cenv :statement)]
+            (-> {:op :do :type (:type body)
+                 :exprs [(parse-ctor-invocation cenv' '(super)) body]}
+                (inherit-context cenv :return? false)))))
+      body))
+
 (defn parse-method [cenv ctor? [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
         {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
@@ -298,16 +314,18 @@
                                       (interleave args (repeat nil))
                                       :method-params? true)
         return-type (if ctor? t/VOID type)
-        context (if (= return-type t/VOID) :statement :expression)]
+        context (if (= return-type t/VOID) :statement :expression)
+        body' (when-not (:abstract access)
+                (with-line&column-of method
+                  (let [cenv' (assoc cenv'
+                                     :return-type return-type
+                                     :context #{context :tail :return})]
+                    (cond->> (parse-exprs cenv' body)
+                      ctor? (inject-ctor-invocation cenv')))))]
     (cond-> {:return-type return-type
              :args args'
              :access access
-             :body (when-not (:abstract access)
-                     (with-line&column-of method
-                       (parse-exprs (-> cenv'
-                                        (assoc :return-type return-type
-                                               :context #{context :tail :return}))
-                                    body)))}
+             :body body'}
       ctor? (assoc :ctor? ctor?)
       (some #{'&} args) (update :access conj :varargs)
       (not ctor?) (assoc :name (str mname)))))
@@ -1135,8 +1153,9 @@
                :args (args-for cenv' ctor args args')}
               (inherit-context cenv)))))))
 
-(defn parse-ctor-invocation [cenv super? [_ & args]]
-  (let [cenv' (with-context cenv :expression)
+(defn parse-ctor-invocation [cenv [op & args]]
+  (let [super? (= (misc/symbol-without-jise-ns op) 'super)
+        cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
         class (if super?
                 (find-in-current-class cenv :parent)
@@ -1151,10 +1170,10 @@
           (cond-> initializer (assoc :initializer (parse-expr cenv initializer)))))))
 
 (defmethod parse-expr* 'this [cenv expr]
-  (parse-ctor-invocation cenv false expr))
+  (parse-ctor-invocation cenv expr))
 
 (defmethod parse-expr* 'super [cenv expr]
-  (parse-ctor-invocation cenv true expr))
+  (parse-ctor-invocation cenv expr))
 
 (defn parse-field-access [cenv target target-type fname]
   (if (and (t/array-type? target-type) (= fname "length"))

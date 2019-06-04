@@ -81,10 +81,6 @@
     (doseq [arg args]
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)
-    ;; FIXME: it might be better to inject implicit ctor invocation in parsing phase
-    (when (and ctor? (not= (get-in body [:exprs 0 :op]) :ctor-invocation))
-      (.visitVarInsn mv Opcodes/ALOAD 0)
-      (emit-ctor-invocation emitter {:ctor {:class parent :param-types []} :args []}))
     (when-not (:abstract access)
       (emit-expr emitter body))
     (.visitMaxs mv 1 1)
