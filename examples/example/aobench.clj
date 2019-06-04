@@ -110,7 +110,6 @@
 
   ^:public
   (defm AOBench [^int width ^int height ^int nsubsamples]
-    (super)
     (set! (.-width this) width)
     (set! (.-height this) height)
     (set! (.-nsubsamples this) nsubsamples)
