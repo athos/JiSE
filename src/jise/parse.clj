@@ -36,10 +36,13 @@
   (merge (meta form) (meta name)))
 
 (defn access-flags [modifiers]
-  (-> modifiers
-      (select-keys [:abstract :static :public :protected :private :final :transient :volatile])
-      keys
-      set))
+  (let [access (-> modifiers
+                   (select-keys [:abstract :static :public :protected :private :final :transient :volatile])
+                   keys
+                   set)]
+    (cond-> access
+      (every? (complement #{:public :protected :private}) access)
+      (conj :package))))
 
 (defn resolve-type [proto-cenv tag & {:keys [allow-vararg-param-type?]}]
   (try

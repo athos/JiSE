@@ -210,7 +210,11 @@
     (Modifier/isPrivate ms) (conj :private)
     (Modifier/isProtected ms) (conj :protected)
     (Modifier/isPublic ms) (conj :public)
-    (Modifier/isStatic ms) (conj :static)))
+    (Modifier/isStatic ms) (conj :static)
+    (->> (bit-or Modifier/PUBLIC Modifier/PROTECTED Modifier/PRIVATE)
+         (bit-and ms)
+         (= 0))
+    (conj :package)))
 
 (defn widening-primitive-conversion [from to]
   (when (get-in wider-primitive-types [from to])
@@ -340,7 +344,7 @@
 
 (defn accessible-from? [caller class access]
   (or (:public access)
-      (and (:private access) (= caller class))
+      (and (or (:private access) (:package access)) (= caller class))
       (and (:protected access) (super? class caller))))
 
 (defn find-field [cenv caller class name]
