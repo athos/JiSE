@@ -507,7 +507,7 @@
                "  second type: " (stringify-type ~t2))))
 
 (defn parse-binary-op
-  ([cenv [_ x y] op op-name]
+  ([cenv [op-name x y] op]
    (let [cenv' (with-context cenv :expression)
          lhs (parse-expr cenv' x)
          rhs (parse-expr cenv' y)]
@@ -520,8 +520,8 @@
          (inherit-context cenv))
      (error-on-bad-operand-types op-name (:type lhs) (:type rhs)))))
 
-(defn parse-arithmetic [cenv expr op op-name]
-  (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op op-name)]
+(defn parse-arithmetic [cenv expr op]
+  (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op)]
     (assoc ret :type (:type lhs))))
 
 (defn coerce-to-primitive [cenv [op x]]
@@ -550,51 +550,51 @@
   (case (count args)
     0 (parse-literal cenv 0)
     1 (coerce-to-primitive cenv expr)
-    2 (parse-arithmetic cenv expr :add '+)
+    2 (parse-arithmetic cenv expr :add)
     (parse-expr cenv (fold-binary-op expr))))
 
 (defmethod parse-expr* '- [cenv [_ & args :as expr]]
   (ensure-sufficient-arguments 1 expr :varargs? true)
   (case (count args)
     1 (parse-unary-op cenv expr :neg)
-    2 (parse-arithmetic cenv expr :sub '-)
+    2 (parse-arithmetic cenv expr :sub)
     (parse-expr cenv (fold-binary-op expr))))
 
 (defmethod parse-expr* '* [cenv [_ & args :as expr]]
   (case (count args)
     0 (parse-literal cenv 1)
     1 (coerce-to-primitive cenv expr)
-    2 (parse-arithmetic cenv expr :mul '*)
+    2 (parse-arithmetic cenv expr :mul)
     (parse-expr cenv (fold-binary-op expr))))
 
 (defmethod parse-expr* '/ [cenv [_ & args :as expr]]
   (ensure-sufficient-arguments 1 expr :varargs? true)
   (case (count args)
     1 (parse-expr cenv (with-meta `(~'/ 1 ~(first args)) (meta expr)))
-    2 (parse-arithmetic cenv expr :div '/)
+    2 (parse-arithmetic cenv expr :div)
     (parse-expr cenv (fold-binary-op expr))))
 
 (defmethod parse-expr* '% [cenv expr]
   (ensure-sufficient-arguments 2 expr)
-  (parse-arithmetic cenv expr :rem '%))
+  (parse-arithmetic cenv expr :rem))
 
 (defmethod parse-expr* '& [cenv expr]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-and '&))
+  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-and))
 
 (defmethod parse-expr* '| [cenv expr]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-or '|))
+  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-or))
 
 (defmethod parse-expr* 'xor [cenv expr]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-xor 'xor))
+  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-xor))
 
 (defmethod parse-expr* '! [cenv [_ operand :as expr]]
   (ensure-sufficient-arguments 1 expr)
   (parse-expr cenv (with-meta `(~'xor ~operand -1) (meta expr))))
 
-(defn parse-shift [cenv [_ x y :as expr] op op-name]
+(defn parse-shift [cenv [op-name x y :as expr] op]
   (ensure-sufficient-arguments 2 expr)
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' x)
@@ -614,13 +614,13 @@
         (inherit-context cenv))))
 
 (defmethod parse-expr* '<< [cenv expr]
-  (parse-shift cenv expr :shift-left '<<))
+  (parse-shift cenv expr :shift-left))
 
 (defmethod parse-expr* '>> [cenv expr]
-  (parse-shift cenv expr :shift-right '>>))
+  (parse-shift cenv expr :shift-right))
 
 (defmethod parse-expr* '>>> [cenv expr]
-  (parse-shift cenv expr :logical-shift-right '>>>))
+  (parse-shift cenv expr :logical-shift-right))
 
 (defn parse-equal [cenv lhs rhs op op-name]
   (if (and (not (t/numeric-type? (:type lhs)))
@@ -643,7 +643,7 @@
     (meta expr)))
 
 (defn parse-comparison
-  ([cenv [_ x y & more :as expr] op op-name]
+  ([cenv [op-name x y & more :as expr] op]
    (if (:conditional (:context cenv))
      (if more
        (parse-expr cenv (fold-comparison expr))
@@ -691,38 +691,38 @@
   (or (when-not more
         (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv x y :eq-0 :eq '== true)
               (or (nil? x) (nil? y)) (parse-eq-null cenv x y :eq-null '== true)))
-      (parse-comparison cenv expr :eq '==)))
+      (parse-comparison cenv expr :eq)))
 
 (defmethod parse-expr* '!= [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
   (or (when-not more
         (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv x y :ne-0 :ne '!= false)
               (or (nil? x) (nil? y)) (parse-eq-null cenv x y :ne-null '!= false)))
-      (parse-comparison cenv expr :ne '!=)))
+      (parse-comparison cenv expr :ne)))
 
 (defmethod parse-expr* '< [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
   (if (and (nil? more) (or (= x 0) (= y 0)))
     (parse-cmp-0 cenv x y :lt-0 :lt '< false)
-    (parse-comparison cenv expr :lt '<)))
+    (parse-comparison cenv expr :lt)))
 
 (defmethod parse-expr* '> [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
   (if (and (nil? more) (or (= x 0) (= y 0)))
     (parse-cmp-0 cenv x y :gt-0 :gt '> false)
-    (parse-comparison cenv expr :gt '>)))
+    (parse-comparison cenv expr :gt)))
 
 (defmethod parse-expr* '<= [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
   (if (and (nil? more) (or (= x 0) (= y 0)))
     (parse-cmp-0 cenv x y :le-0 :le '<= true)
-    (parse-comparison cenv expr :le '<=)))
+    (parse-comparison cenv expr :le)))
 
 (defmethod parse-expr* '>= [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
   (if (and (nil? more) (or (= x 0) (= y 0)))
     (parse-cmp-0 cenv x y :ge-0 :ge '>= true)
-    (parse-comparison cenv expr :ge '>=)))
+    (parse-comparison cenv expr :ge)))
 
 (defn unbox-if-needed [x]
   (if-let [cs (t/unboxing-conversion (:type x))]
