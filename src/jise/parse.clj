@@ -136,21 +136,21 @@
 (def VAR_TYPE (Type/getType clojure.lang.Var))
 
 (defn find-field [cenv class fname]
-  (or (t/find-field cenv class fname)
+  (or (t/find-field cenv (:class-type cenv) class fname)
       (when (and (= class (:class-type cenv))
                  (get-in @(:vars cenv) [:fields fname]))
         {:class class :type VAR_TYPE :access #{:public :static}})))
 
 (declare parse-expr parse-method-invocation)
 
-(defn parse-sugar [cenv [op :as expr]]
+(defn parse-sugar [{:keys [class-type] :as cenv} [op :as expr]]
   (or (when-let [maybe-array (or (find-lname cenv op)
-                                 (find-field cenv (:class-type cenv) (str op)))]
+                                 (find-field cenv class-type (str op)))]
         (if (t/array-type? (:type maybe-array))
           (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))
           (error (format "array required, but %s found" (stringify-type (:type maybe-array))))))
-      (when (t/get-methods cenv (:class-type cenv) (str op) (count (rest expr)))
-        (parse-method-invocation cenv nil (:class-type cenv) (str op) (rest expr)))
+      (when (t/get-methods cenv class-type class-type (str op) (count (rest expr)))
+        (parse-method-invocation cenv nil class-type (str op) (rest expr)))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
         (when-not (:macro (meta var))
           (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
@@ -1148,7 +1148,7 @@
       (parse-array-creation cenv type' expr)
       (let [cenv' (with-context cenv :expression)
             args' (map (partial parse-expr cenv') args)
-            ctors (t/find-ctors cenv type' (map :type args'))]
+            ctors (t/find-ctors cenv (:class-type cenv) type' (map :type args'))]
         (when-let [ctor (first ctors)]
           (-> {:op :new
                :type type'
@@ -1163,7 +1163,7 @@
         class (if super?
                 (find-in-current-class cenv :parent)
                 (:class-type cenv))
-        ctors (t/find-ctors cenv class (map :type args'))
+        ctors (t/find-ctors cenv (:class-type cenv) class (map :type args'))
         initializer (when super? (find-in-current-class cenv :initializer))]
     (when-let [ctor (first ctors)]
       (-> {:op :ctor-invocation
@@ -1203,7 +1203,7 @@
 (defn parse-method-invocation [cenv target target-type mname args]
   (let [cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
-        methods (t/find-methods cenv target-type mname (map :type args'))]
+        methods (t/find-methods cenv (:class-type cenv) target-type mname (map :type args'))]
     (when-let [method (first methods)]
       (let [target' (if (and (nil? target) (not (:static (:access method))))
                       (parse-expr cenv' 'this)

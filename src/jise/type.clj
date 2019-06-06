@@ -327,37 +327,48 @@
         [(f t1' unbox1) (f t2' unbox2)]))))
 
 (defn walk-class-hierarchy [^Class class f]
+  ;; Here we assume that a JiSE class belongs to a package other than
+  ;; any package a Java class belongs to, so JiSE classes can't refer to
+  ;; any non-public Java classes
   (letfn [(walk [^Class c]
             (when c
-              (concat (f c)
+              (concat (when (Modifier/isPublic (.getModifiers c))
+                        (f c))
                       (mapcat walk (.getInterfaces c))
                       (walk (.getSuperclass c)))))]
    (walk class)))
 
-(defn find-field [cenv ^Type class name]
+(defn accessible-from? [caller class access]
+  (or (:public access)
+      (and (:private access) (= caller class))
+      (and (:protected access) (super? class caller))))
+
+(defn find-field [cenv caller class name]
   (let [class-name (type->symbol class)
         name' (munge name)]
-    (letfn [(field->map [^Field f]
+    (letfn [(field->map [c ^Field f]
               (let [type (class->type (.getType f))
                     access (modifiers->access-flags (.getModifiers f))]
-                (cond-> {:class (class->type (.getDeclaringClass f))
-                         :type type
-                         :access access}
-                  (and (:static access) (:final access)
-                       (or (primitive-type? type) (= type STRING)))
-                  (assoc :value (.get f nil)))))
+                (when (accessible-from? caller (class->type c) access)
+                  (cond-> {:class (class->type (.getDeclaringClass f))
+                           :type type
+                           :access access}
+                    (and (:static access) (:final access)
+                         (or (primitive-type? type) (= type STRING)))
+                    (assoc :value (.get f nil))))))
             (walk [^Class c]
               (-> (walk-class-hierarchy c
                     (fn [^Class c]
                       (some->> (.getDeclaredFields c)
                                (filter #(= (.getName ^Field %) name'))
                                first
-                               field->map
+                               (field->map c)
                                vector)))
                   first))]
       (if-let [entry (get-in cenv [:classes class-name])]
         (if-let [field (get-in entry [:fields name])]
-          (assoc field :class class)
+          (when (accessible-from? caller class (:access field))
+            (assoc field :class class))
           ;; Here we assume all the superclasses and interfaces are defined outside of JiSE
           (let [{:keys [parent interfaces]} entry]
             (or (some walk (map type->class interfaces))
@@ -377,16 +388,17 @@
   (or (= nargs nparams)
       (and varargs? (>= nargs (dec nparams)))))
 
-(defn get-methods [cenv ^Type class name nargs]
+(defn get-methods [cenv caller class name nargs]
   (let [class-name (type->symbol class)
         name' (munge name)]
     (letfn [(method->map [^Class c ^Method m]
-              {:class (class->type (.getDeclaringClass m))
-               :interface? (.isInterface c)
-               :param-types (mapv class->type (.getParameterTypes m))
-               :return-type (class->type (.getReturnType m))
-               :access (cond-> (modifiers->access-flags (.getModifiers m))
-                         (.isVarArgs m) (conj :varargs))})
+              (let [access (modifiers->access-flags (.getModifiers m))]
+                (when (accessible-from? caller (class->type c) access)
+                  {:class (class->type (.getDeclaringClass m))
+                   :interface? (.isInterface c)
+                   :param-types (mapv class->type (.getParameterTypes m))
+                   :return-type (class->type (.getReturnType m))
+                   :access (cond-> access (.isVarArgs m) (conj :varargs))})))
             (walk [^Class c]
               (walk-class-hierarchy c
                 (fn [^Class c]
@@ -398,7 +410,8 @@
       (->> (if-let [entry (get-in cenv [:classes class-name])]
              (concat (->> (get-in entry [:methods name])
                           (keep (fn [{:keys [param-types access] :as m}]
-                                  (when (params-compatible? nargs (count param-types) (:varargs access))
+                                  (when (and (accessible-from? caller class access)
+                                             (params-compatible? nargs (count param-types) (:varargs access)))
                                     (assoc m :class class)))))
                      (mapcat (comp walk type->class) (:interfaces entry))
                      (walk (type->class (:parent entry))))
@@ -465,31 +478,33 @@
              (maximally-specific-methods cenv))))
 
 (defn find-methods
-  ([class name arg-types]
-   (find-methods {} class name arg-types))
-  ([cenv ^Type class name arg-types]
-   (->> (get-methods cenv class name (count arg-types))
+  ([caller class name arg-types]
+   (find-methods {} caller class name arg-types))
+  ([cenv caller class name arg-types]
+   (->> (get-methods cenv caller class name (count arg-types))
         (filter-methods cenv arg-types))))
 
-(defn get-ctors [cenv ^Type class nargs]
+(defn get-ctors [cenv caller class nargs]
   (let [class-name (type->symbol class)]
     (or (->> (get-in cenv [:classes class-name :ctors])
              (filter (fn [{:keys [param-types access]}]
-                       (params-compatible? nargs (count param-types) (:varargs access))))
+                       (and (accessible-from? caller class access)
+                            (params-compatible? nargs (count param-types) (:varargs access)))))
              seq)
         (->> (.getDeclaredConstructors (type->class class))
              (keep (fn [^Constructor ctor]
-                     (let [nparams (.getParameterCount ctor)
+                     (let [access (modifiers->access-flags (.getModifiers ctor))
+                           nparams (.getParameterCount ctor)
                            varargs? (.isVarArgs ctor)]
-                       (when (params-compatible? nargs nparams varargs?)
+                       (when (and (accessible-from? caller class access)
+                                  (params-compatible? nargs nparams varargs?))
                          {:param-types (mapv class->type (.getParameterTypes ctor))
-                          :access (cond-> (modifiers->access-flags (.getModifiers ctor))
-                                    varargs? (conj :varargs))}))))
+                          :access (cond-> access varargs? (conj :varargs))}))))
              seq))))
 
 (defn find-ctors
-  ([class arg-types]
-   (find-ctors {} class arg-types))
-  ([cenv ^Type class arg-types]
-   (some->> (get-ctors cenv class (count arg-types))
+  ([caller class arg-types]
+   (find-ctors {} caller class arg-types))
+  ([cenv caller class arg-types]
+   (some->> (get-ctors cenv caller class (count arg-types))
             (filter-methods cenv arg-types))))
