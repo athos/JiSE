@@ -6,7 +6,7 @@
             [jise.type :as type])
   (:import [clojure.lang Compiler Compiler$LocalBinding DynamicClassLoader]))
 
-(defn qualify-cname [cname]
+(defn- qualify-cname [cname]
   (let [cname' (name cname)]
     (-> (cond->> cname'
           (neg? (.indexOf cname' "."))
@@ -15,13 +15,13 @@
         symbol
         (with-meta (meta cname)))))
 
-(defn compile-to-bytecode [source form-meta enclosing-env qname body]
+(defn- compile-to-bytecode [source form-meta enclosing-env qname body]
   (->> (with-meta `(defclass ~qname ~@body) form-meta)
        (parse/parse-class enclosing-env)
        (#(cond-> % source (assoc :source source)))
        emit/emit-class))
 
-(defn compile-class [form-meta enclosing-env cname body]
+(defn- compile-class [form-meta enclosing-env cname body]
   (let [qname (with-meta (qualify-cname cname) (meta cname))
         qname' (str qname)
         bytecode (compile-to-bytecode *source-path* form-meta enclosing-env qname body)]
@@ -30,7 +30,7 @@
     (.defineClass ^DynamicClassLoader @Compiler/LOADER qname' bytecode nil)
     qname))
 
-(defn enclosing-env [&env]
+(defn- enclosing-env [&env]
   (reduce-kv (fn [m sym ^Compiler$LocalBinding lb]
                (assoc m (name sym)
                       {:type (if (.hasJavaClass lb)

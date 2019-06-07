@@ -22,7 +22,7 @@
 (defn- fixup-type-hints [args & {:keys [allow-primitive?] :or {allow-primitive? true}}]
   (mapv (partial fixup-type-hint (and allow-primitive? (< (count args) 5))) args))
 
-(defmacro def-type->primitive-interface []
+(defmacro ^:private def-type->primitive-interface []
   `(def ~'type->primitive-interface
      ~(letfn [(rec [n]
                 (if (= n 0)

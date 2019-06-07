@@ -6,7 +6,7 @@
 
 (set! *warn-on-reflection* true)
 
-(defn make-emitter [mv]
+(defn- make-emitter [mv]
   {:mv mv
    :continue-label nil
    :break-label nil
@@ -24,7 +24,7 @@
                :varargs Opcodes/ACC_VARARGS}]
     (apply + (keep attrs flags))))
 
-(defn emit-field [^ClassWriter cw {:keys [access name type value]}]
+(defn- emit-field [^ClassWriter cw {:keys [access name type value]}]
   (let [access (access-value access)
         desc (.getDescriptor ^Type type)
         value' (when value
@@ -40,13 +40,13 @@
 (defmethod emit-expr* :default [_ expr]
   (throw (ex-info (str "unknown expr found: " expr) {:expr expr})))
 
-(defn emit-line [{:keys [^MethodVisitor mv]} line]
+(defn- emit-line [{:keys [^MethodVisitor mv]} line]
   (when line
     (let [here (Label.)]
       (.visitLabel mv here)
       (.visitLineNumber mv line here))))
 
-(defn emit-return [{:keys [^MethodVisitor mv]} ^Type type]
+(defn- emit-return [{:keys [^MethodVisitor mv]} ^Type type]
   (.visitInsn mv (.getOpcode type Opcodes/IRETURN)))
 
 (defn emit-expr [{:keys [^MethodVisitor mv] :as emitter} {:keys [context] :as expr}]
@@ -55,8 +55,8 @@
     (let [t (if (:statement context) t/VOID (:type expr))]
       (emit-return emitter t))))
 
-(defn emit-ctor-invocation
-  [{:keys [^MethodVisitor mv] :as emitter} {:keys [ctor args initializer line]}]
+(defn- emit-ctor-invocation
+  [{:keys [^MethodVisitor mv] :as emitter} {:keys [ctor args line]}]
   (let [{:keys [class param-types]} ctor
         method-type (Type/getMethodType t/VOID (into-array Type param-types))
         iname (.getInternalName ^Type class)
@@ -66,7 +66,7 @@
     (emit-line emitter line)
     (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
 
-(defn emit-method
+(defn- emit-method
   [^ClassWriter cw parent {:keys [name access return-type args body static-initializer? ctor? varargs?]}]
   (let [desc (->> (map :type args)
                   (into-array Type)
@@ -109,21 +109,21 @@
   (doseq [expr exprs]
     (emit-expr emitter expr)))
 
-(defn drop-if-statement [{:keys [^MethodVisitor mv]} context]
+(defn- drop-if-statement [{:keys [^MethodVisitor mv]} context]
   (when (:statement context)
     (let [opcode (if (= (t/type-category type) 2)
                  Opcodes/POP2
                  Opcodes/POP)]
       (.visitInsn mv opcode))))
 
-(defn push-null-unless-statement [{:keys [^MethodVisitor mv]} context]
+(defn- push-null-unless-statement [{:keys [^MethodVisitor mv]} context]
   (when-not (:statement context)
     (.visitInsn mv Opcodes/ACONST_NULL)))
 
 (defmethod emit-expr* :null [emitter {:keys [context]}]
   (push-null-unless-statement emitter context))
 
-(defn primitive-type [type]
+(defn- primitive-type [type]
   (if (#{t/BYTE t/CHAR t/SHORT} type) t/INT type))
 
 (defmethod emit-expr* :literal [{:keys [^MethodVisitor mv]} {:keys [type value context]}]
@@ -146,14 +146,14 @@
 
               :else (.visitLdcInsn mv v))))))
 
-(defn emit-load [{:keys [^MethodVisitor mv]} ^Type type index]
+(defn- emit-load [{:keys [^MethodVisitor mv]} ^Type type index]
   (.visitVarInsn mv (.getOpcode type Opcodes/ILOAD) index))
 
 (defmethod emit-expr* :local [emitter {:keys [type local context]}]
   (when-not (:statement context)
     (emit-load emitter type (:index local))))
 
-(defn emit-arithmetic [{:keys [^MethodVisitor mv] :as emitter} {:keys [type lhs rhs context line]} op]
+(defn- emit-arithmetic [{:keys [^MethodVisitor mv] :as emitter} {:keys [type lhs rhs context line]} op]
   (let [opcode (.getOpcode ^Type type (get insns/arithmetic-insns op))]
     (emit-expr emitter lhs)
     (emit-expr emitter rhs)
@@ -230,7 +230,7 @@
                                :param-types [(:type src)]}
                       :args [src]}))
 
-(def unboxing-method-names
+(def ^:private unboxing-method-names
   {t/BOOLEAN "booleanValue"
    t/BYTE "byteValue"
    t/CHAR "charValue"
@@ -265,7 +265,7 @@
   (.visitTypeInsn mv Opcodes/INSTANCEOF (.getInternalName ^Type class))
   (drop-if-statement emitter context))
 
-(defn emit-store [{:keys [^MethodVisitor mv]} ^Type type index]
+(defn- emit-store [{:keys [^MethodVisitor mv]} ^Type type index]
   (.visitVarInsn mv (.getOpcode type Opcodes/ISTORE) index))
 
 (defmethod emit-expr* :let [emitter {:keys [bindings body line]}]
@@ -275,13 +275,13 @@
     (emit-store emitter (:type b) (:index b)))
   (emit-expr emitter body))
 
-(defn emit-dup [{:keys [^MethodVisitor mv]} type]
+(defn- emit-dup [{:keys [^MethodVisitor mv]} type]
   (let [opcode (case (t/type-category type)
                  1 Opcodes/DUP
                  2 Opcodes/DUP2)]
     (.visitInsn mv opcode)))
 
-(defn dup-unless-statement [emitter context type]
+(defn- dup-unless-statement [emitter context type]
   (when-not (:statement context)
     (emit-dup emitter type)))
 
@@ -304,7 +304,7 @@
     (emit-expr emitter' target)
     (.visitLabel mv break-label)))
 
-(defn emit-comparison [{:keys [^MethodVisitor mv] :as emitter} op {:keys [operand lhs rhs]} label]
+(defn- emit-comparison [{:keys [^MethodVisitor mv] :as emitter} op {:keys [operand lhs rhs]} label]
   (if operand
     (let [opcode (get insns/constant-comparison-insns op)]
       (emit-expr emitter operand)
@@ -324,10 +324,10 @@
 
 (declare emit-conditional)
 
-(defn emit-and [emitter {:keys [exprs]} label]
+(defn- emit-and [emitter {:keys [exprs]} label]
   (run! #(emit-conditional emitter % label) exprs))
 
-(defn emit-or [{:keys [^MethodVisitor mv] :as emitter} {:keys [exprs expr]} else-label]
+(defn- emit-or [{:keys [^MethodVisitor mv] :as emitter} {:keys [exprs expr]} else-label]
   (let [then-label (Label.)]
     (run! #(emit-conditional emitter % then-label) exprs)
     (emit-conditional emitter expr else-label)
@@ -338,13 +338,13 @@
    :eq-0 :ne-0, :ne-0 :eq-0, :eq-null :ne-null, :ne-null :eq-null
    :lt-0 :ge-0, :gt-0 :le-0, :le-0 :gt-0, :ge-0 :lt-0})
 
-(defn emit-not [{:keys [^MethodVisitor mv] :as emitter} {:keys [expr]} label]
+(defn- emit-not [{:keys [^MethodVisitor mv] :as emitter} {:keys [expr]} label]
   (if-let [negated (negated-comparison-ops (:op expr))]
     (emit-comparison emitter negated expr label)
     (do (emit-expr emitter expr)
         (.visitJumpInsn mv Opcodes/IFNE label))))
 
-(defn emit-conditional [{:keys [^MethodVisitor mv] :as emitter} cond label]
+(defn- emit-conditional [{:keys [^MethodVisitor mv] :as emitter} cond label]
   (let [op (:op cond)]
     (case op
       (:eq :ne :lt :gt :le :ge :eq-null :ne-null :eq-0 :ne-0 :lt-0 :gt-0 :le-0 :ge-0)
@@ -372,7 +372,7 @@
       (emit-expr emitter else))
     (.visitLabel mv end-label)))
 
-(defn assign-labels [clauses]
+(defn- assign-labels [clauses]
   (loop [clauses clauses
          key->label {}
          ret []]
@@ -405,7 +405,7 @@
       (emit-expr emitter default))
     (.visitLabel mv end-label)))
 
-(defn with-labels [emitter label-name continue-label break-label f]
+(defn- with-labels [emitter label-name continue-label break-label f]
   (let [emitter' (-> emitter
                      (assoc :continue-label continue-label :break-label break-label)
                      (cond-> label-name (assoc-in [:labels label-name :continue-label] continue-label)))]
@@ -536,7 +536,7 @@
     (push-null-unless-statement emitter context)
     (drop-if-statement emitter context)))
 
-(def primitive-types
+(def ^:private primitive-types
   {t/BOOLEAN Opcodes/T_BOOLEAN
    t/BYTE Opcodes/T_BYTE
    t/CHAR Opcodes/T_CHAR

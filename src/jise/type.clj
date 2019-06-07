@@ -26,7 +26,7 @@
 (def FLOAT_CLASS (Type/getType Float))
 (def DOUBLE_CLASS (Type/getType Double))
 
-(def primitive->type
+(def ^:private primitive->type
   {'boolean BOOLEAN
    'byte BYTE
    'char CHAR
@@ -43,7 +43,7 @@
 (def integral-type? #{BYTE CHAR SHORT INT LONG})
 (def numeric-type? (conj integral-type? FLOAT DOUBLE))
 
-(def ^:const primitive-array-types
+(def ^:private ^:const primitive-array-types
   '{ints [int]
     shorts [short]
     longs [long]
@@ -64,7 +64,7 @@
 
 (declare tag->type)
 
-(defn tag->array-type [cenv tag & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
+(defn- tag->array-type [cenv tag & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
   (let [elem-type (first tag)]
     (when-let [t (tag->type cenv elem-type :throws-on-failure? throws-on-failure?)]
       (array-type t))))
@@ -104,7 +104,7 @@
            (nil? tag) nil
            :else (fail)))))
 
-(def primitive-iname->class
+(def ^:private primitive-iname->class
   {"Z" Boolean/TYPE
    "B" Byte/TYPE
    "C" Character/TYPE
@@ -129,7 +129,7 @@
 (defn type->symbol [^Type t]
   (symbol (.getClassName t)))
 
-(def primitive-type->symbol
+(def ^:private primitive-type->symbol
   {BOOLEAN 'boolean
    BYTE 'byte
    CHAR 'char
@@ -145,7 +145,7 @@
         :else (or (primitive-type->symbol t)
                   (symbol (.getClassName t)))))
 
-(def wider-primitive-types
+(def ^:private wider-primitive-types
   {BYTE #{SHORT INT LONG FLOAT}
    SHORT #{INT LONG FLOAT DOUBLE}
    CHAR #{INT LONG FLOAT DOUBLE}
@@ -153,7 +153,7 @@
    LONG #{FLOAT DOUBLE}
    FLOAT #{DOUBLE}})
 
-(def narrower-primitive-types
+(def ^:private narrower-primitive-types
   {SHORT #{BYTE CHAR}
    CHAR #{BYTE SHORT}
    INT #{BYTE SHORT CHAR}
@@ -161,13 +161,13 @@
    FLOAT #{BYTE SHORT CHAR INT LONG}
    DOUBLE #{BYTE SHORT CHAR INT LONG FLOAT}})
 
-(defn proper-primitive-super? [t1 t2]
+(defn- proper-primitive-super? [t1 t2]
   (get-in narrower-primitive-types [t1 t2]))
 
-(def CLONEABLE (Type/getType Cloneable))
-(def SERIARIZABLE (Type/getType java.io.Serializable))
+(def ^:private CLONEABLE (Type/getType Cloneable))
+(def ^:private SERIARIZABLE (Type/getType java.io.Serializable))
 
-(defn proper-reference-super? [cenv t1 t2]
+(defn- proper-reference-super? [cenv t1 t2]
   (or (= t1 OBJECT)
       (= t2 nil)
       (if (array-type? t2)
@@ -224,7 +224,7 @@
   (when (get-in narrower-primitive-types [from to])
     {:conversion :narrowing-primitive :from from :to to}))
 
-(def boxed-types
+(def ^:private boxed-types
   {BOOLEAN BOOLEAN_CLASS
    BYTE BYTE_CLASS
    CHAR CHARACTER_CLASS
@@ -234,7 +234,7 @@
    FLOAT FLOAT_CLASS
    DOUBLE DOUBLE_CLASS})
 
-(def unboxed-types
+(def ^:private unboxed-types
   (into {} (map (fn [[k v]] [v k])) boxed-types))
 
 (defn boxing-conversion [t]
@@ -330,7 +330,7 @@
                     widen (conj widen))))]
         [(f t1' unbox1) (f t2' unbox2)]))))
 
-(defn walk-class-hierarchy [^Class class f]
+(defn- walk-class-hierarchy [^Class class f]
   ;; Here we assume that a JiSE class belongs to a package other than
   ;; any package a Java class belongs to, so JiSE classes can't refer to
   ;; any non-public Java classes
@@ -342,7 +342,7 @@
                       (walk (.getSuperclass c)))))]
    (walk class)))
 
-(defn accessible-from? [caller class access]
+(defn- accessible-from? [caller class access]
   (or (:public access)
       (and (or (:private access) (:package access)) (= caller class))
       (and (:protected access) (super? class caller))))
@@ -379,7 +379,7 @@
                 (walk (type->class parent)))))
         (walk (type->class class))))))
 
-(defn remove-overridden-methods [cenv methods]
+(defn- remove-overridden-methods [cenv methods]
   (->> methods
        (reduce (fn [ms {:keys [param-types] :as m}]
                  (if-let [m' (get ms param-types)]
@@ -388,7 +388,7 @@
                {})
        vals))
 
-(defn params-compatible? [nargs nparams varargs?]
+(defn- params-compatible? [nargs nparams varargs?]
   (or (= nargs nparams)
       (and varargs? (>= nargs (dec nparams)))))
 
@@ -422,7 +422,7 @@
              (walk (type->class class)))
            (remove-overridden-methods cenv)))))
 
-(defn convert-arg-types-with [f param-types arg-types]
+(defn- convert-arg-types-with [f param-types arg-types]
   (->> (map vector arg-types param-types)
        (reduce (fn [acc [at pt]]
                  (if-let [cs (f at pt)]
@@ -465,7 +465,7 @@
                                           (drop (dec nparams) arg-types))
               (assoc method :conversions cs)))))))
 
-(defn maximally-specific-methods [cenv methods]
+(defn- maximally-specific-methods [cenv methods]
   (filter (fn [m1]
             (every? (fn [m2]
                       (->> (map vector (:param-types m1) (:param-types m2))
@@ -473,7 +473,7 @@
                     methods))
           methods))
 
-(defn filter-methods [cenv arg-types methods]
+(defn- filter-methods [cenv arg-types methods]
   (let [{fixed-arity's false, variable-arity's true} (group-by #(boolean (:varargs (:access %))) methods)
         filter-with #(seq (keep (partial %1 cenv arg-types) %2))]
     (some->> (or (filter-with strict-invocation-conversion fixed-arity's)

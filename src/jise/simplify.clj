@@ -26,12 +26,12 @@
                                value))))
         :else nil))
 
-(defn simplify-exprs [cenv exprs]
+(defn- simplify-exprs [cenv exprs]
   (let [exprs' (map (partial simplify cenv) exprs)]
     (when-not (some nil? exprs')
       exprs')))
 
-(defn simplify-arithmetic [cenv [_ & args] op]
+(defn- simplify-arithmetic [cenv [_ & args] op]
   (if-some [args' (simplify-exprs cenv args)]
     (let [res (apply op args')]
       (if (boolean? res)
@@ -94,7 +94,7 @@
 (defmethod simplify* '>= [cenv expr]
   (simplify-arithmetic cenv expr >=))
 
-(defn simplify-shift [cenv [_ expr1 expr2] op]
+(defn- simplify-shift [cenv [_ expr1 expr2] op]
   (when-some [[expr1' expr2'] (simplify-exprs cenv [expr1 expr2])]
     (cond-> (op expr1' expr2)
       (instance? Integer expr1')
@@ -109,7 +109,7 @@
 (defmethod simplify* '>>> [cenv expr]
   (simplify-shift cenv expr unsigned-bit-shift-right))
 
-(defn simplify-cast [cenv [_ expr] op]
+(defn- simplify-cast [cenv [_ expr] op]
   (when-let [expr' (simplify cenv expr)]
     (op expr')))
 

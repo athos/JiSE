@@ -7,17 +7,17 @@
   (:import [clojure.asm Type]
            [clojure.java.api Clojure]))
 
-(def ^:dynamic *line* nil)
-(def ^:dynamic *column* nil)
+(def ^:private ^:dynamic *line* nil)
+(def ^:private ^:dynamic *column* nil)
 
-(defmacro with-line&column-of [x & body]
+(defmacro ^:private with-line&column-of [x & body]
   `(let [{line# :line column# :column} (meta ~x)]
      (if (and line# column#)
        (binding [*line* line# *column* column#]
          ~@body)
        (do ~@body))))
 
-(defn stringify-type [t]
+(defn- stringify-type [t]
   (if (nil? t)
     "<null>"
     (str (t/type->tag t))))
@@ -32,10 +32,10 @@
                   (stringify-type ~actual)
                   (stringify-type ~expected))))
 
-(defn modifiers-of [[_ name :as form]]
+(defn- modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
 
-(defn access-flags [modifiers]
+(defn- access-flags [modifiers]
   (let [access (-> modifiers
                    (select-keys [:abstract :static :public :protected :private :final :transient :volatile])
                    keys
@@ -55,21 +55,21 @@
 
         (error (str "cannot resolve type " (pr-str tag)) {:unresolved-type tag})))))
 
-(defn parse-modifiers
+(defn- parse-modifiers
   [proto-cenv {:keys [tag] :as modifiers} & {:keys [default-type allow-vararg-param?]}]
   {:type (if (nil? tag)
            (or default-type t/OBJECT)
            (resolve-type proto-cenv tag :allow-vararg-param-type? allow-vararg-param?))
    :access (access-flags modifiers)})
 
-(defn field-init-value
+(defn- field-init-value
   ([field]
    (let [access (access-flags (modifiers-of field))]
      (field-init-value access field)))
   ([access [_ _ value :as field]]
    (and (:static access) value (simp/simplify {} value))))
 
-(defn parse-field [proto-cenv [_ fname value :as field]]
+(defn- parse-field [proto-cenv [_ fname value :as field]]
   (let [modifiers (modifiers-of field)
         {:keys [access type]} (parse-modifiers proto-cenv modifiers)
         value' (field-init-value access field)]
@@ -79,7 +79,7 @@
       value'
       (assoc :value value'))))
 
-(defn context-of [{:keys [context]}]
+(defn- context-of [{:keys [context]}]
   (if (:conditional context)
     (-> context (conj :expression) (disj :conditional))
     context))
@@ -92,7 +92,7 @@
          (cond-> (context-of y)
            (not (nil? return?)) ((if return? conj disj) :return))))
 
-(defn first-meaningful-node [node]
+(defn- first-meaningful-node [node]
   (if (= (:op node) :do)
     (recur (first (:exprs node)))
     node))
@@ -121,7 +121,7 @@
 (defn find-lname [cenv sym]
   (get (:lenv cenv) (name sym)))
 
-(defn find-var [cenv sym]
+(defn- find-var [cenv sym]
   (when-let [var (resolve sym)]
     (when-not (:macro (meta var))
       (let [vname (symbol (subs (str var) 2))]
@@ -136,7 +136,7 @@
                              (update :fields conj (name field-name)))))))
             (get-in [:var->entry vname]))))))
 
-(def VAR_TYPE (Type/getType clojure.lang.Var))
+(def ^:private VAR_TYPE (Type/getType clojure.lang.Var))
 
 (defn find-field [cenv class fname]
   (or (t/find-field cenv (:class-type cenv) class fname)
@@ -146,7 +146,7 @@
 
 (declare parse-expr parse-method-invocation)
 
-(defn parse-sugar [{:keys [class-type] :as cenv} [op :as expr]]
+(defn- parse-sugar [{:keys [class-type] :as cenv} [op :as expr]]
   (or (when-let [maybe-array (or (find-lname cenv op)
                                  (find-field cenv class-type (str op)))]
         (if (t/array-type? (:type maybe-array))
@@ -168,7 +168,7 @@
       (or (parse-sugar cenv expr)
           (error (str "unsupported expression: " (pr-str expr)) {:expr expr})))))
 
-(defn parse-symbol [cenv sym]
+(defn- parse-symbol [cenv sym]
   (if-let [tag (:tag (meta sym))]
     (parse-expr cenv `(~'cast ~tag ~(vary-meta sym dissoc :tag)))
     (letfn [(parse-as-field [cenv target]
@@ -187,7 +187,7 @@
               (parse-as-field cenv target))
             (error (str "cannot find symbol: " sym) {:variable sym})))))))
 
-(defn parse-seq [cenv expr]
+(defn- parse-seq [cenv expr]
   (if-let [tag (:tag (meta expr))]
     (parse-expr cenv `(~'cast ~tag ~(vary-meta expr dissoc :tag)))
     (let [{:keys [tag line label]} (meta expr)
@@ -242,7 +242,7 @@
           (conv expr')))
       expr')))
 
-(defn  parse-exprs [cenv body]
+(defn parse-exprs [cenv body]
   (let [cenv' (with-context cenv :statement)
         exprs' (mapv parse-expr (repeat cenv') (butlast body))
         last' (parse-expr cenv (last body))]
@@ -250,7 +250,7 @@
          :exprs (conj exprs' last')}
         (inherit-context cenv :return? false))))
 
-(defn parse-name [proto-cenv name & {:keys [default-type allow-vararg-param?]}]
+(defn- parse-name [proto-cenv name & {:keys [default-type allow-vararg-param?]}]
   (let [{:keys [access type]} (parse-modifiers proto-cenv (meta name)
                                                :default-type default-type
                                                :allow-vararg-param? allow-vararg-param?)]
@@ -258,10 +258,10 @@
      :type type
      :access access}))
 
-(defn next-index [cenv type]
+(defn- next-index [cenv type]
   (first (swap-vals! (:next-index cenv) + (t/type-category type))))
 
-(defn parse-binding [cenv lname init allow-vararg-param?]
+(defn- parse-binding [cenv lname init allow-vararg-param?]
   (let [init' (some->> init (parse-expr (with-context cenv :expression)))
         lname' (parse-name cenv lname
                            :default-type (:type init')
@@ -272,7 +272,7 @@
         (assoc :index (next-index cenv (:type lname')))
         (cond-> init' (assoc :init init')))))
 
-(defn parse-bindings [cenv bindings & {:keys [method-params?]}]
+(defn- parse-bindings [cenv bindings & {:keys [method-params?]}]
   (loop [[lname init & bindings] bindings
          cenv' (with-context cenv :expression)
          allow-vararg-param? false
@@ -294,7 +294,7 @@
 
 (declare parse-ctor-invocation)
 
-(defn inject-ctor-invocation [cenv body]
+(defn- inject-ctor-invocation [cenv body]
   (or (when-let [node (first-meaningful-node body)]
         (when-not (= (:op node) :ctor-invocation)
           (let [non-empty? (not (and (= (:op node) :null) (:return (:context node))))
@@ -306,7 +306,7 @@
                 (inherit-context cenv :return? false)))))
       body))
 
-(defn parse-method [cenv ctor? [_ mname args & body :as method]]
+(defn- parse-method [cenv ctor? [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
         {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
         init-lenv (if (:static access)
@@ -336,7 +336,7 @@
       (some #{'&} args) (update :access conj :varargs)
       (not ctor?) (assoc :name (str mname)))))
 
-(defn parse-supers [proto-cenv [maybe-supers & body]]
+(defn- parse-supers [proto-cenv [maybe-supers & body]]
   (let [supers (when (vector? maybe-supers) maybe-supers)
         supers' (map (partial resolve-type proto-cenv) supers)
         {[parent] false
@@ -345,7 +345,7 @@
      :interfaces interfaces
      :body (cond->> body (nil? supers) (cons maybe-supers))}))
 
-(defn class-alias [cname]
+(defn- class-alias [cname]
   (symbol (str/replace cname #"^.*\.([^.]+)" "$1")))
 
 (defn convert-def-to-set [alias [_ name init :as def]]
@@ -356,7 +356,7 @@
                      ~init)
         static? (with-meta {:static true})))))
 
-(defn parse-class-body [cname body]
+(defn- parse-class-body [cname body]
   (let [alias (class-alias cname)]
     (loop [decls body
            ret {:ctors [], :fields [], :methods [], :initializer []}]
@@ -384,7 +384,7 @@
                 (recur decls ret)))
             (recur decls ret)))))))
 
-(defn parse-method-signature [proto-cenv [_ name args :as method]]
+(defn- parse-method-signature [proto-cenv [_ name args :as method]]
   (let [modifiers (modifiers-of method)
         {:keys [type access]} (parse-modifiers proto-cenv modifiers :default-type t/VOID)
         varargs? (volatile! false)
@@ -402,7 +402,7 @@
      :return-type type
      :param-types param-types}))
 
-(defn init-cenv [proto-cenv cname parent interfaces fields ctors methods initializer]
+(defn- init-cenv [proto-cenv cname parent interfaces fields ctors methods initializer]
   (let [fields' (into {} (map (fn [[_ name :as field]]
                                 (with-line&column-of field
                                   [(str name) (parse-field proto-cenv field)])))
@@ -422,7 +422,7 @@
                       :fields fields' :ctors ctors' :methods methods'}]
     (assoc-in proto-cenv [:classes cname] class-entry)))
 
-(defn filter-static [exprs]
+(defn- filter-static [exprs]
   (reduce (fn [ret expr]
             (let [k (if (:static (modifiers-of expr))
                       :static
@@ -431,7 +431,7 @@
           {:static [] :non-static []}
           exprs))
 
-(defn synthesize-fields [{:keys [enclosing-env vars]}]
+(defn- synthesize-fields [{:keys [enclosing-env vars]}]
   (as-> [] fields
     (reduce (fn [fields [name {:keys [type used?]}]]
               (if @used?
@@ -490,13 +490,13 @@
   `(error (format "bad operand type %s for unary operator '%s'"
                   (stringify-type ~t) ~op-name)))
 
-(defn ensure-numeric [cenv x op-name]
+(defn- ensure-numeric [cenv x op-name]
   (if-let [cs (t/unary-numeric-promotion (:type x))]
     (-> (apply-conversions cs x)
         (inherit-context cenv))
     (error-on-bad-operand-type op-name (:type x))))
 
-(defn parse-unary-op [cenv [op-name x] op]
+(defn- parse-unary-op [cenv [op-name x] op]
   (let [cenv' (with-context cenv :expression)
         x' (ensure-numeric cenv' (parse-expr cenv' x) op-name)]
     (-> {:op op
@@ -509,7 +509,7 @@
                "  first type: " (stringify-type ~t1) "\n"
                "  second type: " (stringify-type ~t2))))
 
-(defn parse-binary-op
+(defn- parse-binary-op
   ([cenv [op-name x y] op]
    (let [cenv' (with-context cenv :expression)
          lhs (parse-expr cenv' x)
@@ -523,15 +523,15 @@
          (inherit-context cenv))
      (error-on-bad-operand-types op-name (:type lhs) (:type rhs)))))
 
-(defn parse-arithmetic [cenv expr op]
+(defn- parse-arithmetic [cenv expr op]
   (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op)]
     (assoc ret :type (:type lhs))))
 
-(defn coerce-to-primitive [cenv [op x]]
+(defn- coerce-to-primitive [cenv [op x]]
   (let [cenv' (with-context cenv :expression)]
     (ensure-numeric cenv (parse-expr cenv' x) op)))
 
-(defn fold-binary-op [[op x y & more :as expr]]
+(defn- fold-binary-op [[op x y & more :as expr]]
   (if more
     (recur (with-meta `(~op (~op ~x ~y) ~@more) (meta expr)))
     expr))
@@ -597,7 +597,7 @@
   (ensure-sufficient-arguments 1 expr)
   (parse-expr cenv (with-meta `(~'xor ~operand -1) (meta expr))))
 
-(defn parse-shift [cenv [op-name x y :as expr] op]
+(defn- parse-shift [cenv [op-name x y :as expr] op]
   (ensure-sufficient-arguments 2 expr)
   (let [cenv' (with-context cenv :expression)
         lhs (parse-expr cenv' x)
@@ -625,7 +625,7 @@
 (defmethod parse-expr* '>>> [cenv expr]
   (parse-shift cenv expr :logical-shift-right))
 
-(defn parse-equal [cenv lhs rhs op op-name]
+(defn- parse-equal [cenv lhs rhs op op-name]
   (if (and (not (t/numeric-type? (:type lhs)))
            (not (t/numeric-type? (:type rhs))))
     (if-let [[lhs' rhs'] (or (when-let [cs (t/casting-conversion cenv (:type lhs) (:type rhs))]
@@ -640,12 +640,12 @@
     (-> (parse-binary-op cenv lhs rhs op op-name)
         (assoc :type t/BOOLEAN))))
 
-(defn fold-comparison [[op & args :as expr]]
+(defn- fold-comparison [[op & args :as expr]]
   (with-meta
     `(~'and ~@(map (fn [[x y]] `(~op ~x ~y)) (partition 2 1 args)))
     (meta expr)))
 
-(defn parse-comparison
+(defn- parse-comparison
   ([cenv [op-name x y & more :as expr] op]
    (if (:conditional (:context cenv))
      (if more
@@ -661,7 +661,7 @@
      (-> (parse-binary-op cenv lhs rhs op op-name)
          (assoc :type t/BOOLEAN)))))
 
-(defn parse-cmp-0 [cenv x y op default-op default-op-name default]
+(defn- parse-cmp-0 [cenv x y op default-op default-op-name default]
   (let [x=0? (= x 0)
         z (if x=0? y x)]
     (if (= z 0)
@@ -676,7 +676,7 @@
                 [x' y'] (if x=0? [zero z'] [z' zero])]
             (parse-comparison cenv' x' y' default-op default-op-name)))))))
 
-(defn parse-eq-null [cenv x y op op-name default]
+(defn- parse-eq-null [cenv x y op op-name default]
   (let [x-nil? (nil? x)
         z (if x-nil? y x)]
     (if (nil? z)
@@ -727,7 +727,7 @@
     (parse-cmp-0 cenv x y :ge-0 :ge '>= true)
     (parse-comparison cenv expr :ge)))
 
-(defn unbox-if-needed [x]
+(defn- unbox-if-needed [x]
   (if-let [cs (t/unboxing-conversion (:type x))]
     (apply-conversions cs x)
     x))
@@ -749,7 +749,7 @@
          :exprs exprs'}))
     (parse-expr cenv `(if ~expr true false))))
 
-(defn negate-expr [{:keys [op] :as expr}]
+(defn- negate-expr [{:keys [op] :as expr}]
   (case op
     :not (:expr expr)
     :and {:op :or
@@ -790,7 +790,7 @@
         (error-on-bad-operand-type 'not type)))
     (parse-expr cenv `(if ~expr true false))))
 
-(defn parse-cast [cenv type x]
+(defn- parse-cast [cenv type x]
   (let [cenv' (with-context cenv :expression)]
     (ensure-type cenv type (parse-expr cenv' x) :context :casting)))
 
@@ -880,7 +880,7 @@
 (defmethod parse-expr* 'let [cenv expr]
   (parse-expr cenv (with-meta `(let* ~@(rest expr)) (meta expr))))
 
-(defn parse-field-update [cenv {:keys [field] :as lhs} rhs]
+(defn- parse-field-update [cenv {:keys [field] :as lhs} rhs]
   (cond (and (:final (:access field))
              (some-> (:initialized? field) deref))
         (error (str "cannot assign a value to final variable " (:name field)))
@@ -925,7 +925,7 @@
                :rhs rhs}
               (inherit-context cenv)))))))
 
-(defn parse-increment [cenv target by max-value default-op op-name]
+(defn- parse-increment [cenv target by max-value default-op op-name]
   (let [by (or by 1)
         {:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
     (when-not (t/numeric-type? type)
@@ -970,7 +970,7 @@
                 (inherit-context cenv :return? false))
             (inherit-context node cenv)))))
 
-(defn parse-case-clause [cenv sym [ks expr]]
+(defn- parse-case-clause [cenv sym [ks expr]]
   (let [ks (if (seq? ks) (vec ks) [ks])
         str? (string? (first ks))
         ks' (cond->> ks str? (mapv #(.hashCode ^String %)))
@@ -1012,7 +1012,7 @@
                      (meta expr)))]
       (parse-expr cenv form))))
 
-(defn extract-label [expr]
+(defn- extract-label [expr]
   (:label (meta expr)))
 
 (defmethod parse-expr* 'while [cenv [_ cond & body :as expr]]
@@ -1059,17 +1059,17 @@
                (cond-> label (assoc :label label)))}
           (inherit-context cenv :return? false)))))
 
-(defn seq-prefixed-with? [prefix x]
+(defn- seq-prefixed-with? [prefix x]
   (and (seq? x) (= (first x) prefix)))
 
-(defn append-finally [cenv finally-clause exprs]
+(defn- append-finally [cenv finally-clause exprs]
   (if finally-clause
     (if (:expression (context-of cenv))
       `(let* [v# (do ~@exprs)] ~@finally-clause v#)
       `(do ~@exprs ~@finally-clause))
     `(do ~@exprs)))
 
-(defn parse-catch-clause [cenv finally-clause [_ class lname & body]]
+(defn- parse-catch-clause [cenv finally-clause [_ class lname & body]]
   (let [class' (resolve-type cenv class)
         [cenv' [b]] (parse-bindings cenv [(with-meta lname {:tag class}) nil])
         body' (parse-expr cenv' (append-finally cenv finally-clause body))]
@@ -1116,7 +1116,7 @@
           x'))
       (error-on-incompatible-types t/INT (:type x))))
 
-(defn parse-array-creation [cenv type' [_ type & args :as expr]]
+(defn- parse-array-creation [cenv type' [_ type & args :as expr]]
   (if (vector? (first args))
     (let [elems (first args)
           arr (gensym)
@@ -1134,7 +1134,7 @@
            :lengths (map #(ensure-numeric-int cenv' (parse-expr cenv' %)) args)}
           (inherit-context cenv)))))
 
-(defn args-for [cenv {:keys [param-types] :as ctor-or-method} args args']
+(defn- args-for [cenv {:keys [param-types] :as ctor-or-method} args args']
   (let [ncs (count (:conversions ctor-or-method))
         varargs (when (not= (count param-types) ncs)
                   (let [vararg-type (peek param-types)
@@ -1159,7 +1159,7 @@
                :args (args-for cenv' ctor args args')}
               (inherit-context cenv)))))))
 
-(defn parse-ctor-invocation [cenv [op & args]]
+(defn- parse-ctor-invocation [cenv [op & args]]
   (let [super? (= (misc/symbol-without-jise-ns op) 'super)
         cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
@@ -1185,7 +1185,7 @@
 (defmethod parse-expr* 'super [cenv expr]
   (parse-ctor-invocation cenv expr))
 
-(defn parse-field-access [cenv target target-type fname]
+(defn- parse-field-access [cenv target target-type fname]
   (if (and (t/array-type? target-type) (= fname "length"))
     (-> {:op :array-length
          :type t/INT
@@ -1207,7 +1207,7 @@
               (inherit-context cenv)
               (cond-> target (assoc :target target))))))))
 
-(defn parse-method-invocation [cenv target target-type mname args]
+(defn- parse-method-invocation [cenv target target-type mname args]
   (let [cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
         methods (t/find-methods cenv (:class-type cenv) target-type mname (map :type args'))]
@@ -1240,7 +1240,7 @@
               (parse-field-access cenv target' target-type pname)
               (throw (ex-info (str "No such method: " pname) {:name pname}))))))))
 
-(defn fold-aget [[_ arr index & indices :as expr]]
+(defn- fold-aget [[_ arr index & indices :as expr]]
   (if (empty? indices)
     expr
     (recur (with-meta `(~'aget (~'aget ~arr ~index) ~@indices) (meta expr)))))
