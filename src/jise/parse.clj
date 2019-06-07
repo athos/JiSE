@@ -1147,6 +1147,8 @@
 
 (defmethod parse-expr* 'new [cenv [_ type & args :as expr]]
   (let [type' (resolve-type cenv type)]
+    (when (t/primitive-type? type')
+      (error (str (stringify-type type') " cannot be instantiated")))
     (if (t/array-type? type')
       (parse-array-creation cenv type' expr)
       (let [cenv' (with-context cenv :expression)
@@ -1233,6 +1235,8 @@
                     (parse-expr cenv' target))
           target-type (or (:type target') (resolve-type cenv target))
           pname (name property)]
+      (when (t/primitive-type? target-type)
+        (error (str (stringify-type target-type) " cannot be dereferenced")))
       (if (str/starts-with? pname "-")
         (parse-field-access cenv target' target-type (subs pname 1))
         (or (parse-method-invocation cenv target' target-type pname maybe-args)
