@@ -297,7 +297,7 @@
 (defn inject-ctor-invocation [cenv body]
   (or (when-let [node (first-meaningful-node body)]
         (when-not (= (:op node) :ctor-invocation)
-          (let [non-empty? (and (= (:op node) :null) (:return (:context node)))
+          (let [non-empty? (not (and (= (:op node) :null) (:return (:context node))))
                 cenv' (cond-> cenv non-empty? (with-context :statement))]
             (-> {:op :do :type (:type body)
                  :exprs (cond-> [(parse-ctor-invocation cenv' '(super))]
