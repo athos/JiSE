@@ -1169,11 +1169,15 @@
         ctors (t/find-ctors cenv (:class-type cenv) class (map :type args'))
         initializer (when super? (find-in-current-class cenv :initializer))]
     (when-let [ctor (first ctors)]
-      (-> {:op :ctor-invocation
-           :ctor (assoc ctor :class class)
-           :args (args-for cenv' ctor args args')}
-          (inherit-context (cond-> cenv initializer (with-context :statement)))
-          (cond-> initializer (assoc :initializer (parse-expr cenv initializer)))))))
+      (let [node {:op :ctor-invocation
+                  :ctor (assoc ctor :class class)
+                  :args (args-for cenv' ctor args args')}]
+        (if initializer
+          (-> {:op :do
+               :exprs [(with-context node :statement)
+                       (parse-expr cenv initializer)]}
+              (inherit-context cenv :return? false))
+          (inherit-context node cenv))))))
 
 (defmethod parse-expr* 'this [cenv expr]
   (parse-ctor-invocation cenv expr))

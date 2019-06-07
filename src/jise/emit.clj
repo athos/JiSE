@@ -64,9 +64,7 @@
     (doseq [arg args]
       (emit-expr emitter arg))
     (emit-line emitter line)
-    (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)
-    (when initializer
-      (emit-expr emitter initializer))))
+    (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
 
 (defn emit-method
   [^ClassWriter cw parent {:keys [name access return-type args body static-initializer? ctor? varargs?]}]
