@@ -1200,7 +1200,7 @@
                :field (assoc field :class (:class-type cenv) :name fname)
                :target target}
               (inherit-context cenv)))
-      (let [{:keys [access] :as field} (find-field cenv target-type fname)]
+      (when-let [{:keys [access] :as field} (find-field cenv target-type fname)]
         (if (and (:final access) (contains? field :value))
           (parse-literal cenv (:value field))
           (-> {:op :field-access
@@ -1237,12 +1237,12 @@
           pname (name property)]
       (when (t/primitive-type? target-type)
         (error (str (stringify-type target-type) " cannot be dereferenced")))
-      (if (str/starts-with? pname "-")
-        (parse-field-access cenv target' target-type (subs pname 1))
-        (or (parse-method-invocation cenv target' target-type pname maybe-args)
-            (if (empty? maybe-args)
-              (parse-field-access cenv target' target-type pname)
-              (throw (ex-info (str "No such method: " pname) {:name pname}))))))))
+      (or (if (str/starts-with? pname "-")
+            (parse-field-access cenv target' target-type (subs pname 1))
+            (or (parse-method-invocation cenv target' target-type pname maybe-args)
+                (when (empty? maybe-args)
+                  (parse-field-access cenv target' target-type pname))))
+          (error (str "cannot find symbol: " (str/replace pname #"^-" "")))))))
 
 (defn- fold-aget [[_ arr index & indices :as expr]]
   (if (empty? indices)
