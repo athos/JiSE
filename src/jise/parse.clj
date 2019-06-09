@@ -1145,6 +1145,23 @@
       varargs
       (conj varargs))))
 
+(defn- handle-ctor-error [class arg-types e]
+  (if-let [cause (:cause (ex-data e))]
+    (let [class-name (stringify-type class)]
+      (-> (case cause
+            :no-such-target
+            (format "cannot find symbol: method %s(%s)" class-name
+                    (str/join "," (map stringify-type arg-types)))
+            :args-length-mismatch
+            (str "constructor " class-name " in class " class-name
+                 " cannot be applied to given types")
+            :arg-type-mismatch
+            (format "no suitable constructor found for %s(%s)"
+                    class-name (str/join "," (map stringify-type arg-types)))
+            (ex-message e))
+          (error (dissoc (ex-data e) :cause))))
+    (throw e)))
+
 (defmethod parse-expr* 'new [cenv [_ type & args :as expr]]
   (let [type' (resolve-type cenv type)]
     (when (t/primitive-type? type')
@@ -1153,13 +1170,16 @@
       (parse-array-creation cenv type' expr)
       (let [cenv' (with-context cenv :expression)
             args' (map (partial parse-expr cenv') args)
-            ctors (t/find-ctors cenv (:class-type cenv) type' (map :type args'))]
-        (when-let [ctor (first ctors)]
-          (-> {:op :new
-               :type type'
-               :ctor (assoc ctor :class type')
-               :args (args-for cenv' ctor args args')}
-              (inherit-context cenv)))))))
+            arg-types (map :type args')
+            ctors (try
+                    (t/find-ctors cenv (:class-type cenv) type' arg-types)
+                    (catch Exception e (handle-ctor-error type' arg-types e)))
+            ctor (first ctors)]
+        (-> {:op :new
+             :type type'
+             :ctor (assoc ctor :class type')
+             :args (args-for cenv' ctor args args')}
+            (inherit-context cenv))))))
 
 (defn- parse-ctor-invocation [cenv [op & args]]
   (let [super? (= (misc/symbol-without-jise-ns op) 'super)
@@ -1168,18 +1188,21 @@
         class (if super?
                 (find-in-current-class cenv :parent)
                 (:class-type cenv))
-        ctors (t/find-ctors cenv (:class-type cenv) class (map :type args'))
-        initializer (when super? (find-in-current-class cenv :initializer))]
-    (when-let [ctor (first ctors)]
-      (let [node {:op :ctor-invocation
-                  :ctor (assoc ctor :class class)
-                  :args (args-for cenv' ctor args args')}]
-        (if initializer
-          (-> {:op :do
-               :exprs [(with-context node :statement)
-                       (parse-expr cenv initializer)]}
-              (inherit-context cenv :return? false))
-          (inherit-context node cenv))))))
+        arg-types (map :type args')
+        ctors (try
+                (t/find-ctors cenv (:class-type cenv) class arg-types)
+                (catch Exception e (handle-ctor-error class arg-types e)))
+        ctor (first ctors)
+        initializer (when super? (find-in-current-class cenv :initializer))
+        node {:op :ctor-invocation
+              :ctor (assoc ctor :class class)
+              :args (args-for cenv' ctor args args')}]
+    (if initializer
+      (-> {:op :do
+           :exprs [(with-context node :statement)
+                   (parse-expr cenv initializer)]}
+          (inherit-context cenv :return? false))
+      (inherit-context node cenv))))
 
 (defmethod parse-expr* 'this [cenv expr]
   (parse-ctor-invocation cenv expr))
