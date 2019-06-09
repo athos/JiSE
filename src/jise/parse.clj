@@ -1200,19 +1200,40 @@
                :field (assoc field :class (:class-type cenv) :name fname)
                :target target}
               (inherit-context cenv)))
-      (when-let [{:keys [access] :as field} (find-field cenv target-type fname)]
+      (if-let [{:keys [access] :as field} (find-field cenv target-type fname)]
         (if (and (:final access) (contains? field :value))
           (parse-literal cenv (:value field))
           (-> {:op :field-access
                :type (:type field)
                :field (assoc field :name fname)}
               (inherit-context cenv)
-              (cond-> target (assoc :target target))))))))
+              (cond-> target (assoc :target target))))
+        (error (str "cannot find symbol: variable " fname))))))
+
+(defn- handle-method-error [class name arg-types e]
+  (if-let [cause (:cause (ex-data e))]
+    (-> (case cause
+          :no-such-target
+          (format "cannot find symbol: method %s(%s)"
+                  name (str/join "," (map stringify-type arg-types)))
+          :args-length-mismatch
+          (str "method " name " in class " (stringify-type class)
+               " cannot be applied to given types")
+          :arg-type-mismatch
+          (format "no suitable method found for %s(%s)"
+                  name (str/join "," (map stringify-type arg-types)))
+          (ex-message e))
+        (error (dissoc (ex-data e) :cause)))
+    (throw e)))
 
 (defn- parse-method-invocation [cenv target target-type mname args]
   (let [cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
-        methods (t/find-methods cenv (:class-type cenv) target-type mname (map :type args'))]
+        arg-types (map :type args')
+        methods (try
+                  (t/find-methods cenv (:class-type cenv) target-type mname arg-types)
+                  (catch Exception e
+                    (handle-method-error target-type mname arg-types e)))]
     (when-let [method (first methods)]
       (let [target' (if (and (nil? target) (not (:static (:access method))))
                       (parse-expr cenv' 'this)
@@ -1237,12 +1258,16 @@
           pname (name property)]
       (when (t/primitive-type? target-type)
         (error (str (stringify-type target-type) " cannot be dereferenced")))
-      (or (if (str/starts-with? pname "-")
-            (parse-field-access cenv target' target-type (subs pname 1))
-            (or (parse-method-invocation cenv target' target-type pname maybe-args)
-                (when (empty? maybe-args)
-                  (parse-field-access cenv target' target-type pname))))
-          (error (str "cannot find symbol: " (str/replace pname #"^-" "")))))))
+      (if (str/starts-with? pname "-")
+        (parse-field-access cenv target' target-type (subs pname 1))
+        (try
+          (parse-method-invocation cenv target' target-type pname maybe-args)
+          (catch Exception e
+            (if (empty? maybe-args)
+              (try
+                (parse-field-access cenv target' target-type pname)
+                (catch Exception _ (throw e)))
+              (throw e))))))))
 
 (defn- fold-aget [[_ arr index & indices :as expr]]
   (if (empty? indices)
