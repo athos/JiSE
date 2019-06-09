@@ -392,7 +392,7 @@
   (or (= nargs nparams)
       (and varargs? (>= nargs (dec nparams)))))
 
-(defn get-methods [cenv caller class name nargs]
+(defn get-methods [cenv caller class name]
   (let [class-name (type->symbol class)
         name' (munge name)]
     (letfn [(method->map [^Class c ^Method m]
@@ -407,15 +407,13 @@
               (walk-class-hierarchy c
                 (fn [^Class c]
                   (keep (fn [^Method m]
-                          (when (and (= (.getName m) name')
-                                     (params-compatible? nargs (.getParameterCount m) (.isVarArgs m)))
+                          (when (= (.getName m) name')
                             (method->map c m)))
                         (.getDeclaredMethods c)))))]
       (->> (if-let [entry (get-in cenv [:classes class-name])]
              (concat (->> (get-in entry [:methods name])
-                          (keep (fn [{:keys [param-types access] :as m}]
-                                  (when (and (accessible-from? caller class access)
-                                             (params-compatible? nargs (count param-types) (:varargs access)))
+                          (keep (fn [{:keys [access] :as m}]
+                                  (when (accessible-from? caller class access)
                                     (assoc m :class class)))))
                      (mapcat (comp walk type->class) (:interfaces entry))
                      (walk (type->class (:parent entry))))
@@ -481,27 +479,43 @@
                  (filter-with variable-arity-invocation-conversion variable-arity's))
              (maximally-specific-methods cenv))))
 
+(defn- ensure-not-empty
+  ([cause message methods]
+   (ensure-not-empty cause message {} methods))
+  ([cause message info methods]
+   (when (empty? methods)
+     (throw (ex-info message (assoc info :cause cause))))
+   methods))
+
 (defn find-methods
   ([caller class name arg-types]
    (find-methods {} caller class name arg-types))
-  ([cenv caller class name arg-types]
-   (->> (get-methods cenv caller class name (count arg-types))
-        (filter-methods cenv arg-types))))
+  ([cenv caller class name arg-types
+    & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
+   (let [nargs (count arg-types)]
+     (as-> (get-methods cenv caller class name) ms
+       (ensure-not-empty :no-such-target "no such method" ms)
+       (filter (fn [{:keys [param-types access]}]
+                 (params-compatible? nargs (count param-types) (:varargs access)))
+               ms)
+       (ensure-not-empty :args-length-mismatch "args length mismatch"
+                         {:alternatives ms} ms)
+       (filter-methods cenv arg-types ms)
+       (ensure-not-empty :arg-type-mismatch "arg type mismatch"
+                         {:alternatives ms} ms)
+       (seq ms)))))
 
-(defn get-ctors [cenv caller class nargs]
+(defn get-ctors [cenv caller class]
   (let [class-name (type->symbol class)]
     (or (->> (get-in cenv [:classes class-name :ctors])
-             (filter (fn [{:keys [param-types access]}]
-                       (and (accessible-from? caller class access)
-                            (params-compatible? nargs (count param-types) (:varargs access)))))
+             (filter (fn [{:keys [access]}]
+                       (accessible-from? caller class access)))
              seq)
         (->> (.getDeclaredConstructors (type->class class))
              (keep (fn [^Constructor ctor]
                      (let [access (modifiers->access-flags (.getModifiers ctor))
-                           nparams (.getParameterCount ctor)
                            varargs? (.isVarArgs ctor)]
-                       (when (and (accessible-from? caller class access)
-                                  (params-compatible? nargs nparams varargs?))
+                       (when (accessible-from? caller class access)
                          {:param-types (mapv class->type (.getParameterTypes ctor))
                           :access (cond-> access varargs? (conj :varargs))}))))
              seq))))
@@ -509,6 +523,17 @@
 (defn find-ctors
   ([caller class arg-types]
    (find-ctors {} caller class arg-types))
-  ([cenv caller class arg-types]
-   (some->> (get-ctors cenv caller class (count arg-types))
-            (filter-methods cenv arg-types))))
+  ([cenv caller class arg-types
+    & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
+   (let [nargs (count arg-types)]
+     (as-> (get-ctors cenv caller class) ms
+       (ensure-not-empty :no-such-target "no such ctor" ms)
+       (filter (fn [{:keys [param-types access]}]
+                 (params-compatible? nargs (count param-types) (:varargs access)))
+               ms)
+       (ensure-not-empty :args-length-mismatch "args length mismatch"
+                         {:alternatives ms} ms)
+       (filter-methods cenv arg-types ms)
+       (ensure-not-empty :arg-type-mismatch "arg type mismatch"
+                         {:alternatives ms} ms)
+       (seq ms)))))

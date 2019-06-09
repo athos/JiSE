@@ -152,7 +152,7 @@
         (if (t/array-type? (:type maybe-array))
           (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))
           (error (format "array required, but %s found" (stringify-type (:type maybe-array))))))
-      (when (t/get-methods cenv class-type class-type (str op) (count (rest expr)))
+      (when (t/get-methods cenv class-type class-type (str op))
         (parse-method-invocation cenv nil class-type (str op) (rest expr)))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
         (when-not (:macro (meta var))
