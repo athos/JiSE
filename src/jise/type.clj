@@ -495,14 +495,12 @@
    (let [nargs (count arg-types)]
      (as-> (get-methods cenv caller class name) ms
        (ensure-not-empty :no-such-target "no such method" ms)
-       (filter (fn [{:keys [param-types access]}]
-                 (params-compatible? nargs (count param-types) (:varargs access)))
-               ms)
-       (ensure-not-empty :args-length-mismatch "args length mismatch"
-                         {:alternatives ms} ms)
-       (filter-methods cenv arg-types ms)
-       (ensure-not-empty :arg-type-mismatch "arg type mismatch"
-                         {:alternatives ms} ms)
+       (->> (filter (fn [{:keys [param-types access]}]
+                      (params-compatible? nargs (count param-types) (:varargs access)))
+                    ms)
+            (ensure-not-empty :args-length-mismatch "args length mismatch" {:alternatives ms}))
+       (->> (filter-methods cenv arg-types ms)
+            (ensure-not-empty :arg-type-mismatch "arg type mismatch" {:alternatives ms}))
        (seq ms)))))
 
 (defn get-ctors [cenv caller class]
@@ -528,12 +526,10 @@
    (let [nargs (count arg-types)]
      (as-> (get-ctors cenv caller class) ms
        (ensure-not-empty :no-such-target "no such ctor" ms)
-       (filter (fn [{:keys [param-types access]}]
-                 (params-compatible? nargs (count param-types) (:varargs access)))
-               ms)
-       (ensure-not-empty :args-length-mismatch "args length mismatch"
-                         {:alternatives ms} ms)
-       (filter-methods cenv arg-types ms)
-       (ensure-not-empty :arg-type-mismatch "arg type mismatch"
-                         {:alternatives ms} ms)
+       (->> (filter (fn [{:keys [param-types access]}]
+                      (params-compatible? nargs (count param-types) (:varargs access)))
+                    ms)
+            (ensure-not-empty :args-length-mismatch "args length mismatch" {:alternatives ms}))
+       (->> (filter-methods cenv arg-types ms)
+            (ensure-not-empty :arg-type-mismatch "arg type mismatch" {:alternatives ms}))
        (seq ms)))))
