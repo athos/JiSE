@@ -27,10 +27,13 @@
          data# (merge {:line *line* :column *column*} ~data)]
      (throw (ex-info msg# data#))))
 
+(defn error-message-on-incompatible-types [expected actual]
+  (format "incompatible types: %s cannot be converted to %s"
+          (stringify-type actual)
+          (stringify-type expected)))
+
 (defmacro error-on-incompatible-types [expected actual]
-  `(error (format "incompatible types: %s cannot be converted to %s"
-                  (stringify-type ~actual)
-                  (stringify-type ~expected))))
+  `(error (error-message-on-incompatible-types ~actual ~expected)))
 
 (defn- modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
@@ -1233,21 +1236,54 @@
               (cond-> target (assoc :target target))))
         (error (str "cannot find symbol: variable " fname))))))
 
+(defn- param-types-string [param-types]
+  (if (seq param-types)
+    (str/join \, (map stringify-type param-types))
+    "no arguments"))
+
+(defn- signature-string [name param-types]
+  (format "%s(%s)" name (param-types-string param-types)))
+
 (defn- handle-method-error [class name arg-types e]
-  (if-let [cause (:cause (ex-data e))]
-    (-> (case cause
-          :no-such-target
-          (format "cannot find symbol: method %s(%s)"
-                  name (str/join "," (map stringify-type arg-types)))
-          :args-length-mismatch
-          (str "method " name " in class " (stringify-type class)
-               " cannot be applied to given types")
-          :arg-type-mismatch
-          (format "no suitable method found for %s(%s)"
-                  name (str/join "," (map stringify-type arg-types)))
-          (ex-message e))
-        (error (dissoc (ex-data e) :cause)))
-    (throw e)))
+  (let [{:keys [cause] :as ed} (ex-data e)
+        class-name (stringify-type class)]
+    (if cause
+      (-> (case cause
+            :no-such-target
+            (str "cannot find symbol\n"
+                 "  symbol: method " (signature-string name arg-types) "\n"
+                 "  location: class " class-name)
+            :args-length-mismatch
+            (let [{[m :as ms] :alternatives} ed
+                  reason "actual and formal argument lists differ in length"]
+              (if (= (count ms) 1)
+                (str "method " name " in class " class-name
+                     " cannot be applied to given types\n"
+                     "  required: " (param-types-string (:param-types m)) "\n"
+                     "  found: " (param-types-string arg-types) "\n"
+                     "  reason: " reason)
+                (str "no suitable method found for " (signature-string name arg-types) "\n"
+                     (->> (for [{:keys [access param-types]} ms]
+                            (format "  method %s is not applicable\n    (%s)"
+                                    (cond->> (signature-string name param-types)
+                                      (:static access) (str class-name \.))
+                                    reason))
+                          (str/join \newline)))))
+            :arg-type-mismatch
+            (let [{[m :as ms] :alternatives} ed]
+              (if (= (count ms) 1)
+                (error-message-on-incompatible-types (first (:param-types m)) (first arg-types))
+                (str "no suitable method found for " (signature-string name arg-types) "\n"
+                     (->> (for [{:keys [access param-types]} ms]
+                            (format "  method %s is not applicable\n    (argument mismatch; %s)"
+                                    (cond->> (signature-string name param-types)
+                                      (:static access) (str class-name \.))
+                                    (error-message-on-incompatible-types (first param-types)
+                                                                         (first arg-types))))
+                          (str/join \newline)))))
+            (ex-message e))
+          (error (dissoc ed :cause)))
+      (throw e))))
 
 (defn- parse-method-invocation [cenv target target-type mname args]
   (let [cenv' (with-context cenv :expression)
