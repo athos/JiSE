@@ -16,6 +16,7 @@
 (def VOID Type/VOID_TYPE)
 (def OBJECT (Type/getType Object))
 (def STRING (Type/getType String))
+(def CLASS (Type/getType Class))
 
 (def BOOLEAN_CLASS (Type/getType Boolean))
 (def BYTE_CLASS (Type/getType Byte))
@@ -197,6 +198,7 @@
         (int? obj) INT
         (float? obj) FLOAT
         (string? obj) STRING
+        (instance? Type obj) CLASS
         :else nil))
 
 (defn type-category ^long [t]

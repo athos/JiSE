@@ -1215,10 +1215,12 @@
 
 (defn- parse-field-access [cenv target target-type fname]
   (if (and (t/array-type? target-type) (= fname "length"))
-    (-> {:op :array-length
-         :type t/INT
-         :array target}
-        (inherit-context cenv))
+    (if (nil? target)
+      (error "class expected")
+      (-> {:op :array-length
+           :type t/INT
+           :array target}
+          (inherit-context cenv)))
     (if-let [{:keys [type used?] :as field} (get (:enclosing-env cenv) fname)]
       (do (reset! used? true)
           (-> {:op :field-access
@@ -1294,9 +1296,14 @@
                   (catch Exception e
                     (handle-method-error target-type mname arg-types e)))]
     (when-let [method (first methods)]
-      (let [target' (if (and (nil? target) (not (:static (:access method))))
+      (let [target' (if (and (nil? target)
+                             (= target-type (:class-type cenv))
+                             (not (:static (:access method))))
+                      ;; for method invocation omitting receiver such as (method args ...)
                       (parse-expr cenv' 'this)
                       target)]
+        (when (and (nil? target) (not (:static (:access method))))
+          (error "class expected"))
         (-> {:op :method-invocation
              :type (:return-type method)
              :method (assoc method :name mname)
@@ -1308,25 +1315,31 @@
   (if (and (seq? property) (nil? maybe-args))
     (parse-expr cenv `(. ~target ~@property))
     (let [cenv' (with-context cenv :expression)
-          target' (when-not (and (symbol? target)
-                                 (not (namespace target))
-                                 (not (find-lname cenv target))
-                                 (t/tag->type cenv target :throws-on-failure? false))
+          target' (when (and (or (not (symbol? target))
+                                 (namespace target)
+                                 (find-lname cenv target))
+                             (nil? (t/tag->type cenv target :throws-on-failure? false)))
                     (parse-expr cenv' target))
           target-type (or (:type target') (resolve-type cenv target))
           pname (name property)]
-      (when (t/primitive-type? target-type)
-        (error (str (stringify-type target-type) " cannot be dereferenced")))
-      (if (str/starts-with? pname "-")
-        (parse-field-access cenv target' target-type (subs pname 1))
-        (try
-          (parse-method-invocation cenv target' target-type pname maybe-args)
-          (catch Exception e
-            (if (empty? maybe-args)
-              (try
-                (parse-field-access cenv target' target-type pname)
-                (catch Exception _ (throw e)))
-              (throw e))))))))
+      (cond (and (nil? target') (or (= pname "class") (= pname "-class")))
+            (parse-literal cenv target-type)
+
+            (t/primitive-type? target-type)
+            (error (str (stringify-type target-type) " cannot be dereferenced"))
+
+            (str/starts-with? pname "-")
+            (parse-field-access cenv target' target-type (subs pname 1))
+
+            :else
+            (try
+              (parse-method-invocation cenv target' target-type pname maybe-args)
+              (catch Exception e
+                (if (empty? maybe-args)
+                  (try
+                    (parse-field-access cenv target' target-type pname)
+                    (catch Exception _ (throw e)))
+                  (throw e))))))))
 
 (defn- fold-aget [[_ arr index & indices :as expr]]
   (if (empty? indices)
