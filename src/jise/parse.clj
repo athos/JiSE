@@ -1320,7 +1320,8 @@
     (let [cenv' (with-context cenv :expression)
           target' (if (symbol? target)
                     (parse-symbol cenv' target :throws-on-failure? false)
-                    (parse-expr cenv' target))
+                    (when (not (t/tag->type cenv' target :throws-on-failure? false))
+                      (parse-expr cenv' target)))
           target-type (or (:type target') (resolve-type cenv target))
           pname (name property)]
       (cond (and (nil? target') (or (= pname "class") (= pname "-class")))
