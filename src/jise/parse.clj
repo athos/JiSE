@@ -1125,7 +1125,7 @@
           arr (gensym)
           form `(let* [~arr (new ~type ~(count elems))]
                   ~@(for [[i init] (map-indexed vector elems)
-                          :let [init' (if (vector? init)
+                          :let [init' (if (vector? (first type))
                                         `(new ~(first type) ~init)
                                         init)]]
                       `(~'aset ~arr ~i ~init'))
