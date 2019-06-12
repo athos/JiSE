@@ -100,7 +100,6 @@
                              (fail))
            (class? tag) (Type/getType ^Class tag)
            (vector? tag) (tag->array-type cenv tag :throws-on-failure? throws-on-failure?)
-           (string? tag) (Type/getType ^String tag)
            (nil? tag) nil
            :else (fail)))))
 
