@@ -33,7 +33,7 @@
           (stringify-type expected)))
 
 (defmacro error-on-incompatible-types [expected actual]
-  `(error (error-message-on-incompatible-types ~actual ~expected)))
+  `(error (error-message-on-incompatible-types ~expected ~actual)))
 
 (defn- modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
