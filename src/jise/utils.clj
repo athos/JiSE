@@ -86,8 +86,11 @@
       (emit-prim-fn-class fname prim return-type args args' body)
       (emit-ordinary-fn-class fname args args' body))))
 
-(defmacro fn [args & body]
-  (emit-fn-class (gensym 'f) args body))
+(defmacro fn [& body]
+  (c/let [[fname args body] (if (symbol? (first body))
+                              [(first body) (second body) (nnext body)]
+                              [(gensym 'f) (first body) (next body)])]
+   (emit-fn-class fname args body)))
 
 (defmacro defn [name args & body]
   (c/let [return-type (primitive-type (:tag (meta args)))
@@ -95,7 +98,7 @@
                   return-type
                   (with-meta {:tag return-type}))]
     `(def ~(with-meta name {:arglists `'(~args')})
-       (fn ~args ~@body))))
+       (fn ~name ~args ~@body))))
 
 (defmacro let-internal [names body]
   (c/let [types (map (c/fn [name]
