@@ -171,7 +171,7 @@
       (or (parse-sugar cenv expr)
           (error (str "unsupported expression: " (pr-str expr)) {:expr expr})))))
 
-(defn- parse-symbol [cenv sym]
+(defn- parse-symbol [cenv sym & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
   (if-let [tag (:tag (meta sym))]
     (parse-expr cenv `(~'cast ~tag ~(vary-meta sym dissoc :tag)))
     (letfn [(parse-as-field [cenv target]
@@ -188,7 +188,8 @@
           (if-let [f (find-field cenv (:class-type cenv) (name sym))]
             (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
               (parse-as-field cenv target))
-            (error (str "cannot find symbol: " sym) {:variable sym})))))))
+            (when throws-on-failure?
+              (error (str "cannot find symbol: " sym) {:variable sym}))))))))
 
 (defn- parse-seq [cenv expr]
   (if-let [tag (:tag (meta expr))]
@@ -1304,7 +1305,7 @@
                       ;; for method invocation omitting receiver such as (method args ...)
                       (parse-expr cenv' 'this)
                       target)]
-        (when (and (nil? target) (not (:static (:access method))))
+        (when (and (nil? target') (not (:static (:access method))))
           (error "class expected"))
         (-> {:op :method-invocation
              :type (:return-type method)
@@ -1317,10 +1318,8 @@
   (if (and (seq? property) (nil? maybe-args))
     (parse-expr cenv `(. ~target ~@property))
     (let [cenv' (with-context cenv :expression)
-          target' (when (and (or (not (symbol? target))
-                                 (namespace target)
-                                 (find-lname cenv target))
-                             (nil? (t/tag->type cenv target :throws-on-failure? false)))
+          target' (if (symbol? target)
+                    (parse-symbol cenv' target :throws-on-failure? false)
                     (parse-expr cenv' target))
           target-type (or (:type target') (resolve-type cenv target))
           pname (name property)]
