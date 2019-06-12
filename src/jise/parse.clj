@@ -1236,7 +1236,9 @@
                :field (assoc field :name fname)}
               (inherit-context cenv)
               (cond-> target (assoc :target target))))
-        (error (str "cannot find symbol: variable " fname))))))
+        (error (str "cannot find symbol\n"
+                    "  symbol: variable " fname "\n"
+                    "  location: class " (stringify-type target-type)))))))
 
 (defn- param-types-string [param-types]
   (if (seq param-types)
