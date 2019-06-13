@@ -175,7 +175,12 @@
   (if-let [tag (:tag (meta sym))]
     (parse-expr cenv `(~'cast ~tag ~(vary-meta sym dissoc :tag)))
     (letfn [(parse-as-field [cenv target]
-              (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))]
+              (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))
+            (parse-super [cenv]
+              (if (:static? cenv)
+                (error "non-static variable super cannot be referenced from a static context")
+                (-> {:op :super :type (find-in-current-class cenv :parent)}
+                    (inherit-context cenv))))]
       (if-let [cname (namespace sym)]
         (if-let [{:keys [field-name]} (find-var cenv sym)]
           (let [form `(.deref (. ~(:class-name cenv) ~(symbol (str \- field-name))))]
@@ -185,11 +190,13 @@
           (if foreign?
             (parse-as-field cenv 'this)
             (inherit-context {:op :local :type type :local local} cenv))
-          (if-let [f (find-field cenv (:class-type cenv) (name sym))]
-            (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
-              (parse-as-field cenv target))
-            (when throws-on-failure?
-              (error (str "cannot find symbol: " sym) {:variable sym}))))))))
+          (if (= sym 'super)
+            (parse-super cenv)
+            (if-let [f (find-field cenv (:class-type cenv) (name sym))]
+              (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
+                (parse-as-field cenv target))
+              (when throws-on-failure?
+                (error (str "cannot find symbol: " sym) {:variable sym})))))))))
 
 (defn- parse-seq [cenv expr]
   (if-let [tag (:tag (meta expr))]
@@ -313,7 +320,8 @@
 (defn- parse-method [cenv ctor? [_ mname args & body :as method]]
   (let [modifiers (modifiers-of method)
         {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
-        init-lenv (if (:static access)
+        static? (boolean (:static access))
+        init-lenv (if static?
                     {}
                     {"this" {:index 0 :type (:class-type cenv)
                              :access #{} :param? true}})
@@ -329,7 +337,8 @@
                 (with-line&column-of method
                   (let [cenv' (assoc cenv'
                                      :return-type return-type
-                                     :context #{context :tail :return})]
+                                     :context #{context :tail :return}
+                                     :static? static?)]
                     (cond->> (parse-exprs cenv' body)
                       ctor? (inject-ctor-invocation cenv')))))]
     (cond-> {:return-type return-type
@@ -1312,7 +1321,9 @@
              :method (assoc method :name mname)
              :args (args-for cenv' method args args')}
             (inherit-context cenv)
-            (cond-> target' (assoc :target target')))))))
+            (cond->
+              target' (assoc :target target')
+              (= (:op target') :super) (assoc :super? true)))))))
 
 (defmethod parse-expr* '. [cenv [_ target property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))

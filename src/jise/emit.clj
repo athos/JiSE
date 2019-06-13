@@ -153,6 +153,10 @@
   (when-not (:statement context)
     (emit-load emitter type (:index local))))
 
+(defmethod emit-expr* :super [emitter {:keys [type context]}]
+  (when-not (:statement context)
+    (emit-load emitter type 0)))
+
 (defn- emit-arithmetic [{:keys [^MethodVisitor mv] :as emitter} {:keys [type lhs rhs context line]} op]
   (let [opcode (.getOpcode ^Type type (get insns/arithmetic-insns op))]
     (emit-expr emitter lhs)
@@ -485,29 +489,31 @@
 
 (defmethod emit-expr* :field-access
   [{:keys [^MethodVisitor mv] :as emitter} {:keys [type field target context line]}]
-  (when target
-    (emit-expr emitter target))
-  (let [opcode (if target Opcodes/GETFIELD Opcodes/GETSTATIC)
+  (let [static? (:static (:access field))
+        opcode (if static? Opcodes/GETSTATIC Opcodes/GETFIELD)
         owner (.getInternalName ^Type (:class field))
         desc (.getDescriptor ^Type type)]
+    (when-not static?
+      (emit-expr emitter target))
     (emit-line emitter line)
     (.visitFieldInsn mv opcode owner (munge (:name field)) desc)
     (drop-if-statement emitter context)))
 
 (defmethod emit-expr* :field-update
   [{:keys [^MethodVisitor mv] :as emitter} {:keys [type field target rhs context line]}]
-  (when target
-    (emit-expr emitter target))
-  (emit-expr emitter rhs)
-  (when-not (:statement context)
-    (let [t (:type rhs)]
-      (if target
-        (let [opcode (if (= (t/type-category t) 2) Opcodes/DUP_X2 Opcodes/DUP_X1)]
-          (.visitInsn mv opcode))
-        (dup-unless-statement emitter context t))))
-  (let [opcode (if target Opcodes/PUTFIELD Opcodes/PUTSTATIC)
+  (let [static? (:static (:access field))
+        opcode (if static? Opcodes/PUTSTATIC Opcodes/PUTFIELD)
         owner (.getInternalName ^Type (:class field))
         desc (.getDescriptor ^Type type)]
+    (when-not static?
+      (emit-expr emitter target))
+    (emit-expr emitter rhs)
+    (when-not (:statement context)
+      (let [t (:type rhs)]
+        (if static?
+          (dup-unless-statement emitter context t)
+          (let [opcode (if (= (t/type-category t) 2) Opcodes/DUP_X2 Opcodes/DUP_X1)]
+            (.visitInsn mv opcode)))))
     (emit-line emitter line)
     (.visitFieldInsn mv opcode owner (munge (:name field)) desc)))
 
@@ -517,24 +523,25 @@
 
 (defmethod emit-expr* :method-invocation
   [{:keys [^MethodVisitor mv] :as emitter}
-   {:keys [type method target args context line]}]
-  (when target
-    (emit-expr emitter target))
-  (doseq [arg args]
-    (emit-expr emitter arg))
+   {:keys [type method super? target args context line]}]
   (let [{:keys [interface? class name access param-types]} method
+        static? (:static access)
         method-type (Type/getMethodType ^Type type (into-array Type param-types))
-        opcode (cond (:static access) Opcodes/INVOKESTATIC
+        opcode (cond static? Opcodes/INVOKESTATIC
                      interface? Opcodes/INVOKEINTERFACE
-                     (:private access) Opcodes/INVOKESPECIAL
+                     (or (:private access) super?) Opcodes/INVOKESPECIAL
                      :else Opcodes/INVOKEVIRTUAL)
         iname (.getInternalName ^Type class)
         desc (.getDescriptor method-type)]
+    (when-not static?
+      (emit-expr emitter target))
+    (doseq [arg args]
+      (emit-expr emitter arg))
     (emit-line emitter line)
-    (.visitMethodInsn mv opcode iname (munge name) desc (boolean interface?)))
-  (if (= type t/VOID)
-    (push-null-unless-statement emitter context)
-    (drop-if-statement emitter context)))
+    (.visitMethodInsn mv opcode iname (munge name) desc (boolean interface?))
+    (if (= type t/VOID)
+      (push-null-unless-statement emitter context)
+      (drop-if-statement emitter context))))
 
 (def ^:private primitive-types
   {t/BOOLEAN Opcodes/T_BOOLEAN
