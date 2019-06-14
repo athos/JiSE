@@ -42,10 +42,12 @@
   (let [access (-> modifiers
                    (select-keys [:abstract :static :public :protected :private :final :transient :volatile])
                    keys
-                   set)]
-    (cond-> access
-      (every? (complement #{:public :protected :private}) access)
-      (conj :package))))
+                   set)
+        accessibility (filter #{:public :protected :private} access)]
+    (case (count accessibility)
+      0 (conj access :package)
+      1 access
+      (error (str "illegal combination of modifiers: " (str/join " and " accessibility))))))
 
 (defn resolve-type [proto-cenv tag & {:keys [allow-vararg-param-type?]}]
   (try
