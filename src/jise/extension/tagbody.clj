@@ -52,23 +52,29 @@
 
 (comment
 
+  (require '[jise.core :refer [defclass]])
   (alias 'tb 'jise.extension.tagbody)
 
   ^:public
   (defclass Hello
     ^:public ^:static
     (defm hello []
-      (tb/tagbody
-        (.print System/out "h")
-        (tb/go :point-a)
-       :point-c
-        (.println System/out "world")
-        (tb/go :point-d)
-       :point-a
-        (.print System/out "el")
-       :point-b
-        (.print System/out "lo ")
-        (tb/go :point-c)
-       :point-d)))
+      (let [n 3]
+        (tb/tagbody
+         :point-a
+         (.print System/out "h")
+         (tb/go :point-c)
+         :point-b
+         (.println System/out "world")
+         (if (> (dec! n) 0)
+           (tb/go :point-a)
+           (return))
+         :point-c
+         (.print System/out "el")
+         :point-d
+         (.print System/out "lo ")
+         (tb/go :point-b)))))
+
+  (Hello/hello)
 
   )
