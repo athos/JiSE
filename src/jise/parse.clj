@@ -333,8 +333,9 @@
                                       :method-params? true)
         return-type (if ctor? t/VOID type)
         context (if (= return-type t/VOID) :statement :expression)
-        body' (when-not (:abstract access)
-                (with-line&column-of method
+        body' (with-line&column-of method
+                (if (:abstract access)
+                  (when body (error "abstract methods cannot have a body"))
                   (let [cenv' (assoc cenv'
                                      :return-type return-type
                                      :context #{context :tail :return}
