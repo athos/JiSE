@@ -150,15 +150,15 @@
   (defm ray-plane-intersect [^Isect isect ^Ray ray ^Plane plane]
     (let [d (- (.dot (.-p plane) (.-n plane)))
           v (.dot (.-dir ray) (.-n plane))]
-      (when-not (< (Math/abs v) 1.0e-17)
-        (let [t (/ (- (+ (.dot (.-org ray) (.-n plane)) d)) v)]
-          (when (and (> t 0) (< t (.-t isect)))
-            (set! (.-t isect) t)
-            (set! (.-hit? isect) true)
-            (set! (.. isect -p -x) (+ (.. ray -org -x) (* (.. ray -dir -x) t)))
-            (set! (.. isect -p -y) (+ (.. ray -org -y) (* (.. ray -dir -y) t)))
-            (set! (.. isect -p -z) (+ (.. ray -org -z) (* (.. ray -dir -z) t)))
-            (set! (.-n isect) (.copy (.-n plane))))))))
+      (when (< (Math/abs v) 1.0e-17) (return))
+      (let [t (/ (- (+ (.dot (.-org ray) (.-n plane)) d)) v)]
+        (when (and (> t 0) (< t (.-t isect)))
+          (set! (.-t isect) t)
+          (set! (.-hit? isect) true)
+          (set! (.. isect -p -x) (+ (.. ray -org -x) (* (.. ray -dir -x) t)))
+          (set! (.. isect -p -y) (+ (.. ray -org -y) (* (.. ray -dir -y) t)))
+          (set! (.. isect -p -z) (+ (.. ray -org -z) (* (.. ray -dir -z) t)))
+          (set! (.-n isect) (.copy (.-n plane)))))))
 
   ^:private ^{:tag [Vec]}
   (defm ortho-basis [^Vec n]
