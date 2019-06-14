@@ -1,15 +1,15 @@
-(ns example.qsort
+(ns example.quicksort
   (:gen-class)
   (:require [jise.core :refer [defclass]]))
 
 ^:public
-(defclass Qsort
+(defclass Quicksort
   ^:public ^:static
-  (defm qsort [^ints xs]
-    (qsort xs 0 (- (alength xs) 1)))
+  (defm sort [^ints xs]
+    (sort xs 0 (- (alength xs) 1)))
 
   ^:private ^:static
-  (defm qsort [^ints xs ^int left ^int right]
+  (defm sort [^ints xs ^int left ^int right]
     (when (< left right)
       (let [p (aget xs (/ (+ left right) 2))
             l left
@@ -23,10 +23,13 @@
               (set! (xs r) tmp)
               (inc! l)
               (dec! r))))
-        (qsort xs left r)
-        (qsort xs l right)))))
+        (sort xs left r)
+        (sort xs l right)))))
 
-(defn -main [& args]
-  (let [arr (int-array (map #(Integer/parseInt %) args))]
-    (Qsort/qsort arr)
-    (apply prn arr)))
+(comment
+
+  (def arr (int-array [3 1 4 1 5 9 2 6 5]))
+  (Quicksort/sort arr)
+  (seq arr)
+
+  )
