@@ -52,7 +52,11 @@
 (defn emit-expr [{:keys [^MethodVisitor mv] :as emitter} {:keys [context] :as expr}]
   (emit-expr* emitter expr)
   (when (:return context)
-    (let [t (if (:statement context) t/VOID (:type expr))]
+    (let [t (if (or (not (:statement context))
+                    (and (= (:op expr) :return)
+                         (some-> (:type expr) (not= t/VOID))))
+              (:type expr)
+              t/VOID)]
       (emit-return emitter t))))
 
 (defn- emit-ctor-invocation
@@ -477,6 +481,10 @@
                        (get-in emitter [:labels label :break-label])
                        (:break-label emitter))]
     (.visitJumpInsn mv Opcodes/GOTO label)))
+
+(defmethod emit-expr* :return [emitter {:keys [type value]}]
+  (when-not (= type t/VOID)
+    (emit-expr emitter value)))
 
 (defmethod emit-expr* :throw [{:keys [^MethodVisitor mv] :as emitter} {:keys [exception]}]
   (emit-expr emitter exception)

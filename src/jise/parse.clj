@@ -1117,6 +1117,24 @@
       (inherit-context cenv :return? false)
       (cond-> label (assoc :label label))))
 
+(defmethod parse-expr* 'return [cenv [_ value :as expr]]
+  (let [context (context-of cenv)]
+    (if (and (:expression context) (not (:tail context)))
+      (error "cannot return from expression context")
+      (let [{:keys [return-type] :as cenv'} (with-context cenv :expression)
+            value' (case (count (rest expr))
+                     0 (when-not (= return-type t/VOID)
+                         (ensure-type cenv' return-type (parse-literal cenv' nil)))
+                     1 (if (= return-type t/VOID)
+                         (error "incompatible types: unexpected return value")
+                         (->> (parse-expr cenv' value)
+                              (ensure-type cenv' return-type)))
+                     (error "return statement cannot take more than one arguments"))]
+        (-> {:op :return :type (or (:type value') t/VOID)}
+            (cond-> value' (assoc :value value'))
+            (inherit-context cenv)
+            (update :context conj :return))))))
+
 (defmethod parse-expr* 'throw [cenv [_ ex :as expr]]
   (ensure-sufficient-arguments 1 expr)
   (-> {:op :throw
