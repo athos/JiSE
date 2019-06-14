@@ -942,8 +942,7 @@
               (inherit-context cenv)))))))
 
 (defn- parse-increment [cenv target by max-value default-op op-name]
-  (let [by (or by 1)
-        {:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
+  (let [{:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
     (when-not (t/numeric-type? type)
       (error-on-bad-operand-type op-name type))
     (if (and (= (:op target') :local)
@@ -951,7 +950,7 @@
                  (when-let [{:keys [to]} (t/widening-primitive-conversion type t/INT)]
                    (= to t/INT)))
              (int? by)
-             (<= 0 by max-value))
+             (<= 0 (Math/abs (long by)) max-value))
       (let [local (:local target')]
         (if (:final (:access local))
           (if (:param? local)
@@ -962,10 +961,10 @@
       (parse-expr cenv `(set! ~target (~default-op ~target ~by))))))
 
 (defmethod parse-expr* 'inc! [cenv [_ target by]]
-  (parse-increment cenv target by Byte/MAX_VALUE '+ 'inc!))
+  (parse-increment cenv target (or by 1) Byte/MAX_VALUE '+ 'inc!))
 
 (defmethod parse-expr* 'dec! [cenv [_ target by]]
-  (parse-increment cenv target by (- Byte/MIN_VALUE) '- 'dec!))
+  (parse-increment cenv target (or by -1) (- Byte/MIN_VALUE) '- 'dec!))
 
 (defmethod parse-expr* 'if [cenv [_ test then else]]
   (cond (true? test) (parse-expr cenv then)
