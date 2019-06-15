@@ -941,7 +941,7 @@
                :rhs rhs}
               (inherit-context cenv)))))))
 
-(defn- parse-increment [cenv target by max-value default-op op-name]
+(defn- parse-increment [cenv target by max-value op-name]
   (let [{:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
     (when-not (t/numeric-type? type)
       (error-on-bad-operand-type op-name type))
@@ -958,13 +958,13 @@
             (error (str "cannot assign a value to final variable " target)))
           (-> {:op :increment, :target target', :type type, :by by}
               (inherit-context cenv))))
-      (parse-expr cenv `(set! ~target (~default-op ~target ~by))))))
+      (parse-expr cenv `(set! ~target (~'+ ~target ~by))))))
 
 (defmethod parse-expr* 'inc! [cenv [_ target by]]
-  (parse-increment cenv target (or by 1) Byte/MAX_VALUE '+ 'inc!))
+  (parse-increment cenv target (or by 1) Byte/MAX_VALUE 'inc!))
 
 (defmethod parse-expr* 'dec! [cenv [_ target by]]
-  (parse-increment cenv target (or by -1) (- Byte/MIN_VALUE) '- 'dec!))
+  (parse-increment cenv target (or by -1) (- Byte/MIN_VALUE) 'dec!))
 
 (defmethod parse-expr* 'if [cenv [_ test then else]]
   (cond (true? test) (parse-expr cenv then)
