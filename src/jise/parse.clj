@@ -240,12 +240,13 @@
 (defn parse-expr [{:keys [return-type] :as cenv} expr]
   (let [expr' (cond (symbol? expr) (parse-symbol cenv expr)
                     (seq? expr) (parse-seq cenv expr)
-                    :else (parse-literal cenv expr))]
-    (if (and (:return (:context expr'))
-             (not= return-type t/VOID)
-             (not= (or (:type expr') t/VOID) return-type))
+                    :else (parse-literal cenv expr))
+        {:keys [context type]} expr']
+    (if (and (:return context)
+             (:expression context)
+             (not= (or type t/VOID) return-type))
       (let [conv #(ensure-type cenv return-type %)]
-        (if (= (:type expr') t/VOID)
+        (if (= type t/VOID)
           ;; insert implicit (do ... nil)
           (-> {:op :do
                :type return-type
@@ -1137,10 +1138,11 @@
                          (error "incompatible types: unexpected return value")
                          (->> (parse-expr cenv' value)
                               (ensure-type cenv' return-type)))
-                     (error "return statement cannot take more than one arguments"))]
+                     (error "return statement cannot take more than one arguments"))
+            cenv' (cond-> cenv value' (with-context :expression))]
         (-> {:op :return :type (or (:type value') t/VOID)}
             (cond-> value' (assoc :value value'))
-            (inherit-context cenv)
+            (inherit-context cenv')
             (update :context conj :return))))))
 
 (defmethod parse-expr* 'throw [cenv [_ ex :as expr]]

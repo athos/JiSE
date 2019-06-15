@@ -52,10 +52,8 @@
 (defn emit-expr [{:keys [^MethodVisitor mv] :as emitter} {:keys [context] :as expr}]
   (emit-expr* emitter expr)
   (when (:return context)
-    (let [t (if (or (not (:statement context))
-                    (and (= (:op expr) :return)
-                         (some-> (:type expr) (not= t/VOID))))
-              (:type expr)
+    (let [t (if (:expression context)
+              (or (:type expr) t/OBJECT)
               t/VOID)]
       (emit-return emitter t))))
 
