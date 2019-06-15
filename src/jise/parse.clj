@@ -1041,38 +1041,46 @@
         (inherit-context cenv)
         (cond-> label (assoc :label label)))))
 
+(defn- parse-enhanced-for-loop [cenv [_ args & body :as form]]
+  (let [[lname expr] args
+        expr' (parse-expr cenv expr)
+        form' (if (t/array-type? (:type expr'))
+                `(let* [array# ~expr
+                        len# (.-length array#)
+                        ~lname (~'aget array# 0)]
+                   (~'for [i# 0 (~'< i# len#) (~'inc! i#)]
+                    (set! ~lname (~'aget array# i#))
+                    ~@body))
+                `(~'for [i# (.iterator ~expr) (.hasNext i#) nil]
+                  (let* [~lname (.next i#)]
+                    ~@body)))]
+    (parse-expr cenv (with-meta form' (meta form)))))
+
 (defmethod parse-expr* 'for [cenv [_ args & body :as form]]
-  (if (= (count args) 2)
-    ;; Enhanced for-loop
-    (let [[lname expr] args
-          expr' (parse-expr cenv expr)
-          form' (if (t/array-type? (:type expr'))
-                  `(let* [array# ~expr
-                          len# (.-length array#)
-                          ~lname (~'aget array# 0)]
-                     (~'for [i# 0 (~'< i# len#) (~'inc! i#)]
-                      (set! ~lname (~'aget array# i#))
-                      ~@body))
-                  `(~'for [i# (.iterator ~expr) (.hasNext i#) nil]
-                    (let* [~lname (.next i#)]
-                      ~@body)))]
-      (parse-expr cenv (with-meta form' (meta form))))
-    (let [[lname init cond step] args
-          [cenv' bindings'] (parse-bindings cenv [lname init])
-          cond' (as-> (parse-expr (with-context cenv' :conditional) cond) cond'
-                  (ensure-type (with-context cenv :expression)
-                               t/BOOLEAN cond' :context :casting))
-          label (extract-label form)]
-      (-> {:op :let
-           :bindings bindings'
-           :body
-           (-> {:op :for
-                :cond cond'
-                :step (parse-expr (with-context cenv' :statement) step)
-                :body (parse-exprs (with-context cenv' :statement) body)}
-               (inherit-context cenv)
-               (cond-> label (assoc :label label)))}
-          (inherit-context cenv :return? false)))))
+  (let [nargs (count args)]
+    (case nargs
+      (0 1) (error "malformed for-loop")
+      2 (parse-enhanced-for-loop cenv form)
+      (let [bindings (if (and (= nargs 3) (nil? (first args)))
+                       []
+                       (drop-last 2 args))
+            _ (when-not (even? (count bindings))
+                (error "malformed for-loop"))
+            [cond step] (take-last 2 args)
+            [cenv' bindings'] (parse-bindings cenv bindings)
+            cond' (as-> (parse-expr (with-context cenv' :conditional) cond) cond'
+                    (ensure-type (with-context cenv :expression)
+                                 t/BOOLEAN cond' :context :casting))
+            label (extract-label form)]
+        (-> {:op :let
+             :bindings bindings'
+             :body (-> {:op :for
+                        :cond cond'
+                        :step (parse-expr (with-context cenv' :statement) step)
+                        :body (parse-exprs (with-context cenv' :statement) body)}
+                       (inherit-context cenv)
+                       (cond-> label (assoc :label label)))}
+            (inherit-context cenv :return? false))))))
 
 (defn- seq-prefixed-with? [prefix x]
   (and (seq? x) (= (first x) prefix)))
