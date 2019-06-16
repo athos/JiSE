@@ -1,39 +1,12 @@
 (ns jise.parse
   (:refer-clojure :exclude [find-var])
   (:require [clojure.string :as str]
+            [jise.error :as err :refer [error]]
             [jise.misc :as misc]
             [jise.simplify :as simp]
             [jise.type :as t])
   (:import [clojure.asm Type]
            [clojure.java.api Clojure]))
-
-(def ^:private ^:dynamic *line* nil)
-(def ^:private ^:dynamic *column* nil)
-
-(defmacro ^:private with-line&column-of [x & body]
-  `(let [{line# :line column# :column} (meta ~x)]
-     (if (and line# column#)
-       (binding [*line* line# *column* column#]
-         ~@body)
-       (do ~@body))))
-
-(defn- stringify-type [t]
-  (if (nil? t)
-    "<null>"
-    (-> (t/type->tag t) str (str/replace #"java\.lang\." ""))))
-
-(defmacro error [msg & [data]]
-  `(let [msg# (str "Error: " ~msg " (" *file* \: *line* \: *column* ")")
-         data# (merge {:line *line* :column *column*} ~data)]
-     (throw (ex-info msg# data#))))
-
-(defn error-message-on-incompatible-types [expected actual]
-  (format "incompatible types: %s cannot be converted to %s"
-          (stringify-type actual)
-          (stringify-type expected)))
-
-(defmacro error-on-incompatible-types [expected actual]
-  `(error (error-message-on-incompatible-types ~expected ~actual)))
 
 (defn- modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
@@ -118,7 +91,7 @@
     (if-let [cs (conv cenv (:type src) type)]
       (-> (apply-conversions cs src)
           (inherit-context cenv))
-      (error-on-incompatible-types type (:type src)))))
+      (err/error-on-incompatible-types type (:type src)))))
 
 (defn find-in-current-class [cenv & ks]
   (get-in cenv (into [:classes (:class-name cenv)] ks)))
@@ -156,7 +129,8 @@
                                  (find-field cenv class-type (str op)))]
         (if (t/array-type? (:type maybe-array))
           (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))
-          (error (format "array required, but %s found" (stringify-type (:type maybe-array))))))
+          (error (format "array required, but %s found"
+                         (err/stringify-type (:type maybe-array))))))
       (when (t/get-methods cenv class-type class-type (str op))
         (parse-method-invocation cenv nil class-type (str op) (rest expr)))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
@@ -206,8 +180,7 @@
     (let [{:keys [tag line label]} (meta expr)
           cenv' (if label (inherit-context cenv cenv :return? false) cenv)
           expr' (if (symbol? (first expr))
-                  (binding [*line* (or (:line (meta expr)) *line*)
-                            *column* (or (:column (meta expr)) *column*)]
+                  (err/with-line&column-of expr
                     (parse-expr* cenv' expr))
                   (error (str "unsupported expression: " (pr-str expr)) {:expr expr}))]
       (as-> expr' expr'
@@ -336,7 +309,7 @@
                                       :method-params? true)
         return-type (if ctor? t/VOID type)
         context (if (= return-type t/VOID) :statement :expression)
-        body' (with-line&column-of method
+        body' (err/with-line&column-of method
                 (if (:abstract access)
                   (when body (error "abstract methods cannot have a body"))
                   (let [cenv' (assoc cenv'
@@ -421,17 +394,17 @@
 
 (defn- init-cenv [proto-cenv cname parent interfaces fields ctors methods initializer]
   (let [fields' (into {} (map (fn [[_ name :as field]]
-                                (with-line&column-of field
+                                (err/with-line&column-of field
                                   [(str name) (parse-field proto-cenv field)])))
                       fields)
         ctors' (reduce (fn [cs [_ _ args :as ctor]]
-                         (with-line&column-of ctor
+                         (err/with-line&column-of ctor
                            (let [access (access-flags (modifiers-of ctor))
                                  param-types (mapv #(:type (parse-name proto-cenv %)) args)]
                              (conj cs {:access access :param-types param-types}))))
                        [] ctors)
         methods' (reduce (fn [m [_ name :as method]]
-                           (with-line&column-of method
+                           (err/with-line&column-of method
                              (let [method' (parse-method-signature proto-cenv method)]
                                (update m (str name) (fnil conj []) method'))))
                          {} methods)
@@ -494,7 +467,7 @@
                                                (keep (partial convert-def-to-set alias))
                                                (concat static-initializer)
                                                seq)]
-                            (with-line&column-of class
+                            (err/with-line&column-of class
                               (let [m `^:static (~'defm ~'<clinit> [] ~@init)]
                                 (-> (parse-method cenv false m)
                                     (assoc :static-initializer? true)))))
@@ -503,15 +476,11 @@
       :fields (mapv (partial parse-field cenv)
                     (concat fields synthesized-fields))})))
 
-(defmacro error-on-bad-operand-type [op-name t]
-  `(error (format "bad operand type %s for unary operator '%s'"
-                  (stringify-type ~t) ~op-name)))
-
 (defn- ensure-numeric [cenv x op-name]
   (if-let [cs (t/unary-numeric-promotion (:type x))]
     (-> (apply-conversions cs x)
         (inherit-context cenv))
-    (error-on-bad-operand-type op-name (:type x))))
+    (err/error-on-bad-operand-type op-name (:type x))))
 
 (defn- parse-unary-op [cenv [op-name x] op]
   (let [cenv' (with-context cenv :expression)
@@ -520,11 +489,6 @@
          :type (:type x')
          :operand x'}
         (inherit-context cenv))))
-
-(defmacro error-on-bad-operand-types [op-name t1 t2]
-  `(error (str "bad operand types for binary operator '" ~op-name "'\n"
-               "  first type: " (stringify-type ~t1) "\n"
-               "  second type: " (stringify-type ~t2))))
 
 (defn- parse-binary-op
   ([cenv [op-name x y] op]
@@ -538,7 +502,7 @@
           :lhs (apply-conversions cl lhs)
           :rhs (apply-conversions cr rhs)}
          (inherit-context cenv))
-     (error-on-bad-operand-types op-name (:type lhs) (:type rhs)))))
+     (err/error-on-bad-operand-types op-name (:type lhs) (:type rhs)))))
 
 (defn- parse-arithmetic [cenv expr op]
   (let [{:keys [lhs] :as ret} (parse-binary-op cenv expr op)]
@@ -553,18 +517,12 @@
     (recur (with-meta `(~op (~op ~x ~y) ~@more) (meta expr)))
     expr))
 
-(defn error-on-missing-arguments [op-name num varargs?]
-  (error (str (when varargs?
-                "at least ")
-              num (if (= num 1) " argument " " arguments ")
-              "required for operator '" op-name "'")))
-
 (defn ensure-sufficient-arguments [num [op-name & args] & {:keys [varargs?]}]
   (let [nargs (count args)]
     (when-not (if varargs?
                 (>= nargs num)
                 (= nargs num))
-      (error-on-missing-arguments op-name num varargs?))))
+      (err/error-on-missing-arguments op-name num varargs?))))
 
 (defmethod parse-expr* '+ [cenv [_ & args :as expr]]
   (case (count args)
@@ -625,7 +583,7 @@
                (apply-conversions cs rhs))]
     (when-not (and lhs' (t/integral-type? (:type lhs'))
                    rhs' (t/integral-type? (:type rhs')))
-      (error-on-bad-operand-types op-name (:type lhs) (:type rhs)))
+      (err/error-on-bad-operand-types op-name (:type lhs) (:type rhs)))
     (-> {:op op
          :type (:type lhs')
          :lhs lhs'
@@ -653,7 +611,7 @@
        :type t/BOOLEAN
        :lhs lhs
        :rhs rhs}
-      (error-on-bad-operand-types op-name (:type lhs) (:type rhs)))
+      (err/error-on-bad-operand-types op-name (:type lhs) (:type rhs)))
     (-> (parse-binary-op cenv lhs rhs op op-name)
         (assoc :type t/BOOLEAN))))
 
@@ -704,7 +662,7 @@
            :type t/BOOLEAN
            :operand z'}
           (let [[t1 t2] (if x-nil? [nil type] [type nil])]
-            (error-on-bad-operand-types op-name t1 t2)))))))
+            (err/error-on-bad-operand-types op-name t1 t2)))))))
 
 (defmethod parse-expr* '== [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
@@ -760,7 +718,7 @@
                                                   (= (:type e2) t/BOOLEAN))
                                      [e1 e2]))
                                  (partition 2 1 exprs'))]
-          (error-on-bad-operand-types 'and (:type e1) (:type e2)))
+          (err/error-on-bad-operand-types 'and (:type e1) (:type e2)))
         {:op :and
          :type t/BOOLEAN
          :exprs exprs'}))
@@ -791,7 +749,7 @@
                                                   (= (:type e2) t/BOOLEAN))
                                      [e1 e2]))
                                  (partition 2 1 exprs'))]
-          (error-on-bad-operand-types 'and (:type e1) (:type e2)))
+          (err/error-on-bad-operand-types 'and (:type e1) (:type e2)))
         {:op :or
          :type t/BOOLEAN
          :exprs (mapv negate-expr (butlast exprs'))
@@ -804,7 +762,7 @@
     (let [{:keys [type] :as operand'} (parse-expr cenv operand)]
       (if (#{t/BOOLEAN t/BOOLEAN_CLASS} type)
         (negate-expr operand')
-        (error-on-bad-operand-type 'not type)))
+        (err/error-on-bad-operand-type 'not type)))
     (parse-expr cenv `(if ~expr true false))))
 
 (defn- parse-cast [cenv type x]
@@ -876,7 +834,7 @@
                   "  required: class or array\n"
                   "  found:    " (t/type->tag c'))))
     (when-not (t/casting-conversion cenv (:type x') c')
-      (error-on-incompatible-types c' (:type x')))
+      (err/error-on-incompatible-types c' (:type x')))
     (-> {:op :instance?
          :type t/BOOLEAN
          :class c'
@@ -945,7 +903,7 @@
 (defn- parse-increment [cenv target by max-value op-name]
   (let [{:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
     (when-not (t/numeric-type? type)
-      (error-on-bad-operand-type op-name type))
+      (err/error-on-bad-operand-type op-name type))
     (if (and (= (:op target') :local)
              (or (= type t/INT)
                  (when-let [{:keys [to]} (t/widening-primitive-conversion type t/INT)]
@@ -1157,7 +1115,7 @@
                       (catch Exception _))]
         (when (= (:type x') t/INT)
           x'))
-      (error-on-incompatible-types t/INT (:type x))))
+      (err/error-on-incompatible-types t/INT (:type x))))
 
 (defn- parse-array-creation [cenv type' [_ type & args :as expr]]
   (if (vector? (first args))
@@ -1188,27 +1146,10 @@
       varargs
       (conj varargs))))
 
-(defn- handle-ctor-error [class arg-types e]
-  (if-let [cause (:cause (ex-data e))]
-    (let [class-name (stringify-type class)]
-      (-> (case cause
-            :no-such-target
-            (format "cannot find symbol: method %s(%s)" class-name
-                    (str/join "," (map stringify-type arg-types)))
-            :args-length-mismatch
-            (str "constructor " class-name " in class " class-name
-                 " cannot be applied to given types")
-            :arg-type-mismatch
-            (format "no suitable constructor found for %s(%s)"
-                    class-name (str/join "," (map stringify-type arg-types)))
-            (ex-message e))
-          (error (dissoc (ex-data e) :cause))))
-    (throw e)))
-
 (defmethod parse-expr* 'new [cenv [_ type & args :as expr]]
   (let [type' (resolve-type cenv type)]
     (when (t/primitive-type? type')
-      (error (str (stringify-type type') " cannot be instantiated")))
+      (error (str (err/stringify-type type') " cannot be instantiated")))
     (if (t/array-type? type')
       (parse-array-creation cenv type' expr)
       (let [cenv' (with-context cenv :expression)
@@ -1216,7 +1157,7 @@
             arg-types (map :type args')
             ctors (try
                     (t/find-ctors cenv (:class-type cenv) type' arg-types)
-                    (catch Exception e (handle-ctor-error type' arg-types e)))
+                    (catch Exception e (err/handle-ctor-error type' arg-types e)))
             ctor (first ctors)]
         (-> {:op :new
              :type type'
@@ -1234,7 +1175,7 @@
         arg-types (map :type args')
         ctors (try
                 (t/find-ctors cenv (:class-type cenv) class arg-types)
-                (catch Exception e (handle-ctor-error class arg-types e)))
+                (catch Exception e (err/handle-ctor-error class arg-types e)))
         ctor (first ctors)
         initializer (when super? (find-in-current-class cenv :initializer))
         node {:op :ctor-invocation
@@ -1278,56 +1219,7 @@
               (cond-> target (assoc :target target))))
         (error (str "cannot find symbol\n"
                     "  symbol: variable " fname "\n"
-                    "  location: class " (stringify-type target-type)))))))
-
-(defn- param-types-string [param-types]
-  (if (seq param-types)
-    (str/join \, (map stringify-type param-types))
-    "no arguments"))
-
-(defn- signature-string [name param-types]
-  (format "%s(%s)" name (param-types-string param-types)))
-
-(defn- handle-method-error [class name arg-types e]
-  (let [{:keys [cause] :as ed} (ex-data e)
-        class-name (stringify-type class)]
-    (if cause
-      (-> (case cause
-            :no-such-target
-            (str "cannot find symbol\n"
-                 "  symbol: method " (signature-string name arg-types) "\n"
-                 "  location: class " class-name)
-            :args-length-mismatch
-            (let [{[m :as ms] :alternatives} ed
-                  reason "actual and formal argument lists differ in length"]
-              (if (= (count ms) 1)
-                (str "method " name " in class " class-name
-                     " cannot be applied to given types\n"
-                     "  required: " (param-types-string (:param-types m)) "\n"
-                     "  found: " (param-types-string arg-types) "\n"
-                     "  reason: " reason)
-                (str "no suitable method found for " (signature-string name arg-types) "\n"
-                     (->> (for [{:keys [access param-types]} ms]
-                            (format "  method %s is not applicable\n    (%s)"
-                                    (cond->> (signature-string name param-types)
-                                      (:static access) (str class-name \.))
-                                    reason))
-                          (str/join \newline)))))
-            :arg-type-mismatch
-            (let [{[m :as ms] :alternatives} ed]
-              (if (= (count ms) 1)
-                (error-message-on-incompatible-types (first (:param-types m)) (first arg-types))
-                (str "no suitable method found for " (signature-string name arg-types) "\n"
-                     (->> (for [{:keys [access param-types]} ms]
-                            (format "  method %s is not applicable\n    (argument mismatch; %s)"
-                                    (cond->> (signature-string name param-types)
-                                      (:static access) (str class-name \.))
-                                    (error-message-on-incompatible-types (first param-types)
-                                                                         (first arg-types))))
-                          (str/join \newline)))))
-            (ex-message e))
-          (error (dissoc ed :cause)))
-      (throw e))))
+                    "  location: class " (err/stringify-type target-type)))))))
 
 (defn- parse-method-invocation [cenv target target-type mname args]
   (let [cenv' (with-context cenv :expression)
@@ -1336,7 +1228,7 @@
         methods (try
                   (t/find-methods cenv (:class-type cenv) target-type mname arg-types)
                   (catch Exception e
-                    (handle-method-error target-type mname arg-types e)))]
+                    (err/handle-method-error target-type mname arg-types e)))]
     (when-let [method (first methods)]
       (let [target' (if (and (nil? target)
                              (= target-type (:class-type cenv))
@@ -1369,7 +1261,7 @@
             (parse-literal cenv target-type)
 
             (t/primitive-type? target-type)
-            (error (str (stringify-type target-type) " cannot be dereferenced"))
+            (error (str (err/stringify-type target-type) " cannot be dereferenced"))
 
             (str/starts-with? pname "-")
             (parse-field-access cenv target' target-type (subs pname 1))
@@ -1400,7 +1292,8 @@
     (let [cenv' (with-context cenv :expression)
           arr (parse-expr cenv' arr)
           _ (when-not (t/array-type? (:type arr))
-              (error (format "array required, but %s found" (stringify-type (:type arr)))))
+              (error (format "array required, but %s found"
+                             (err/stringify-type (:type arr)))))
           index' (ensure-numeric-int cenv' (parse-expr cenv' index))]
       (-> {:op :array-access
            :type (t/element-type (:type arr))
@@ -1419,7 +1312,8 @@
     (let [cenv' (with-context cenv :expression)
           arr (parse-expr cenv' arr)
           _ (when-not (t/array-type? (:type arr))
-              (error (format "array required, but %s found" (stringify-type (:type arr)))))
+              (error (format "array required, but %s found"
+                             (err/stringify-type (:type arr)))))
           elem-type (t/element-type (:type arr))
           index' (ensure-numeric-int cenv' (parse-expr cenv' index))
           expr' (ensure-type cenv' elem-type (parse-expr cenv' (first more)))]
