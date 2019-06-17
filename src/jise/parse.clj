@@ -1264,7 +1264,9 @@
             (error (str (err/stringify-type target-type) " cannot be dereferenced"))
 
             (str/starts-with? pname "-")
-            (parse-field-access cenv target' target-type (subs pname 1))
+            (if (empty? maybe-args)
+             (parse-field-access cenv target' target-type (subs pname 1))
+             (error "field access cannot take arguments"))
 
             :else
             (try
