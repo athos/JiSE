@@ -2,7 +2,36 @@
 [![Clojars Project](https://img.shields.io/clojars/v/jise.svg)](https://clojars.org/jise)
 [![CircleCI](https://circleci.com/gh/athos/JiSE.svg?style=shield)](https://circleci.com/gh/athos/JiSE)
 
-JiSE is Clojure's embedded DSL for making it as easy (or maybe even easier?) to write imperative code than in Java.
+JiSE is a Clojure DSL library that compiles a Java-like language into JVM bytecode at macroexpansion time.
+
+## Features
+
+Using JiSE, you can:
+
+- Write imperative code that is compiled to JVM bytecode as efficient as written in Java
+  - You can use assignment, (nested) loops, (labeled) break/continue, etc.
+- Define your own Java class in a cleaner way than using `gen-class` or `proxy`
+- Combine JiSE code with Clojure in a function- or expression-level of granularity
+- Find more errors at compile time due to its static typing
+- Extend JiSE syntax with Clojure's ordinary macros
+  - Existing Clojure macros can also be used seamlessly from JiSE, such as `->`, `..` and `with-open`
+
+## Installation
+
+Add the following to your project `:dependencies`:
+
+[![Clojars Project](https://clojars.org/jise/latest-version.svg)](https://clojars.org/jise)
+
+If you would rather use an unstable version of the library via [Clojure CLI tool](https://clojure.org/guides/deps_and_cli), add the following to your `deps.edn` instead:
+
+```clj
+{...
+ :deps {...
+        athos/jise {:git/url "https://github.com/athos/JiSE.git"
+                    :sha "<commit sha>"}
+        ...}
+ ...}
+```
 
 ## Usage
 
