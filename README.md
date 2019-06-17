@@ -88,6 +88,52 @@ If you would rather use an unstable version of the library via [Clojure CLI tool
 ;=> (1 1 2 3 4 5 9)
 ```
 
+## Supported Java features
+- [x] class definition
+- [x] inheritance & interface implementation
+- [x] constructor definition
+- [x] field & method definition
+  - [x] non-static fields & methods
+  - [x] static fields & static methods
+  - [x] method overloading
+  - [x] variable arity methods
+  [x] various modifiers
+  - [x] access control (`public` / `protected` / `private`)
+  - [x] `abstract`
+  - [x] `final`
+  - [x] `transient`
+  - [x] `volatile`
+  - [ ] `synchronized`
+- [x] initializer & static initializer
+- [x] primitive arithmetics
+- [x] logical expressions
+- [x] assignments
+- [x] increments & decrements
+- [x] conditionals (`if` / `switch`)
+- [x] loops (`while` / `for` / enhanced `for` / `break` / `continue`)
+- [x] `return`
+- [x] arrays (including multi-dimensional arrays)
+- [x] casting
+- [x] string concatenation
+- [x] auto-boxing & auto-unboxing
+- [x] constructor invocation (including explicit `this()` / `super()` invocation)
+- [x] field access
+- [x] method invocation (including variable arity method invocation)
+- [x] exception handling (`try` / `catch` / `finally` / `throw`)
+
+## Not supported Java features
+
+- [ ] interface definition
+- [ ] enum definition
+- [ ] nested class definition
+  - [ ] member classes
+  - [ ] local classes
+  - [ ] anonymous classes
+- [ ] `synchronized` blocks
+- [ ] annotations
+- [ ] generics
+- [ ] lambda expressions
+
 ## License
 
 Copyright © 2019 Shogo Ohta
