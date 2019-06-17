@@ -1228,7 +1228,7 @@
         methods (try
                   (t/find-methods cenv (:class-type cenv) target-type mname arg-types)
                   (catch Exception e
-                    (err/handle-method-error target-type mname arg-types e)))]
+                    (err/handle-method-error cenv target-type mname arg-types e)))]
     (when-let [method (first methods)]
       (let [target' (if (and (nil? target)
                              (= target-type (:class-type cenv))

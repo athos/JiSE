@@ -421,36 +421,48 @@
              (walk (type->class class)))
            (remove-overridden-methods cenv)))))
 
-(defn- convert-arg-types-with [f param-types arg-types]
-  (->> (map vector arg-types param-types)
-       (reduce (fn [acc [at pt]]
-                 (if-let [cs (f at pt)]
-                   (conj acc cs)
-                   (reduced nil)))
-               [])))
+(defn- convert-arg-types-with [f param-types arg-types throws-on-failure?]
+  (let [fail (if throws-on-failure?
+               #(->> {:arg-type %1 :param-type %2}
+                     (ex-info "arg type mismatch")
+                     (throw))
+               (fn [_ _] (reduced nil)))]
+    (->> (map vector arg-types param-types)
+         (reduce (fn [acc [at pt]]
+                   (if-let [cs (f at pt)]
+                     (conj acc cs)
+                     (fail at pt)))
+                 []))))
 
-(defn strict-invocation-conversion [cenv arg-types method]
+(defn strict-invocation-conversion
+  [cenv arg-types method & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
   (letfn [(f [from to]
             (if (= from to)
               []
               (when-let [c (or (widening-primitive-conversion from to)
                                (widening-reference-conversion cenv from to))]
                 [c])))]
-    (when-let [cs (convert-arg-types-with f (:param-types method) arg-types)]
+    (when-let [cs (convert-arg-types-with f (:param-types method) arg-types
+                                          throws-on-failure?)]
       (assoc method :conversions cs))))
 
-(defn loose-invocation-conversion [cenv arg-types method]
+(defn loose-invocation-conversion
+  [cenv arg-types method & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
   (when-let [cs (convert-arg-types-with (partial assignment-conversion cenv)
                                         (:param-types method)
-                                        arg-types)]
+                                        arg-types
+                                        throws-on-failure?)]
     (assoc method :conversions cs)))
 
-(defn variable-arity-invocation-conversion [cenv arg-types {:keys [param-types] :as method}]
+(defn variable-arity-invocation-conversion
+  [cenv arg-types {:keys [param-types] :as method}
+   & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
   (let [required-param-types (butlast param-types)
         vararg-type (last param-types)]
     (when-let [cs (convert-arg-types-with (partial assignment-conversion cenv)
                                           required-param-types
-                                          arg-types)]
+                                          arg-types
+                                          throws-on-failure?)]
       (let [nargs (count arg-types)
             nparams (count param-types)]
         (or (when-let [cs' (if (< nargs nparams)
@@ -461,7 +473,8 @@
               (assoc method :conversions (into cs cs')))
             (when (convert-arg-types-with (partial assignment-conversion cenv)
                                           (repeat (element-type vararg-type))
-                                          (drop (dec nparams) arg-types))
+                                          (drop (dec nparams) arg-types)
+                                          throws-on-failure?)
               (assoc method :conversions cs)))))))
 
 (defn- maximally-specific-methods [cenv methods]
@@ -473,11 +486,14 @@
           methods))
 
 (defn- filter-methods [cenv arg-types methods]
-  (let [{fixed-arity's false, variable-arity's true} (group-by #(boolean (:varargs (:access %))) methods)
-        filter-with #(seq (keep (partial %1 cenv arg-types) %2))]
-    (some->> (or (filter-with strict-invocation-conversion fixed-arity's)
-                 (filter-with loose-invocation-conversion fixed-arity's)
-                 (filter-with variable-arity-invocation-conversion variable-arity's))
+  (let [{fixed-ms false, variable-ms true} (group-by #(boolean (:varargs (:access %))) methods)
+        filter-with (fn [f ms]
+                      (->> ms
+                           (keep #(f cenv arg-types % :throws-on-failure? false))
+                           seq))]
+    (some->> (or (filter-with strict-invocation-conversion fixed-ms)
+                 (filter-with loose-invocation-conversion fixed-ms)
+                 (filter-with variable-arity-invocation-conversion variable-ms))
              (maximally-specific-methods cenv))))
 
 (defn- ensure-not-empty

@@ -70,7 +70,16 @@
 (defn- signature-string [name param-types]
   (format "%s(%s)" name (param-types-string param-types)))
 
-(defn handle-method-error [class name arg-types e]
+(defn- first-mismatched-arg-type [cenv arg-types method]
+  (try
+    (if (:varargs (:access method))
+      (t/variable-arity-invocation-conversion cenv arg-types method)
+      (t/loose-invocation-conversion cenv arg-types method))
+    (catch Exception e
+      (let [{:keys [param-type arg-type]} (ex-data e)]
+        [param-type arg-type]))))
+
+(defn handle-method-error [cenv class name arg-types e]
   (let [{:keys [cause] :as ed} (ex-data e)
         class-name (stringify-type class)]
     (if cause
@@ -98,16 +107,16 @@
             :arg-type-mismatch
             (let [{[m :as ms] :alternatives} ed]
               (if (= (count ms) 1)
-                (error-message-on-incompatible-types (first (:param-types m))
-                                                     (first arg-types))
+                (let [[pt at] (first-mismatched-arg-type cenv arg-types m)]
+                  (error-message-on-incompatible-types pt at))
                 (str "no suitable method found for "
                      (signature-string name arg-types) "\n"
-                     (->> (for [{:keys [access param-types]} ms]
+                     (->> (for [{:keys [access param-types] :as m} ms
+                                :let [[pt at] (first-mismatched-arg-type cenv arg-types m)]]
                             (format "  method %s is not applicable\n    (argument mismatch; %s)"
                                     (cond->> (signature-string name param-types)
                                       (:static access) (str class-name \.))
-                                    (error-message-on-incompatible-types (first param-types)
-                                                                         (first arg-types))))
+                                    (error-message-on-incompatible-types pt at)))
                           (str/join \newline)))))
             (ex-message e))
           (error (dissoc ed :cause)))
