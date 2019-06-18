@@ -238,6 +238,14 @@
 (def ^:private unboxed-types
   (into {} (map (fn [[k v]] [v k])) boxed-types))
 
+(defn convertible-to-integral? [t]
+  (or (integral-type? t)
+      (some-> (unboxed-types t) integral-type?)))
+
+(defn convertible-to-numeric? [t]
+  (or (numeric-type? t)
+      (some-> (unboxed-types t) numeric-type?)))
+
 (defn boxing-conversion [t]
   (when-let [t' (boxed-types t)]
     {:conversion :boxing :from t :to t'}))

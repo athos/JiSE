@@ -600,20 +600,34 @@
 (defmethod parse-expr* '>>> [cenv expr]
   (parse-shift cenv expr :logical-shift-right))
 
-(defn- parse-equal [cenv lhs rhs op op-name]
-  (if (and (not (t/numeric-type? (:type lhs)))
-           (not (t/numeric-type? (:type rhs))))
-    (if-let [[lhs' rhs'] (or (when-let [cs (t/casting-conversion cenv (:type lhs) (:type rhs))]
-                               [(apply-conversions cs lhs) rhs])
-                             (when-let [cs (t/casting-conversion cenv (:type rhs) (:type lhs))]
-                               [lhs (apply-conversions cs rhs)]))]
-      {:op op
-       :type t/BOOLEAN
-       :lhs lhs
-       :rhs rhs}
-      (err/error-on-bad-operand-types op-name (:type lhs) (:type rhs)))
-    (-> (parse-binary-op cenv lhs rhs op op-name)
-        (assoc :type t/BOOLEAN))))
+(defn- unbox-if-needed [x]
+  (if-let [c (t/unboxing-conversion (:type x))]
+    (apply-conversions [c] x)
+    x))
+
+(defn- parse-equal [cenv {t1 :type :as lhs} {t2 :type :as rhs} op op-name]
+  (cond (and (t/convertible-to-numeric? t1)
+             (t/convertible-to-numeric? t2))
+        (-> (parse-binary-op cenv lhs rhs op op-name)
+            (assoc :type t/BOOLEAN))
+
+        (and (#{t/BOOLEAN t/BOOLEAN_CLASS} t1)
+             (#{t/BOOLEAN t/BOOLEAN_CLASS} t2))
+        {:op op
+         :type t/BOOLEAN
+         :lhs (unbox-if-needed lhs)
+         :rhs (unbox-if-needed rhs)}
+
+        :else
+        (if-let [[lhs' rhs'] (or (when-let [cs (t/casting-conversion cenv t1 t2)]
+                                   [(apply-conversions cs lhs) rhs])
+                                 (when-let [cs (t/casting-conversion cenv t2 t1)]
+                                   [lhs (apply-conversions cs rhs)]))]
+          {:op op
+           :type t/BOOLEAN
+           :lhs lhs
+           :rhs rhs}
+          (err/error-on-bad-operand-types op-name t1 t2))))
 
 (defn- fold-comparison [[op & args :as expr]]
   (with-meta
@@ -701,11 +715,6 @@
   (if (and (nil? more) (or (= x 0) (= y 0)))
     (parse-cmp-0 cenv x y :ge-0 :ge '>= true)
     (parse-comparison cenv expr :ge)))
-
-(defn- unbox-if-needed [x]
-  (if-let [cs (t/unboxing-conversion (:type x))]
-    (apply-conversions cs x)
-    x))
 
 (defmethod parse-expr* 'and [cenv [_ & exprs :as expr]]
   (if (:conditional (:context cenv))
