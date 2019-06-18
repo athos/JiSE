@@ -199,15 +199,8 @@
   (if (nil? v)
     (inherit-context {:op :null} cenv)
     (if-let [t (t/object-type v)]
-      (merge (inherit-context {:op :literal} cenv)
-             (condp #(%1 %2) t
-               #{t/BYTE t/SHORT t/INT t/LONG}
-               {:type t/INT :value v}
-
-               #{t/FLOAT t/DOUBLE}
-               {:type t/DOUBLE :value v}
-
-               {:type t :value v}))
+      (-> {:op :literal :type t :value v}
+          (inherit-context cenv))
       (error (str (pr-str v) " cannot be used as literal")))))
 
 (defn parse-expr [{:keys [return-type] :as cenv} expr]
