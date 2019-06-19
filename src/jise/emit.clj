@@ -390,6 +390,14 @@
                (into key->label (map (fn [k] [k label])) keys)
                (conj ret (assoc clause :label label)))))))
 
+(defn- sequential-min-max-keys [keys]
+  (let [keys' (into (sorted-set) keys)]
+    (when (->> keys'
+               (partition 2 1)
+               (every? (fn [[k k']] (= (inc k) k'))))
+      [(first (seq keys'))
+       (first (rseq keys'))])))
+
 (defmethod emit-expr* :switch
   [{:keys [^MethodVisitor mv] :as emitter} {:keys [test clauses default]}]
   (let [end-label (Label.)
@@ -398,7 +406,12 @@
         keys (int-array (map first key->label))
         labels (into-array Label (map second key->label))]
     (emit-expr emitter test)
-    (.visitLookupSwitchInsn mv default-label keys labels)
+    (if-let [[min max] (sequential-min-max-keys keys)]
+      (->> (sort-by key key->label)
+           (map val)
+           (into-array Label)
+           (.visitTableSwitchInsn mv min max default-label))
+      (.visitLookupSwitchInsn mv default-label keys labels))
     (doseq [{:keys [label guard body]} clauses']
       (.visitLabel mv label)
       (when guard
