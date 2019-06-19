@@ -960,7 +960,7 @@
       guard (assoc :guard guard))))
 
 (defmethod parse-expr* 'case [cenv [_ test & clauses :as expr]]
-  (if-let [l (find-lname cenv test)]
+  (if-let [l (and (symbol? test) (find-lname cenv test))]
     (let [default (when (odd? (count clauses))
                     (last clauses))
           cenv' (if (and (:tail (:context cenv)) (nil? default))
