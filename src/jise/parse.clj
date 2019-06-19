@@ -946,11 +946,21 @@
                 (inherit-context cenv :return? false))
             (inherit-context node cenv)))))
 
-(defn- parse-case-clause [cenv sym [ks expr]]
+(defn- parse-case-clause [cenv type sym [ks expr]]
   (let [ks (if (seq? ks) (vec ks) [ks])
-        str? (string? (first ks))
-        ks' (cond->> ks str? (mapv #(.hashCode ^String %)))
-        guard (when str?
+        ks' (mapv (fn [k]
+                    (or (when-let [k' (simp/simplify cenv k)]
+                          (cond (t/convertible-to-integral? type)
+                                (when (and (int? k')
+                                           (<= Integer/MIN_VALUE k' Integer/MAX_VALUE))
+                                  k')
+                                (= type t/STRING)
+                                (when (string? k')
+                                  (.hashCode ^String k'))
+                                :else nil))
+                        (error (str k " cannot be converted to " (err/stringify-type type)))))
+                  ks)
+        guard (when (= type t/STRING)
                 (->> (if (> (count ks) 1)
                        `(~'or ~@(map (fn [k] `(~'= ~sym ~k)) ks))
                        `(~'= ~sym ~(first ks)))
@@ -967,7 +977,7 @@
                   (with-context cenv :statement)
                   cenv)
           clauses' (->> (partition 2 clauses)
-                        (mapv (partial parse-case-clause cenv' test)))
+                        (mapv (partial parse-case-clause cenv' (:type l) test)))
           default' (some->> default (parse-expr cenv'))
           node {:op :switch
                 :type (:type (or (first clauses') default'))
