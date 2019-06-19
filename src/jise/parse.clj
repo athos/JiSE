@@ -1004,17 +1004,21 @@
 
 (defn- parse-enhanced-for-loop [cenv [_ args & body :as form]]
   (let [[lname expr] args
-        expr' (parse-expr cenv expr)
-        form' (if (t/array-type? (:type expr'))
-                `(let* [array# ~expr
-                        len# (.-length array#)
-                        ~lname (~'aget array# 0)]
-                   (~'for [i# 0 (~'< i# len#) (~'inc! i#)]
-                    (set! ~lname (~'aget array# i#))
-                    ~@body))
-                `(~'for [i# (.iterator ~expr) (.hasNext i#) nil]
-                  (let* [~lname (.next i#)]
-                    ~@body)))]
+        {:keys [type]} (parse-expr (with-context cenv :expression) expr)
+        form' (cond (t/array-type? type)
+                    `(let* [array# ~expr
+                            len# (.-length array#)
+                            ~lname (~'aget array# 0)]
+                       (~'for [i# 0 (~'< i# len#) (~'inc! i#)]
+                        (set! ~lname (~'aget array# i#))
+                        ~@body))
+                    (t/super? cenv (t/class->type Iterable) type)
+                    `(~'for [i# (.iterator ~expr) (.hasNext i#) nil]
+                      (let* [~lname (.next i#)]
+                        ~@body))
+                    :else (error (str "for-each not applicable to expression type\n"
+                                      "  required: array or Iterable\n"
+                                      "  found: " (err/stringify-type type))))]
     (parse-expr cenv (with-meta form' (meta form)))))
 
 (defmethod parse-expr* 'for [cenv [_ args & body :as form]]
