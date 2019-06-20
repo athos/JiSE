@@ -241,8 +241,9 @@
 (defn- next-index [cenv type]
   (first (swap-vals! (:next-index cenv) + (t/type-category type))))
 
-(defn- parse-binding [cenv lname init allow-vararg-param?]
-  (let [init' (some->> init (parse-expr (with-context cenv :expression)))
+(defn- parse-binding [cenv lname init method-param? allow-vararg-param?]
+  (let [init' (when-not method-param?
+                (parse-expr (with-context cenv :expression) init))
         lname' (parse-name cenv lname
                            :default-type (:type init')
                            :allow-vararg-param? allow-vararg-param?)
@@ -264,7 +265,8 @@
           (error "varargs parameter is only allowed in method signature"))
         (if (and allow-vararg-param? (seq bindings))
           (error "varargs parameter must be the last parameter")
-          (let [b (parse-binding cenv' lname init (and allow-vararg-param? (empty? bindings)))
+          (let [b (parse-binding cenv' lname init method-params?
+                                 (and allow-vararg-param? (empty? bindings)))
                 cenv' (assoc-in cenv' [:lenv (:name b)]
                                 (cond-> b method-params? (assoc :param? true)))]
             (when (and allow-vararg-param? (not (t/array-type? (:type b))))
