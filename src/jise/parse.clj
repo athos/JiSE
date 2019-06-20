@@ -933,14 +933,15 @@
   (cond (true? test) (parse-expr cenv then)
         (false? test) (parse-expr cenv else)
         :else
-        (let [test' (as-> (parse-expr (with-context cenv :conditional) test) test'
+        (let [context (context-of cenv)
+              test' (as-> (parse-expr (with-context cenv :conditional) test) test'
                       (ensure-type (with-context cenv :expression)
                                    t/BOOLEAN test' :context :casting))
-              cenv' (if (and (:tail (:context cenv)) (nil? else))
-                      (with-context cenv :statement)
-                      cenv)
-              then' (parse-expr cenv' then)
-              else' (some->> else (parse-expr cenv'))
+              then' (parse-expr cenv then)
+              else' (if else
+                      (parse-expr cenv else)
+                      (when (:expression context)
+                        (parse-literal cenv nil)))
               node {:op :if, :type (:type then'), :test test', :then then'}]
           (if else'
             (-> node
@@ -975,12 +976,13 @@
   (if-let [l (and (symbol? test) (find-lname cenv test))]
     (let [default (when (odd? (count clauses))
                     (last clauses))
-          cenv' (if (and (:tail (:context cenv)) (nil? default))
-                  (with-context cenv :statement)
-                  cenv)
+          context (context-of cenv)
           clauses' (->> (partition 2 clauses)
-                        (mapv (partial parse-case-clause cenv' (:type l) test)))
-          default' (some->> default (parse-expr cenv'))
+                        (mapv (partial parse-case-clause cenv (:type l) test)))
+          default' (if default
+                     (parse-expr cenv default)
+                     (when (:expression context)
+                       (parse-literal cenv nil)))
           node {:op :switch
                 :type (:type (or (first clauses') default'))
                 :test (let [cenv' (with-context cenv :expression)]
