@@ -938,7 +938,7 @@
                       (ensure-type (with-context cenv :expression)
                                    t/BOOLEAN test' :context :casting))
               then' (parse-expr cenv then)
-              else' (if else
+              else' (if (some? else)
                       (parse-expr cenv else)
                       (when (:expression context)
                         (parse-literal cenv nil)))
@@ -979,7 +979,7 @@
           context (context-of cenv)
           clauses' (->> (partition 2 clauses)
                         (mapv (partial parse-case-clause cenv (:type l) test)))
-          default' (if default
+          default' (if (some? default)
                      (parse-expr cenv default)
                      (when (:expression context)
                        (parse-literal cenv nil)))
