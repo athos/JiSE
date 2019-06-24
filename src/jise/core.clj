@@ -49,8 +49,9 @@
 (defmacro class [maybe-name & body]
   (let [cname (if (symbol? maybe-name)
                 maybe-name
-                `C#)
+                (gensym 'C))
         enclosing-env (enclosing-env &env)
+        body (if (symbol? maybe-name) body (cons maybe-name body))
         qname (compile-class (meta &form) enclosing-env cname body)
         obj (gensym 'obj)]
     `(let [~obj (new ~qname)]
