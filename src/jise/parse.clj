@@ -1214,14 +1214,13 @@
 (defmethod parse-expr* 'super [cenv expr]
   (parse-ctor-invocation cenv expr))
 
+(declare parse-alength)
+
 (defn- parse-field-access [cenv target target-type fname]
   (if (and (t/array-type? target-type) (= fname "length"))
     (if (nil? target)
       (error "class expected")
-      (-> {:op :array-length
-           :type t/INT
-           :array target}
-          (inherit-context cenv)))
+      (parse-alength target))
     (if-let [{:keys [type used?] :as field} (get (:enclosing-env cenv) fname)]
       (do (reset! used? true)
           (-> {:op :field-access
@@ -1303,9 +1302,18 @@
     expr
     (recur (with-meta `(~'aget (~'aget ~arr ~index) ~@indices) (meta expr)))))
 
+(defn- parse-alength [cenv arr]
+  (-> {:op :array-length
+       :type t/INT
+       :array arr}
+      (inherit-context cenv)))
+
 (defmethod parse-expr* 'alength [cenv [_ arr :as expr]]
   (ensure-sufficient-arguments 1 expr)
-  (parse-expr cenv (with-meta `(.-length ~arr) (meta expr))))
+  (let [{:keys [type] :as arr'} (parse-expr (with-context cenv :expression) arr)]
+    (when-not (t/array-type? type)
+      (error (format "array required, but %s found" (err/stringify-type type))))
+    (parse-alength cenv arr')))
 
 (defmethod parse-expr* 'aget [cenv [_ arr index & indices :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
