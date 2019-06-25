@@ -124,13 +124,16 @@
 
 (declare parse-expr parse-method-invocation)
 
+(defn- ensure-array-type [{:keys [type] :as x}]
+  (when-not (t/array-type? type)
+    (error (format "array required, but %s found" (err/stringify-type type))))
+  x)
+
 (defn- parse-sugar [{:keys [class-type] :as cenv} [op :as expr]]
-  (or (when-let [maybe-array (or (find-lname cenv op)
-                                 (find-field cenv class-type (str op)))]
-        (if (t/array-type? (:type maybe-array))
-          (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))
-          (error (format "array required, but %s found"
-                         (err/stringify-type (:type maybe-array))))))
+  (or (when-let [maybe-array (some-> (or (find-lname cenv op)
+                                         (find-field cenv class-type (str op)))
+                                     ensure-array-type)]
+        (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr))))
       (when (t/get-methods cenv class-type class-type (str op))
         (parse-method-invocation cenv nil class-type (str op) (rest expr)))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
@@ -1310,9 +1313,8 @@
 
 (defmethod parse-expr* 'alength [cenv [_ arr :as expr]]
   (ensure-sufficient-arguments 1 expr)
-  (let [{:keys [type] :as arr'} (parse-expr (with-context cenv :expression) arr)]
-    (when-not (t/array-type? type)
-      (error (format "array required, but %s found" (err/stringify-type type))))
+  (let [arr' (-> (parse-expr (with-context cenv :expression) arr)
+                 ensure-array-type)]
     (parse-alength cenv arr')))
 
 (defmethod parse-expr* 'aget [cenv [_ arr index & indices :as expr]]
@@ -1320,10 +1322,7 @@
   (if indices
     (parse-expr cenv (fold-aget expr))
     (let [cenv' (with-context cenv :expression)
-          arr (parse-expr cenv' arr)
-          _ (when-not (t/array-type? (:type arr))
-              (error (format "array required, but %s found"
-                             (err/stringify-type (:type arr)))))
+          arr (ensure-array-type (parse-expr cenv' arr))
           index' (ensure-numeric-int cenv' (parse-expr cenv' index))]
       (-> {:op :array-access
            :type (t/element-type (:type arr))
@@ -1340,10 +1339,7 @@
                  (meta expr))]
       (parse-expr cenv form))
     (let [cenv' (with-context cenv :expression)
-          arr (parse-expr cenv' arr)
-          _ (when-not (t/array-type? (:type arr))
-              (error (format "array required, but %s found"
-                             (err/stringify-type (:type arr)))))
+          arr (ensure-array-type (parse-expr cenv' arr))
           elem-type (t/element-type (:type arr))
           index' (ensure-numeric-int cenv' (parse-expr cenv' index))
           expr' (ensure-type cenv' elem-type (parse-expr cenv' (first more)))]
