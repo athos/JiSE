@@ -932,6 +932,36 @@
 (defmethod parse-expr* 'dec! [cenv [_ target by]]
   (parse-increment cenv target (or by -1) (- Byte/MIN_VALUE) 'dec!))
 
+(defn- convert-operands-types-for-conditional [cenv then else]
+  (if (nil? else)
+    [then else]
+    (let [t1 (:type then), t2 (:type else)]
+      (cond (= t1 t2) [then else]
+
+            (and (#{t/BOOLEAN t/BOOLEAN_CLASS} t1)
+                    (#{t/BOOLEAN t/BOOLEAN_CLASS} t2))
+            [(unbox-if-needed then) (unbox-if-needed else)]
+
+            (and (t/convertible-to-numeric? t1)
+                 (t/convertible-to-numeric? t2))
+            (let [[c1 c2] (t/binary-numeric-promotion t1 t2)]
+              [(apply-conversions c1 then)
+               (apply-conversions c2 else)])
+
+            (nil? t1)
+            (let [c (t/widening-reference-conversion cenv t1 t2)]
+              [(apply-conversions [c] then) else])
+
+            (nil? t2)
+            (let [c (t/widening-reference-conversion cenv t2 t1)]
+              [then (apply-conversions [c] else)])
+
+            ;; TODO: a reference conditional expression may be a poly
+            ;; expression, and in that case, the type of expression should be
+            ;; determined considering the "target type" (i.e. the expected type
+            ;; from the context in which the expression appears)
+            :else [then else]))))
+
 (defmethod parse-expr* 'if [cenv [_ test then else]]
   (cond (true? test) (parse-expr cenv then)
         (false? test) (parse-expr cenv else)
@@ -940,11 +970,12 @@
               test' (as-> (parse-expr (with-context cenv :conditional) test) test'
                       (ensure-type (with-context cenv :expression)
                                    t/BOOLEAN test' :context :casting))
-              then' (parse-expr cenv then)
-              else' (if (some? else)
-                      (parse-expr cenv else)
-                      (when (:expression context)
-                        (parse-literal cenv nil)))
+              [then' else'] (convert-operands-types-for-conditional cenv
+                             (parse-expr cenv then)
+                             (if (some? else)
+                               (parse-expr cenv else)
+                               (when (:expression context)
+                                 (parse-literal cenv nil))))
               node {:op :if, :type (:type then'), :test test', :then then'}]
           (if else'
             (-> node
