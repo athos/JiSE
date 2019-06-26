@@ -196,7 +196,7 @@
   (cond (boolean? obj) BOOLEAN
         (char? obj) CHAR
         (int? obj) INT
-        (float? obj) FLOAT
+        (float? obj) DOUBLE
         (string? obj) STRING
         (instance? Type obj) CLASS
         :else nil))
