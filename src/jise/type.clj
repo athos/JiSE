@@ -162,7 +162,7 @@
    DOUBLE #{BYTE SHORT CHAR INT LONG FLOAT}})
 
 (defn- proper-primitive-super? [t1 t2]
-  (get-in narrower-primitive-types [t1 t2]))
+  (boolean (get-in narrower-primitive-types [t1 t2])))
 
 (def ^:private CLONEABLE (Type/getType Cloneable))
 (def ^:private SERIARIZABLE (Type/getType java.io.Serializable))
