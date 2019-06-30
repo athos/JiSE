@@ -939,7 +939,7 @@
       (cond (= t1 t2) [then else]
 
             (and (#{t/BOOLEAN t/BOOLEAN_CLASS} t1)
-                    (#{t/BOOLEAN t/BOOLEAN_CLASS} t2))
+                 (#{t/BOOLEAN t/BOOLEAN_CLASS} t2))
             [(unbox-if-needed then) (unbox-if-needed else)]
 
             (and (t/convertible-to-numeric? t1)
