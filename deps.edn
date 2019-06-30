@@ -1,6 +1,12 @@
 {:src ["src"]
  :deps {org.clojure/clojure {:mvn/version "1.10.0"}}
- :aliases {:check {:extra-deps {athos/clj-check {:git/url "https://github.com/athos/clj-check.git"
-                                                 :sha "b48d4e7000586529f81c1e29069b503b57259514"}}
+ :aliases {:check {:extra-deps {athos/clj-check
+                                {:git/url "https://github.com/athos/clj-check.git"
+                                 :sha "b48d4e7000586529f81c1e29069b503b57259514"}}
                    :main-opts ["-m" "clj-check.check"]}
+           :test {:extra-paths ["test"]
+                  :extra-deps {com.cognitect/test-runner
+                               {:git/url "https://github.com/cognitect-labs/test-runner.git"
+                                :sha "209b64504cb3bd3b99ecfec7937b358a879f55c1"}}
+                  :main-opts ["-m" "cognitect.test-runner"]}
            :examples {:extra-paths ["examples"]}}}
