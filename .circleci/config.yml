@@ -17,7 +17,7 @@ jobs:
       - restore_cache:
           key: v1-dependencies-{{ checksum "deps.edn" }}
 
-      - run: clojure -R:check -Stree
+      - run: clojure -R:check:test -Stree
 
       - save_cache:
           paths:
@@ -29,9 +29,9 @@ jobs:
           name: check
           command: clojure -A:examples:check src examples
 
-      # - run:
-      #     name: test CLJ
-      #     command: clojure -A:test
+      - run:
+          name: test
+          command: clojure -A:test
 
       # - run:
       #     name: test coverage
