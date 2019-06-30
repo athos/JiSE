@@ -146,7 +146,7 @@
                   (symbol (.getClassName t)))))
 
 (def ^:private wider-primitive-types
-  {BYTE #{SHORT INT LONG FLOAT}
+  {BYTE #{SHORT INT LONG FLOAT DOUBLE}
    SHORT #{INT LONG FLOAT DOUBLE}
    CHAR #{INT LONG FLOAT DOUBLE}
    INT #{LONG FLOAT DOUBLE}
