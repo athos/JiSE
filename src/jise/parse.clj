@@ -932,7 +932,7 @@
 (defmethod parse-expr* 'dec! [cenv [_ target by]]
   (parse-increment cenv target (or by -1) (- Byte/MIN_VALUE) 'dec!))
 
-(defn- convert-operands-types-for-conditional [cenv then else]
+(defn- convert-operand-types-for-conditional [cenv then else]
   (if (nil? else)
     [then else]
     (let [t1 (:type then), t2 (:type else)]
@@ -970,7 +970,7 @@
               test' (as-> (parse-expr (with-context cenv :conditional) test) test'
                       (ensure-type (with-context cenv :expression)
                                    t/BOOLEAN test' :context :casting))
-              [then' else'] (convert-operands-types-for-conditional cenv
+              [then' else'] (convert-operand-types-for-conditional cenv
                              (parse-expr cenv then)
                              (if (some? else)
                                (parse-expr cenv else)
