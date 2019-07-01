@@ -1,7 +1,8 @@
 (ns jise.type-test
   (:require [clojure.test :refer [deftest testing is are]]
             [jise.type :as t])
-  (:import [clojure.asm Type]))
+  (:import [clojure.asm Type]
+           [java.lang.reflect Modifier]))
 
 (import 'java.io.BufferedReader)
 
@@ -114,3 +115,18 @@
       t/BOOLEAN t/INT
       t/INT t/BOOLEAN
       (t/tag->type '[long]) (t/tag->type '[int]))))
+
+(deftest modifiers->access-flags-test
+  (are [ms expected]
+      (= expected (t/modifiers->access-flags ms))
+    (bit-or Modifier/ABSTRACT Modifier/PUBLIC)
+    #{:abstract :public}
+
+    (bit-or Modifier/FINAL Modifier/PRIVATE Modifier/STATIC)
+    #{:final :private :static}
+
+    (bit-or Modifier/PROTECTED Modifier/TRANSIENT)
+    #{:protected :transient}
+
+    Modifier/VOLATILE
+    #{:package :volatile}))
