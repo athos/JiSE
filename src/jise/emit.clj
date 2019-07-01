@@ -14,14 +14,14 @@
 
 (defn access-value [flags]
   (let [attrs {:abstract Opcodes/ACC_ABSTRACT
-               :static Opcodes/ACC_STATIC
-               :public Opcodes/ACC_PUBLIC
-               :protected Opcodes/ACC_PROTECTED
-               :private Opcodes/ACC_PRIVATE
                :final Opcodes/ACC_FINAL
+               :private Opcodes/ACC_PRIVATE
+               :protected Opcodes/ACC_PROTECTED
+               :public Opcodes/ACC_PUBLIC
+               :static Opcodes/ACC_STATIC
                :transient Opcodes/ACC_TRANSIENT
-               :volatile Opcodes/ACC_VOLATILE
-               :varargs Opcodes/ACC_VARARGS}]
+               :varargs Opcodes/ACC_VARARGS
+               :volatile Opcodes/ACC_VOLATILE}]
     (apply + (keep attrs flags))))
 
 (defn- emit-field [^ClassWriter cw {:keys [access name type value]}]

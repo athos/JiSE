@@ -212,6 +212,8 @@
     (Modifier/isProtected ms) (conj :protected)
     (Modifier/isPublic ms) (conj :public)
     (Modifier/isStatic ms) (conj :static)
+    (Modifier/isTransient ms) (conj :transient)
+    (Modifier/isVolatile ms) (conj :volatile)
     (->> (bit-or Modifier/PUBLIC Modifier/PROTECTED Modifier/PRIVATE)
          (bit-and ms)
          (= 0))

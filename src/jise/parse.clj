@@ -13,7 +13,7 @@
 
 (defn- access-flags [modifiers]
   (let [access (-> modifiers
-                   (select-keys [:abstract :static :public :protected :private :final :transient :volatile])
+                   (select-keys [:abstract :final :private :protected :public :static :transient :volatile])
                    keys
                    set)
         accessibility (filter #{:public :protected :private} access)]
