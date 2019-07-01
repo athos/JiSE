@@ -130,3 +130,39 @@
 
     Modifier/VOLATILE
     #{:package :volatile}))
+
+(deftest widening-primitive-conversion-test
+  (testing "t1 can be widened to t2"
+    (are [t1 t2]
+        (= {:conversion :widening-primitive :from t1 :to t2}
+           (t/widening-primitive-conversion t1 t2))
+      t/BYTE t/INT
+      t/INT t/LONG
+      t/LONG t/FLOAT
+      t/FLOAT t/DOUBLE))
+  (testing "t1 cannot be widened to t2"
+    (are [t1 t2]
+        (= nil (t/widening-primitive-conversion t1 t2))
+      t/BOOLEAN t/INT
+      t/INT t/SHORT
+      t/DOUBLE t/FLOAT
+      t/CHAR t/STRING
+      t/STRING t/CHAR)))
+
+(deftest narrowing-primitive-conversion-test
+  (testing "t1 can be narrowed to t2"
+    (are [t1 t2]
+        (= {:conversion :narrowing-primitive :from t1 :to t2}
+           (t/narrowing-primitive-conversion t1 t2))
+      t/INT t/CHAR
+      t/LONG t/SHORT
+      t/FLOAT t/LONG
+      t/DOUBLE t/FLOAT))
+  (testing "t1 cannot be narrowed to t2"
+    (are [t1 t2]
+        (= nil (t/narrowing-primitive-conversion t1 t2))
+      t/INT t/BOOLEAN
+      t/CHAR t/INT
+      t/FLOAT t/DOUBLE
+      t/CHAR t/STRING
+      t/STRING t/CHAR)))
