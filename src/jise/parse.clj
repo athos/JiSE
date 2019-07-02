@@ -8,14 +8,14 @@
   (:import [clojure.asm Type]
            [clojure.java.api Clojure]))
 
+(def ^:const ^:private allowed-modifiers
+  [:abstract :final :private :protected :public :static :synchronized :transient :volatile])
+
 (defn- modifiers-of [[_ name :as form]]
   (merge (meta form) (meta name)))
 
 (defn- access-flags [modifiers]
-  (let [access (-> modifiers
-                   (select-keys [:abstract :final :private :protected :public :static :transient :volatile])
-                   keys
-                   set)
+  (let [access (-> modifiers (select-keys allowed-modifiers) keys set)
         accessibility (filter #{:public :protected :private} access)]
     (case (count accessibility)
       0 (conj access :package)

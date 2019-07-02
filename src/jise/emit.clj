@@ -19,6 +19,7 @@
                :protected Opcodes/ACC_PROTECTED
                :public Opcodes/ACC_PUBLIC
                :static Opcodes/ACC_STATIC
+               :synchronized Opcodes/ACC_SYNCHRONIZED
                :transient Opcodes/ACC_TRANSIENT
                :varargs Opcodes/ACC_VARARGS
                :volatile Opcodes/ACC_VOLATILE}]
