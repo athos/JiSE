@@ -97,13 +97,13 @@ If you would rather use an unstable version of the library via [Clojure CLI tool
   - [x] static fields & static methods
   - [x] method overloading
   - [x] variable arity methods
-  [x] various modifiers
+- [x] various modifiers
   - [x] access control (`public` / `protected` / `private`)
   - [x] `abstract`
   - [x] `final`
   - [x] `transient`
   - [x] `volatile`
-  - [ ] `synchronized`
+  - [x] `synchronized`
 - [x] initializer & static initializer
 - [x] primitive arithmetics
 - [x] logical expressions
