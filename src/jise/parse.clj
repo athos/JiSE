@@ -1254,7 +1254,7 @@
   (if (and (t/array-type? target-type) (= fname "length"))
     (if (nil? target)
       (error "class expected")
-      (parse-alength target))
+      (parse-alength cenv target))
     (if-let [{:keys [type used?] :as field} (get (:enclosing-env cenv) fname)]
       (do (reset! used? true)
           (-> {:op :field-access
