@@ -249,3 +249,45 @@
       t/STRING t/OBJECT
       ;(t/tag->type 'java.io.Closeable) t/STRING
       nil t/STRING)))
+
+(deftest assignment-conversion-test
+  (testing "t1 can be converted to t2 in assignment context"
+    (are [t1 t2 expected]
+        (= expected (t/assignment-conversion {} t1 t2))
+      t/INT t/INT
+      []
+
+      t/INT t/LONG
+      [{:conversion :widening-primitive :from t/INT :to t/LONG}]
+
+      t/INT t/INTEGER_CLASS
+      [{:conversion :boxing :from t/INT :to t/INTEGER_CLASS}]
+
+      t/CHAR t/OBJECT
+      [{:conversion :boxing :from t/CHAR :to t/CHARACTER_CLASS}
+       {:conversion :widening-reference :from t/CHARACTER_CLASS :to t/OBJECT}]
+
+      t/BOOLEAN_CLASS t/BOOLEAN
+      [{:conversion :unboxing :from t/BOOLEAN_CLASS :to t/BOOLEAN}]
+
+      t/CHARACTER_CLASS t/DOUBLE
+      [{:conversion :unboxing :from t/CHARACTER_CLASS :to t/CHAR}
+       {:conversion :widening-primitive :from t/CHAR :to t/DOUBLE}]
+
+      t/STRING t/OBJECT
+      [{:conversion :widening-reference :from t/STRING :to t/OBJECT}]
+
+      nil t/STRING
+      [{:conversion :widening-reference :from nil :to t/STRING}])
+    (let [r (t/tag->type 'java.io.Reader)
+          cenv {:classes {'foo.bar.C {:parent r}}}
+          c (t/tag->type cenv 'foo.bar.C)]
+      (is (= [{:conversion :widening-reference :from c :to r}]
+             (t/assignment-conversion cenv c r)))))
+  (testing "t1 cannot be converted to t2 in assignment context"
+    (are [t1 t2] (= nil (t/assignment-conversion {} t1 t2))
+      t/LONG t/INT
+      t/INT t/LONG_CLASS
+      t/FLOAT_CLASS t/INT
+      t/OBJECT t/STRING
+      t/STRING nil)))
