@@ -300,7 +300,7 @@
                             [box widen])))
       [false true ] (if (= from OBJECT)
                       (let [box (boxing-conversion to)]
-                        [{:conversion :narrowing-reference :form from :to (:to box)}
+                        [{:conversion :narrowing-reference :from from :to (:to box)}
                          {:conversion :unboxing :from (:to box) :to (:from box)}])
                       (let [unbox (unboxing-conversion from)]
                         (or (and (= (:to unbox) to) [unbox])
