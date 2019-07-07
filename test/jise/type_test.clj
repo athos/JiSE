@@ -291,3 +291,56 @@
       t/FLOAT_CLASS t/INT
       t/OBJECT t/STRING
       t/STRING nil)))
+
+(deftest casting-conversion-test
+  (testing "t1 can be converted to t2 in casting context"
+    (are [t1 t2 expected]
+        (= expected (t/casting-conversion {} t1 t2))
+      t/INT t/INT
+      []
+
+      t/INT t/LONG
+      [{:conversion :widening-primitive :from t/INT :to t/LONG}]
+
+      t/DOUBLE t/LONG
+      [{:conversion :narrowing-primitive :from t/DOUBLE :to t/LONG}]
+
+      t/CHAR t/CHARACTER_CLASS
+      [{:conversion :boxing :from t/CHAR :to t/CHARACTER_CLASS}]
+
+      t/FLOAT t/OBJECT
+      [{:conversion :boxing :from t/FLOAT :to t/FLOAT_CLASS}
+       {:conversion :widening-reference :from t/FLOAT_CLASS :to t/OBJECT}]
+
+      t/LONG_CLASS t/LONG
+      [{:conversion :unboxing :from t/LONG_CLASS :to t/LONG}]
+
+      t/OBJECT t/CHAR
+      [{:conversion :narrowing-reference :from t/OBJECT :to t/CHARACTER_CLASS}
+       {:conversion :unboxing :from t/CHARACTER_CLASS :to t/CHAR}]
+
+      t/STRING t/OBJECT
+      [{:conversion :widening-reference :from t/STRING :to t/OBJECT}]
+
+      (t/tag->type 'java.io.Reader)
+      (t/tag->type 'java.io.BufferedReader)
+      [{:conversion :narrowing-reference
+        :from (t/tag->type 'java.io.Reader)
+        :to (t/tag->type 'java.io.BufferedReader)}]
+
+      nil t/STRING
+      [{:conversion :widening-reference :from nil :to t/STRING}]
+
+      t/STRING nil
+      [{:conversion :narrowing-reference :from t/STRING :to nil}])
+    (let [r (t/tag->type 'java.io.Reader)
+          cenv {:classes {'foo.bar.C {:parent r}}}
+          c (t/tag->type cenv 'foo.bar.C)]
+      (is (= [{:conversion :narrowing-reference :from r :to c}]
+             (t/casting-conversion cenv r c)))))
+  (testing "t1 cannot be converted to t2 in casting context"
+    (are [t1 t2] (= nil (t/casting-conversion {} t1 t2))
+      t/INT t/LONG_CLASS
+      t/CHAR nil
+      t/FLOAT_CLASS t/INT
+      nil t/BOOLEAN)))
