@@ -344,3 +344,68 @@
       t/CHAR nil
       t/FLOAT_CLASS t/INT
       nil t/BOOLEAN)))
+
+(deftest unary-numeric-promotion-test
+  (testing "t can be promoted by unary numeric promotion"
+    (are [t expected] (= expected (t/unary-numeric-promotion t))
+      t/INT
+      []
+
+      t/LONG
+      []
+
+      t/BYTE
+      [{:conversion :widening-primitive :from t/BYTE :to t/INT}]
+
+      t/CHARACTER_CLASS
+      [{:conversion :unboxing :from t/CHARACTER_CLASS :to t/CHAR}
+       {:conversion :widening-primitive :from t/CHAR :to t/INT}]
+
+      t/FLOAT_CLASS
+      [{:conversion :unboxing :from t/FLOAT_CLASS :to t/FLOAT}]))
+  (testing "t cannot be promoted by unary numeric promotion"
+    (are [t] (= nil (t/unary-numeric-promotion t))
+      t/BOOLEAN
+      (t/tag->type '[int])
+      t/STRING
+      nil)))
+
+(deftest binary-numeric-promotion-test
+  (testing "t1 and t2 can be promoted by binary numeric promotion"
+    (are [t1 t2 expected] (= expected (t/binary-numeric-promotion t1 t2))
+      t/INT t/INT
+      [[] []]
+
+      t/DOUBLE t/DOUBLE
+      [[] []]
+
+      t/INT t/SHORT
+      [[]
+       [{:conversion :widening-primitive :from t/SHORT :to t/INT}]]
+
+      t/CHAR t/LONG
+      [[{:conversion :widening-primitive :from t/CHAR :to t/LONG}]
+       []]
+
+      t/BYTE t/SHORT
+      [[{:conversion :widening-primitive :from t/BYTE :to t/INT}]
+       [{:conversion :widening-primitive :from t/SHORT :to t/INT}]]
+
+      t/INT t/INTEGER_CLASS
+      [[]
+       [{:conversion :unboxing :from t/INTEGER_CLASS :to t/INT}]]
+
+      t/LONG_CLASS t/INT
+      [[{:conversion :unboxing :from t/LONG_CLASS :to t/LONG}]
+       [{:conversion :widening-primitive :from t/INT :to t/LONG}]]
+
+      t/FLOAT_CLASS t/DOUBLE_CLASS
+      [[{:conversion :unboxing :from t/FLOAT_CLASS :to t/FLOAT}
+        {:conversion :widening-primitive :from t/FLOAT :to t/DOUBLE}]
+       [{:conversion :unboxing :from t/DOUBLE_CLASS :to t/DOUBLE}]]))
+  (testing "t1 and t2 cannot be promoted by binary numeric promotion"
+    (are [t1 t2] (= nil (t/binary-numeric-promotion t1 t2))
+      t/OBJECT t/INT
+      t/INT (t/tag->type '[int])
+      nil t/LONG
+      t/DOUBLE nil)))
