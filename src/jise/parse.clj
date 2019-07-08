@@ -907,8 +907,9 @@
                :rhs rhs}
               (inherit-context cenv)))))))
 
-(defn- parse-increment [cenv target by max-value op-name]
-  (let [{:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)]
+(defn- parse-increment [cenv target by max-value op-name dec?]
+  (let [{:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)
+        by (or by 1)]
     (when-not (t/numeric-type? type)
       (err/error-on-bad-operand-type op-name type))
     (if (and (= (:op target') :local)
@@ -922,15 +923,15 @@
           (if (:param? local)
             (error (str "final parameter " target " may not be assigned"))
             (error (str "cannot assign a value to final variable " target)))
-          (-> {:op :increment, :target target', :type type, :by by}
+          (-> {:op :increment, :target target', :type type, :by (cond-> by dec? -)}
               (inherit-context cenv))))
-      (parse-expr cenv `(set! ~target (~'+ ~target ~by))))))
+      (parse-expr cenv `(set! ~target (~(if dec? '- '+) ~target ~by))))))
 
 (defmethod parse-expr* 'inc! [cenv [_ target by]]
-  (parse-increment cenv target (or by 1) Byte/MAX_VALUE 'inc!))
+  (parse-increment cenv target by Byte/MAX_VALUE 'inc! false))
 
 (defmethod parse-expr* 'dec! [cenv [_ target by]]
-  (parse-increment cenv target (or by -1) (- Byte/MIN_VALUE) 'dec!))
+  (parse-increment cenv target by (- Byte/MIN_VALUE) 'dec! true))
 
 (defn- convert-operand-types-for-conditional [cenv then else]
   (if (nil? else)
