@@ -409,3 +409,31 @@
       t/INT (t/tag->type '[int])
       nil t/LONG
       t/DOUBLE nil)))
+
+(deftest find-field-test
+  (let [system (t/tag->type 'System)]
+    (is (= {:class system :type (t/tag->type 'java.io.PrintStream)
+            :access #{:static :public :final}}
+           (t/find-field {} nil system "out"))))
+  (let [reader (t/tag->type 'java.io.Reader)]
+    (is (= {:class reader :type t/OBJECT :access #{:protected}}
+           (t/find-field {} nil reader "lock")))
+    (is (= nil (t/find-field {} nil reader "noSuchField"))))
+  (let [cenv {:classes
+              {'foo.bar.C
+               {:parent (t/tag->type 'java.io.BufferedReader)
+                :fields {"f" {:type t/INT :access #{:private}}
+                         "g" {:type t/STRING :access #{:static :public :final}}}}
+               'foo.bar.D {:parent t/OBJECT}}}
+        c (t/tag->type cenv 'foo.bar.C)
+        d (t/tag->type cenv 'foo.bar.D)]
+    (is (= {:class c :type t/INT :access #{:private}}
+           (t/find-field cenv c c "f")))
+    (is (= nil (t/find-field cenv d c "f")))
+    (is (= {:class c :type t/STRING :access #{:static :public :final}}
+           (t/find-field cenv c c "g")))
+    (is (= {:class c :type t/STRING :access #{:static :public :final}}
+           (t/find-field cenv d c "g")))
+    (is (= {:class (t/tag->type 'java.io.Reader) :type t/OBJECT :access #{:protected}}
+           (t/find-field cenv c c "lock")))
+    (is (= nil (t/find-field cenv d c "lock")))))
