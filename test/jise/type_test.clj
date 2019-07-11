@@ -437,3 +437,28 @@
     (is (= {:class (t/tag->type 'java.io.Reader) :type t/OBJECT :access #{:protected}}
            (t/find-field cenv c c "lock")))
     (is (= nil (t/find-field cenv d c "lock")))))
+
+(deftest get-methods-test
+  (is (= #{{:class t/INTEGER_CLASS :interface? false :access #{:public :static}
+            :param-types [t/INT] :return-type t/INTEGER_CLASS}
+           {:class t/INTEGER_CLASS :interface? false :access #{:public :static}
+            :param-types [t/STRING t/INT] :return-type t/INTEGER_CLASS}
+           {:class t/INTEGER_CLASS :interface? false :access #{:public :static}
+            :param-types [t/STRING] :return-type t/INTEGER_CLASS}}
+         (set (t/get-methods {} nil t/INTEGER_CLASS "valueOf"))))
+  (is (= nil (t/get-methods {} nil t/STRING "noSuchMethod")))
+  (let [cl (t/tag->type 'ClassLoader)]
+    (is (= #{{:class cl :interface? false :access #{:public}
+              :param-types [t/STRING] :return-type (t/tag->type 'Class)}
+             {:class cl :interface? false :access #{:protected}
+              :param-types [t/STRING t/BOOLEAN] :return-type (t/tag->type 'Class)}}
+           (set (t/get-methods {} (t/tag->type 'java.net.URLClassLoader) cl "loadClass"))))
+    (is (= [{:class cl :interface? false :access #{:public}
+             :param-types [t/STRING] :return-type (t/tag->type 'Class)}]
+           (t/get-methods {} t/OBJECT cl "loadClass"))))
+  (is (= [{:class (t/tag->type 'java.io.InputStream) :interface? false :access #{:public}
+           :param-types [] :return-type t/VOID}]
+         (t/get-methods {} t/OBJECT (t/tag->type 'java.io.InputStream) "close")))
+  (is (= [{:class (t/tag->type 'java.io.Closeable) :interface? true :access #{:public :abstract}
+           :param-types [] :return-type t/VOID}]
+         (t/get-methods {} t/OBJECT (t/tag->type 'java.io.Closeable) "close"))))
