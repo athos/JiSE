@@ -8,6 +8,8 @@
   (:import [clojure.asm Type]
            [clojure.java.api Clojure]))
 
+(def ^:private ^:dynamic *active-labels* #{})
+
 (def ^:const ^:private allowed-modifiers
   [:abstract :final :private :protected :public :static :synchronized :transient :volatile])
 
@@ -183,8 +185,9 @@
     (let [{:keys [tag line label]} (meta expr)
           cenv' (if label (inherit-context cenv cenv :return? false) cenv)
           expr' (if (symbol? (first expr))
-                  (err/with-line&column-of expr
-                    (parse-expr* cenv' expr))
+                  (binding [*active-labels* (cond-> *active-labels* label (conj label))]
+                    (err/with-line&column-of expr
+                      (parse-expr* cenv' expr)))
                   (error (str "unsupported expression: " (pr-str expr)) {:expr expr}))]
       (as-> expr' expr'
         (if line
@@ -1129,12 +1132,18 @@
                               catch-clauses)}
         (inherit-context cenv :return? false))))
 
+(defn- ensure-existing-label [label]
+  (when-not (contains? *active-labels* label)
+    (error (str "undefined label: " label))))
+
 (defmethod parse-expr* 'continue [cenv [_ label]]
+  (ensure-existing-label label)
   (-> {:op :continue}
       (inherit-context cenv :return? false)
       (cond-> label (assoc :label label))))
 
 (defmethod parse-expr* 'break [cenv [_ label]]
+  (ensure-existing-label label)
   (-> {:op :break}
       (inherit-context cenv :return? false)
       (cond-> label (assoc :label label))))
