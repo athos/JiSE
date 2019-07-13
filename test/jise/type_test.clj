@@ -461,4 +461,47 @@
          (t/get-methods {} t/OBJECT (t/tag->type 'java.io.InputStream) "close")))
   (is (= [{:class (t/tag->type 'java.io.Closeable) :interface? true :access #{:public :abstract}
            :param-types [] :return-type t/VOID}]
-         (t/get-methods {} t/OBJECT (t/tag->type 'java.io.Closeable) "close"))))
+         (t/get-methods {} t/OBJECT (t/tag->type 'java.io.Closeable) "close")))
+  (let [cl (t/tag->type 'ClassLoader)
+        class (t/tag->type 'Class)
+        cenv {:classes
+              {'foo.bar.C
+               {:parent cl
+                :methods {"m" [{:interface? false :access #{:public}
+                                :param-types [t/STRING] :return-type t/INT}
+                               {:interface? false :access #{:private}
+                                :param-types [t/STRING t/INT] :return-type t/INT}]
+                          "loadClass" [{:interface? false :access #{:public}
+                                        :param-types [t/STRING] :return-type class}]}}
+               'foo.bar.D {:parent t/OBJECT}}}
+        c (t/tag->type cenv 'foo.bar.C)
+        d (t/tag->type cenv 'foo.bar.D)]
+    (are [caller callee name expected]
+        (= expected (set (t/get-methods cenv caller callee name)))
+      c c "m"
+      #{{:class c :interface? false :access #{:public}
+         :param-types [t/STRING] :return-type t/INT}
+        {:class c :interface? false :access #{:private}
+         :param-types [t/STRING t/INT] :return-type t/INT}}
+
+      d c "m"
+      #{{:class c :interface? false :access #{:public}
+         :param-types [t/STRING] :return-type t/INT}}
+
+      c c "noSuchMethod"
+      #{}
+
+      c c "findClass"
+      #{{:class cl :interface? false :access #{:protected}
+         :param-types [t/STRING] :return-type class}
+        {:class cl :interface? false :access #{:protected}
+         :param-types [t/STRING t/STRING] :return-type class}}
+
+      d c "findClass"
+      #{}
+
+      c c "loadClass"
+      #{{:class cl :interface? false :access #{:protected}
+         :param-types [t/STRING t/BOOLEAN] :return-type class}
+        {:class c :interface? false :access #{:public}
+         :param-types [t/STRING] :return-type class}})))
