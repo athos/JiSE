@@ -491,13 +491,11 @@
       c c "noSuchMethod"
       #{}
 
-      c c "findClass"
-      #{{:class cl :interface? false :access #{:protected}
-         :param-types [t/STRING] :return-type class}
-        {:class cl :interface? false :access #{:protected}
-         :param-types [t/STRING t/STRING] :return-type class}}
+      c c "resolveClass"
+      #{{:class cl :interface? false :access #{:protected :final}
+         :param-types [class] :return-type t/VOID}}
 
-      d c "findClass"
+      d c "resolveClass"
       #{}
 
       c c "loadClass"
