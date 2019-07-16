@@ -145,6 +145,14 @@
         :else (or (primitive-type->symbol t)
                   (symbol (.getClassName t)))))
 
+(defn final-class? [cenv t]
+  (and (not (primitive-type? t))
+       (let [tag (type->tag t)]
+         (or (when-let [{:keys [access]} (get-in cenv [:classes tag])]
+               (boolean (:final access)))
+             (when-let [^Class class (type->class t)]
+               (Modifier/isFinal (.getModifiers class)))))))
+
 (def ^:private wider-primitive-types
   {BYTE #{SHORT INT LONG FLOAT DOUBLE}
    SHORT #{INT LONG FLOAT DOUBLE}
