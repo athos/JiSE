@@ -330,9 +330,9 @@
 (defn- parse-supers [proto-cenv [maybe-supers & body]]
   (let [supers (when (vector? maybe-supers) maybe-supers)
         supers' (map (partial resolve-type proto-cenv) supers)
-        {[parent] false
+        {parents false
          interfaces true} (group-by #(.isInterface (t/type->class %)) supers')]
-    {:parent parent
+    {:parents (cond-> parents (empty? parents) (conj t/OBJECT))
      :interfaces interfaces
      :body (cond->> body (nil? supers) (cons maybe-supers))}))
 
@@ -437,11 +437,17 @@
             fields
             (:var->entry @vars))))
 
-(defn- check-supers [cenv parent interfaces]
+(defn- check-supers [cenv [parent :as parents] interfaces]
+  (doseq [c (concat parents interfaces)]
+    (when (or (t/primitive-type? c) (t/array-type? c))
+      (error (str "unexpected type\n"
+                  "  required: class\n"
+                  "  found: " (err/stringify-type c)))))
+  (when (> (count parents) 1)
+    (error (str "cannot inherit from more than one classes: "
+                (->> parents (map err/stringify-type) (str/join ", ")))))
   (when (t/final-class? cenv parent)
-    (error (str "cannot inherit from final " (err/stringify-type parent))))
-  ;; TODO: more checks for supers go here
-  )
+    (error (str "cannot inherit from final " (err/stringify-type parent)))))
 
 (defn parse-class
   ([class] (parse-class {} class))
@@ -450,11 +456,11 @@
      (let [alias (class-alias cname)
            proto-cenv {:class-name cname :classes {cname {}}
                        :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
-           {:keys [parent interfaces body]} (parse-supers proto-cenv body)
+           {:keys [parents interfaces body]} (parse-supers proto-cenv body)
            {:keys [ctors fields methods initializer]} (parse-class-body cname body)
            {initializer :non-static static-initializer :static} (filter-static initializer)
-           parent (or parent t/OBJECT)
-           _ (check-supers proto-cenv parent interfaces)
+           _ (check-supers proto-cenv parents interfaces)
+           parent (first parents)
            ctors' (if (empty? ctors)
                     [(with-meta `(~'defm ~alias [] (~'super))
                        (select-keys (modifiers-of class) [:public :protected :private]))]
