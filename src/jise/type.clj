@@ -272,10 +272,21 @@
     {:conversion :widening-reference :from from :to to}))
 
 (defn narrowing-reference-conversion [cenv from to]
-  ;; FIXME: there are tons of rules to allow narrowing reference conversion
   (when (and (not (primitive-type? from))
              (not (primitive-type? to))
-             (not (proper-reference-super? cenv to from)))
+             (not (proper-reference-super? cenv to from))
+             (or  (proper-reference-super? cenv from to)
+                  (and (array-type? to)
+                      (or (#{OBJECT CLONEABLE SERIALIZABLE} from)
+                          (and (array-type? from)
+                               (let [e1 (element-type from) e2 (element-type to)]
+                                 (narrowing-reference-conversion cenv e1 e2)))))
+                  (case [(boolean (some-> (type->class from) (.isInterface)))
+                         (boolean (some-> (type->class to) (.isInterface)))]
+                    [false true ] (not (final-class? cenv from))
+                    [true  false] (not (final-class? cenv to))
+                    [true  true]  true
+                    false)))
     {:conversion :narrowing-reference :from from :to to}))
 
 (defn assignment-conversion [cenv from to]
