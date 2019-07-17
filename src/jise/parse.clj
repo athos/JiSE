@@ -117,6 +117,7 @@
             (get-in [:var->entry vname]))))))
 
 (def ^:private VAR_TYPE (Type/getType clojure.lang.Var))
+(def ^:private IFN_TYPE (Type/getType clojure.lang.IFn))
 
 (defn find-field [cenv class fname]
   (or (t/find-field cenv (:class-type cenv) class fname)
@@ -126,16 +127,18 @@
 
 (declare parse-expr parse-method-invocation)
 
-(defn- ensure-array-type [{:keys [type] :as x}]
-  (when-not (t/array-type? type)
-    (error (format "array required, but %s found" (err/stringify-type type))))
-  x)
-
 (defn- parse-sugar [{:keys [class-type] :as cenv} [op :as expr]]
-  (or (when-let [maybe-array (some-> (or (find-lname cenv op)
-                                         (find-field cenv class-type (str op)))
-                                     ensure-array-type)]
-        (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr))))
+  (or (when-let [{:keys [type] :as x} (or (find-lname cenv op)
+                                          (find-field cenv class-type (str op)))]
+        (cond (t/array-type? type)
+              (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))
+
+              (t/super? cenv IFN_TYPE type)
+              (parse-expr cenv (with-meta `(. ~op invoke ~@(rest expr)) (meta expr)))
+
+              :else
+              (error (format "array or clojure.lang.IFn required, but %s found"
+                             (err/stringify-type type)))))
       (when (t/get-methods cenv class-type class-type (str op))
         (parse-method-invocation cenv nil class-type (str op) (rest expr)))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
@@ -1359,6 +1362,11 @@
   (if (empty? indices)
     expr
     (recur (with-meta `(~'aget (~'aget ~arr ~index) ~@indices) (meta expr)))))
+
+(defn- ensure-array-type [{:keys [type] :as x}]
+  (when-not (t/array-type? type)
+    (error (format "array required, but %s found" (err/stringify-type type))))
+  x)
 
 (defn- parse-alength [cenv arr]
   (-> {:op :array-length
