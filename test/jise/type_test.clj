@@ -236,6 +236,8 @@
       t/OBJECT t/STRING
       (t/tag->type 'java.io.Closeable) (t/tag->type 'java.io.BufferedReader)
       (t/tag->type '[Object]) (t/tag->type '[String])
+      t/OBJECT (t/tag->type '[int])
+      (t/tag->type 'Cloneable) (t/tag->type 'java.io.Serializable)
       t/STRING nil)
     (let [r (t/tag->type 'java.io.Reader)
           cenv {:classes {'foo.bar.C {:parent r}}}
@@ -247,7 +249,8 @@
         (= nil (t/narrowing-reference-conversion {} t1 t2))
       t/LONG t/INT
       t/STRING t/OBJECT
-      ;(t/tag->type 'java.io.Closeable) t/STRING
+      t/STRING (t/tag->type '[long])
+      (t/tag->type 'java.io.Closeable) t/STRING
       nil t/STRING)))
 
 (deftest assignment-conversion-test
