@@ -173,14 +173,14 @@
   (boolean (get-in narrower-primitive-types [t1 t2])))
 
 (def ^:private CLONEABLE (Type/getType Cloneable))
-(def ^:private SERIARIZABLE (Type/getType java.io.Serializable))
+(def ^:private SERIALIZABLE (Type/getType java.io.Serializable))
 
 (defn- proper-reference-super? [cenv t1 t2]
   (or (= t1 OBJECT)
       (= t2 nil)
       (and (not= t1 nil)
            (if (array-type? t2)
-             (or (#{OBJECT CLONEABLE SERIARIZABLE} t1)
+             (or (#{OBJECT CLONEABLE SERIALIZABLE} t1)
                  (let [et (element-type t2)]
                    (and (not (primitive-type? et))
                         (array-type? t1)
