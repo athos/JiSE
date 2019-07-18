@@ -1199,21 +1199,22 @@
       (err/error-on-incompatible-types t/INT (:type x))))
 
 (defn- parse-array-creation [cenv type' [_ type & args :as expr]]
-  (if (vector? (first args))
-    (let [elems (first args)
-          arr (gensym)
-          form `(let* [~arr (new ~type ~(count elems))]
-                  ~@(for [[i init] (map-indexed vector elems)
-                          :let [init' (if (vector? (first type))
-                                        `(new ~(first type) ~init)
-                                        init)]]
-                      `(~'aset ~arr ~i ~init'))
-                  ~arr)]
-      (parse-expr cenv (with-meta form (meta expr))))
-    (let [cenv' (with-context cenv :expression)]
+  (let [cenv' (with-context cenv :expression)]
+    (if (vector? (first args))
+      (let [elem-type (t/element-type type')
+            elems' (map (fn [e]
+                          (->> (if (vector? e) `(new ~(t/type->tag elem-type) ~e) e)
+                               (parse-expr cenv')
+                               (ensure-type cenv' elem-type)))
+                        (first args))]
+        (-> {:op :new-array
+             :type type'
+             :lengths [(parse-literal cenv' (count elems'))]
+             :elements (vec elems')}
+            (inherit-context cenv)))
       (-> {:op :new-array
            :type type'
-           :lengths (map #(ensure-numeric-int cenv' (parse-expr cenv' %)) args)}
+           :lengths (mapv #(ensure-numeric-int cenv' (parse-expr cenv' %)) args)}
           (inherit-context cenv)))))
 
 (defn- args-for [cenv {:keys [param-types] :as ctor-or-method} args args']

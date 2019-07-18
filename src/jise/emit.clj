@@ -573,7 +573,8 @@
    t/FLOAT Opcodes/T_FLOAT
    t/DOUBLE Opcodes/T_DOUBLE})
 
-(defmethod emit-expr* :new-array [{:keys [^MethodVisitor mv] :as emitter} {:keys [type lengths context line]}]
+(defmethod emit-expr* :new-array
+  [{:keys [^MethodVisitor mv] :as emitter} {:keys [type lengths elements context line]}]
   (let [dim (count lengths)]
     (run! (partial emit-expr emitter) lengths)
     (emit-line emitter line)
@@ -583,7 +584,13 @@
         (if (t/primitive-type? elem-type)
           (let [t (primitive-types elem-type)]
             (.visitIntInsn mv Opcodes/NEWARRAY t))
-          (.visitTypeInsn mv Opcodes/ANEWARRAY (.getInternalName elem-type)))))
+          (.visitTypeInsn mv Opcodes/ANEWARRAY (.getInternalName elem-type)))
+        (when elements
+          (doseq [[i elem] (map-indexed vector elements)]
+            (emit-dup emitter type)
+            (emit-expr emitter {:op :literal :value i :type t/INT :context #{:expression}})
+            (emit-expr emitter elem)
+            (.visitInsn mv (.getOpcode elem-type Opcodes/IASTORE))))))
     (drop-if-statement emitter context)))
 
 (defmethod emit-expr* :array-length [{:keys [^MethodVisitor mv] :as emitter} {:keys [array context line]}]
