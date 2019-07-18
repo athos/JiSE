@@ -88,6 +88,8 @@ If you would rather use an unstable version of the library via [Clojure CLI tool
 ;=> (1 1 2 3 4 5 9)
 ```
 
+For a more practical example, see also [AOBench code](examples/example/aobench.clj) written in JiSE.
+
 ## Supported Java features
 - [x] class definition
 - [x] inheritance & interface implementation
@@ -133,6 +135,7 @@ If you would rather use an unstable version of the library via [Clojure CLI tool
 - [ ] annotations
 - [ ] generics
 - [ ] lambda expressions
+- [ ] method references
 
 ## License
 
