@@ -160,22 +160,34 @@
     (parse-expr cenv `(~'cast ~tag ~(vary-meta sym dissoc :tag)))
     (letfn [(parse-as-field [cenv target]
               (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))
+            (parse-this [cenv]
+              (if (:static? cenv)
+                (error "non-static variable this cannot be referenced from a static context")
+                (-> {:op :local :type (:class-type cenv)
+                     :local {:index 0 :access #{} :param? true}}
+                    (inherit-context cenv))))
             (parse-super [cenv]
               (if (:static? cenv)
                 (error "non-static variable super cannot be referenced from a static context")
                 (-> {:op :super :type (find-in-current-class cenv :parent)}
                     (inherit-context cenv))))]
       (if-let [cname (namespace sym)]
-        (if-let [{:keys [field-name]} (find-var cenv sym)]
-          (let [form `(.deref (. ~(:class-name cenv) ~(symbol (str \- field-name))))]
-            (parse-expr cenv (with-meta form (meta sym))))
-          (parse-as-field cenv (symbol cname)))
+        (if (= cname "jise.core")
+          (case (misc/symbol-without-jise-ns sym)
+            this (parse-this cenv)
+            super (parse-super cenv)
+            (error (str "cannot find symbol: " sym)))
+          (if-let [{:keys [field-name]} (find-var cenv sym)]
+            (let [form `(.deref (. ~(:class-name cenv) ~(symbol (str \- field-name))))]
+              (parse-expr cenv (with-meta form (meta sym))))
+            (parse-as-field cenv (symbol cname))))
         (if-let [{:keys [type foreign?] :as local} (find-lname cenv sym)]
           (if foreign?
             (parse-as-field cenv 'this)
             (inherit-context {:op :local :type type :local local} cenv))
-          (if (= sym 'super)
-            (parse-super cenv)
+          (case sym
+            this (parse-this cenv)
+            super (parse-super cenv)
             (if-let [f (find-field cenv (:class-type cenv) (name sym))]
               (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
                 (parse-as-field cenv target))
@@ -301,13 +313,9 @@
   (let [modifiers (modifiers-of method)
         {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
         static? (boolean (:static access))
-        init-lenv (if static?
-                    {}
-                    {"this" {:index 0 :type (:class-type cenv)
-                             :access #{} :param? true}})
-        init-index (count init-lenv)
+        init-index (if static? 0 1)
         [cenv' args'] (parse-bindings (assoc cenv
-                                             :lenv (merge init-lenv (:enclosing-env cenv))
+                                             :lenv (:enclosing-env cenv)
                                              :next-index (atom init-index))
                                       (interleave args (repeat nil))
                                       :method-params? true)
