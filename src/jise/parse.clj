@@ -183,13 +183,13 @@
             (parse-as-field cenv (symbol cname))))
         (if-let [{:keys [type foreign?] :as local} (find-lname cenv sym)]
           (if foreign?
-            (parse-as-field cenv 'this)
+            (parse-as-field cenv 'jise.core/this)
             (inherit-context {:op :local :type type :local local} cenv))
           (case sym
             this (parse-this cenv)
             super (parse-super cenv)
             (if-let [f (find-field cenv (:class-type cenv) (name sym))]
-              (let [target (if (:static (:access f)) (:class-name cenv) 'this)]
+              (let [target (if (:static (:access f)) (:class-name cenv) 'jise.core/this)]
                 (parse-as-field cenv target))
               (when throws-on-failure?
                 (error (str "cannot find symbol: " sym) {:variable sym})))))))))
@@ -353,7 +353,7 @@
 (defn convert-def-to-set [alias [_ name init :as def]]
   (when (and init (not (field-init-value def)))
     (let [static? (:static (modifiers-of def))]
-      (cond-> `(set! (. ~(if static? alias 'this)
+      (cond-> `(set! (. ~(if static? alias 'jise.core/this)
                         ~(symbol (str \- name)))
                      ~init)
         static? (with-meta {:static true})))))
@@ -1326,7 +1326,7 @@
                          (= target-type (:class-type cenv))
                          (not (:static (:access method))))
                   ;; for method invocation omitting receiver such as (method args ...)
-                  (parse-expr cenv' 'this)
+                  (parse-expr cenv' 'jise.core/this)
                   target)]
     (when (and (nil? target') (not (:static (:access method))))
       (error "class expected"))
