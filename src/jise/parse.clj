@@ -1306,27 +1306,30 @@
   (let [cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
         arg-types (map :type args')
-        methods (try
-                  (t/find-methods cenv (:class-type cenv) target-type mname arg-types)
-                  (catch Exception e
-                    (err/handle-method-error cenv target-type mname arg-types e)))]
-    (when-let [method (first methods)]
-      (let [target' (if (and (nil? target)
-                             (= target-type (:class-type cenv))
-                             (not (:static (:access method))))
-                      ;; for method invocation omitting receiver such as (method args ...)
-                      (parse-expr cenv' 'this)
-                      target)]
-        (when (and (nil? target') (not (:static (:access method))))
-          (error "class expected"))
-        (-> {:op :method-invocation
-             :type (:return-type method)
-             :method (assoc method :name mname)
-             :args (args-for cenv' method args args')}
-            (inherit-context cenv)
-            (cond->
-              target' (assoc :target target')
-              (= (:op target') :super) (assoc :super? true)))))))
+        method (try
+                 (let [ms (t/find-methods cenv (:class-type cenv) target-type mname arg-types)]
+                   (if (> (count ms) 1)
+                     (throw (ex-info "ambiguous invocation"
+                                     {:cause :ambiguous-invocation :alternatives ms}))
+                     (first ms)))
+                 (catch Exception e
+                   (err/handle-method-error cenv target-type mname arg-types e)))
+        target' (if (and (nil? target)
+                         (= target-type (:class-type cenv))
+                         (not (:static (:access method))))
+                  ;; for method invocation omitting receiver such as (method args ...)
+                  (parse-expr cenv' 'this)
+                  target)]
+    (when (and (nil? target') (not (:static (:access method))))
+      (error "class expected"))
+    (-> {:op :method-invocation
+         :type (:return-type method)
+         :method (assoc method :name mname)
+         :args (args-for cenv' method args args')}
+        (inherit-context cenv)
+        (cond->
+            target' (assoc :target target')
+            (= (:op target') :super) (assoc :super? true)))))
 
 (defmethod parse-expr* '. [cenv [_ target property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))

@@ -118,6 +118,14 @@
                                       (:static access) (str class-name \.))
                                     (error-message-on-incompatible-types pt at)))
                           (str/join \newline)))))
+            :ambiguous-invocation
+            (let [[m1 m2] (:alternatives ed)]
+              (str "reference to " name " is ambiguous\n"
+                   "  both method " (signature-string name (:param-types m1))
+                   " in " (stringify-type (:class m1))
+                   " and method " (signature-string name (:param-types m2))
+                   " in " (stringify-type (:class m2))
+                   " match"))
             (ex-message e))
           (error (dissoc ed :cause)))
       (throw e))))
