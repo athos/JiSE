@@ -508,12 +508,13 @@
               (assoc method :conversions cs)))))))
 
 (defn- maximally-specific-methods [cenv methods]
-  (filter (fn [m1]
-            (every? (fn [m2]
-                      (->> (map vector (:param-types m1) (:param-types m2))
-                           (every? (fn [[p1 p2]] (super? cenv p2 p1)))))
-                    methods))
-          methods))
+  (for [[i m1] (map-indexed vector methods)
+        :when (not-any? (fn [[j m2]]
+                          (when-not (= i j)
+                            (->> (map vector (:param-types m1) (:param-types m2))
+                                 (every? (fn [[p1 p2]] (super? cenv p1 p2))))))
+                        (map-indexed vector methods))]
+    m1))
 
 (defn- filter-methods [cenv arg-types methods]
   (let [{fixed-ms false, variable-ms true} (group-by #(boolean (:varargs (:access %))) methods)
