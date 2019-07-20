@@ -131,7 +131,7 @@
   (or (when-let [{:keys [type] :as x} (or (find-lname cenv op)
                                           (find-field cenv class-type (str op)))]
         (cond (t/array-type? type)
-              (parse-expr cenv (with-meta `(~'aget ~@expr) (meta expr)))
+              (parse-expr cenv (with-meta `(jise.core/aget ~@expr) (meta expr)))
 
               (t/super? cenv IFN_TYPE type)
               (parse-expr cenv (with-meta `(. ~op invoke ~@(rest expr)) (meta expr)))
@@ -157,7 +157,7 @@
 
 (defn- parse-symbol [cenv sym & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
   (if-let [tag (:tag (meta sym))]
-    (parse-expr cenv `(~'cast ~tag ~(vary-meta sym dissoc :tag)))
+    (parse-expr cenv `(jise.core/cast ~tag ~(vary-meta sym dissoc :tag)))
     (letfn [(parse-as-field [cenv target]
               (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))
             (parse-this [cenv]
@@ -196,7 +196,7 @@
 
 (defn- parse-seq [cenv expr]
   (if-let [tag (:tag (meta expr))]
-    (parse-expr cenv `(~'cast ~tag ~(vary-meta expr dissoc :tag)))
+    (parse-expr cenv `(jise.core/cast ~tag ~(vary-meta expr dissoc :tag)))
     (let [{:keys [tag line label]} (meta expr)
           cenv' (if label (inherit-context cenv cenv :return? false) cenv)
           expr' (if (symbol? (first expr))
@@ -303,7 +303,7 @@
           (let [non-empty? (not (and (= (:op node) :null) (:return (:context node))))
                 cenv' (cond-> cenv non-empty? (with-context :statement))]
             (-> {:op :do :type (:type body)
-                 :exprs (cond-> [(parse-ctor-invocation cenv' '(super))]
+                 :exprs (cond-> [(parse-ctor-invocation cenv' '(jise.core/super))]
                           ;; omit entire body when body is empty `do`
                           non-empty? (conj body))}
                 (inherit-context cenv :return? false)))))
@@ -353,9 +353,9 @@
 (defn convert-def-to-set [alias [_ name init :as def]]
   (when (and init (not (field-init-value def)))
     (let [static? (:static (modifiers-of def))]
-      (cond-> `(set! (. ~(if static? alias 'jise.core/this)
-                        ~(symbol (str \- name)))
-                     ~init)
+      (cond-> `(jise.core/set! (. ~(if static? alias 'jise.core/this)
+                                  ~(symbol (str \- name)))
+                               ~init)
         static? (with-meta {:static true})))))
 
 (defn- parse-class-body [cname body]
@@ -438,13 +438,15 @@
     (reduce (fn [fields [name {:keys [type used?]}]]
               (if @used?
                 (let [type' (t/type->tag type)]
-                  (conj fields `(def ~(with-meta (symbol name) {:tag type' :public true}))))
+                  (conj fields `(jise.core/def ~(with-meta (symbol name) {:tag type' :public true}))))
                 fields))
             fields
             enclosing-env)
     (reduce (fn [fields [_ {:keys [field-name var-name]}]]
-              (conj fields `(def ~(with-meta field-name {:tag 'clojure.lang.Var :private true :static true})
-                              (~'cast clojure.lang.Var (Clojure/var ~(str var-name))))))
+              (conj fields `(jise.core/def ~(with-meta
+                                              field-name
+                                              {:tag 'clojure.lang.Var :private true :static true})
+                              (jise.core/cast clojure.lang.Var (Clojure/var ~(str var-name))))))
             fields
             (:var->entry @vars))))
 
@@ -473,12 +475,12 @@
            _ (check-supers proto-cenv parents interfaces)
            parent (first parents)
            ctors' (if (empty? ctors)
-                    [(with-meta `(~'defm ~alias [] (~'super))
+                    [(with-meta `(jise.core/defm ~alias [] (jise.core/super))
                        (select-keys (modifiers-of class) [:public :protected :private]))]
                     ctors)
            cenv (-> proto-cenv
                     (init-cenv cname parent interfaces fields ctors' methods
-                               (when (seq initializer) `(do ~@initializer)))
+                               (when (seq initializer) `(jise.core/do ~@initializer)))
                     (assoc :enclosing-env enclosing-env
                            :vars (atom {:var->entry {} :fields #{}}))
                     (as-> cenv (assoc cenv :class-type (resolve-type cenv cname))))
@@ -494,7 +496,7 @@
                                                  (concat static-initializer)
                                                  seq)]
                               (err/with-line&column-of class
-                                (let [m `^:static (~'defm ~'<clinit> [] ~@init)]
+                                (let [m `^:static (jise.core/defm ~'<clinit> [] ~@init)]
                                   (-> (parse-method cenv false m)
                                       (assoc :static-initializer? true)))))
         :ctors ctors'
@@ -574,7 +576,7 @@
 (defmethod parse-expr* '/ [cenv [_ & args :as expr]]
   (ensure-sufficient-arguments 1 expr :varargs? true)
   (case (count args)
-    1 (parse-expr cenv (with-meta `(~'/ 1 ~(first args)) (meta expr)))
+    1 (parse-expr cenv (with-meta `(jise.core// 1 ~(first args)) (meta expr)))
     2 (parse-arithmetic cenv expr :div)
     (parse-expr cenv (fold-binary-op expr))))
 
@@ -596,7 +598,7 @@
 
 (defmethod parse-expr* '! [cenv [_ operand :as expr]]
   (ensure-sufficient-arguments 1 expr)
-  (parse-expr cenv (with-meta `(~'xor ~operand -1) (meta expr))))
+  (parse-expr cenv (with-meta `(jise.core/xor ~operand -1) (meta expr))))
 
 (defn- parse-shift [cenv [op-name x y :as expr] op]
   (ensure-sufficient-arguments 2 expr)
@@ -657,7 +659,7 @@
 
 (defn- fold-comparison [[op & args :as expr]]
   (with-meta
-    `(~'and ~@(map (fn [[x y]] `(~op ~x ~y)) (partition 2 1 args)))
+    `(jise.core/and ~@(map (fn [[x y]] `(~op ~x ~y)) (partition 2 1 args)))
     (meta expr)))
 
 (defn- parse-comparison
@@ -669,7 +671,7 @@
              x' (parse-expr cenv' x)
              y' (parse-expr cenv' y)]
          (parse-comparison cenv' x' y' op op-name)))
-     (parse-expr cenv `(if ~expr true false))))
+     (parse-expr cenv `(jise.core/if ~expr true false))))
   ([cenv lhs rhs op op-name]
    (if ('#{== !=} op-name)
      (parse-equal cenv lhs rhs op op-name)
@@ -757,7 +759,7 @@
         {:op :and
          :type t/BOOLEAN
          :exprs exprs'}))
-    (parse-expr cenv `(if ~expr true false))))
+    (parse-expr cenv `(jise.core/if ~expr true false))))
 
 (defn- negate-expr [{:keys [op] :as expr}]
   (case op
@@ -789,7 +791,7 @@
          :type t/BOOLEAN
          :exprs (mapv negate-expr (butlast exprs'))
          :expr (last exprs')}))
-    (parse-expr cenv `(if ~expr true false))))
+    (parse-expr cenv `(jise.core/if ~expr true false))))
 
 (defmethod parse-expr* 'not [cenv [_ operand :as expr]]
   (ensure-sufficient-arguments 1 expr)
@@ -798,7 +800,7 @@
       (if (#{t/BOOLEAN t/BOOLEAN_CLASS} type)
         (negate-expr operand')
         (err/error-on-bad-operand-type 'not type)))
-    (parse-expr cenv `(if ~expr true false))))
+    (parse-expr cenv `(jise.core/if ~expr true false))))
 
 (defn- parse-cast [cenv type x]
   (let [cenv' (with-context cenv :expression)]
@@ -846,16 +848,16 @@
 
 (defmethod parse-expr* 'nil? [cenv [_ arg :as expr]]
   (ensure-sufficient-arguments 1 expr)
-  (parse-expr cenv (with-meta `(~'== ~arg nil) (meta expr))))
+  (parse-expr cenv (with-meta `(jise.core/== ~arg nil) (meta expr))))
 
 (defmethod parse-expr* `nil? [cenv [_ arg :as expr]]
   (ensure-sufficient-arguments 1 expr)
-  (parse-expr cenv (with-meta `(~'== ~arg nil) (meta expr))))
+  (parse-expr cenv (with-meta `(jise.core/== ~arg nil) (meta expr))))
 
 (defmethod parse-expr* 'str [cenv [_ & args :as expr]]
   (if (every? string? args)
     (parse-expr cenv (apply str args))
-    (let [form `(-> (new StringBuilder)
+    (let [form `(-> (jise.core/new StringBuilder)
                     ~@(map (fn [arg] `(.append ~arg)) args)
                     .toString)]
       (parse-expr cenv (with-meta form (meta expr))))))
@@ -888,7 +890,7 @@
         (inherit-context cenv :return? false))))
 
 (defmethod parse-expr* 'let [cenv expr]
-  (parse-expr cenv (with-meta `(let* ~@(rest expr)) (meta expr))))
+  (parse-expr cenv (with-meta `(jise.core/let* ~@(rest expr)) (meta expr))))
 
 (defn- parse-field-update [cenv {:keys [field] :as lhs} rhs]
   (cond (and (:final (:access field))
@@ -953,7 +955,7 @@
             (error (str "cannot assign a value to final variable " target)))
           (-> {:op :increment, :target target', :type type, :by (cond-> by dec? -)}
               (inherit-context cenv))))
-      (parse-expr cenv `(set! ~target (~(if dec? '- '+) ~target ~by))))))
+      (parse-expr cenv `(jise.core/set! ~target (~(if dec? 'jise.core/- 'jise.core/+) ~target ~by))))))
 
 (defmethod parse-expr* 'inc! [cenv [_ target by]]
   (parse-increment cenv target by Byte/MAX_VALUE 'inc! false))
@@ -1028,8 +1030,8 @@
                   ks)
         guard (when (= type t/STRING)
                 (->> (if (> (count ks) 1)
-                       `(~'or ~@(map (fn [k] `(~'= ~sym ~k)) ks))
-                       `(~'= ~sym ~(first ks)))
+                       `(jise.core/or ~@(map (fn [k] `(jise.core/= ~sym ~k)) ks))
+                       `(jise.core/= ~sym ~(first ks)))
                      (parse-expr (with-context cenv :conditional))))
         expr' (parse-expr cenv expr)]
     (cond-> {:keys ks' :type (:type expr') :body expr'}
@@ -1059,9 +1061,9 @@
             (inherit-context cenv :return? false))
         (inherit-context node cenv)))
     (let [h (gensym 'h)
-          form `(let* [~h ~test]
+          form `(jise.core/let [~h ~test]
                   ~(with-meta
-                     `(~'case ~h ~@clauses)
+                     `(jise.core/case ~h ~@clauses)
                      (meta expr)))]
       (parse-expr cenv form))))
 
@@ -1083,16 +1085,16 @@
   (let [[lname expr] args
         {:keys [type]} (parse-expr (with-context cenv :expression) expr)
         form' (cond (t/array-type? type)
-                    `(let* [array# ~expr
-                            len# (.-length array#)
-                            ~lname (~'aget array# 0)]
-                       (~'for [i# 0 (~'< i# len#) (~'inc! i#)]
-                        (set! ~lname (~'aget array# i#))
-                        ~@body))
+                    `(jise.core/let [array# ~expr
+                                     len# (.-length array#)
+                                     ~lname (jise.core/aget array# 0)]
+                       (jise.core/for [i# 0 (jise.core/< i# len#) (jise.core/inc! i#)]
+                         (jise.core/set! ~lname (jise.core/aget array# i#))
+                         ~@body))
                     (t/super? cenv (t/class->type Iterable) type)
-                    `(~'for [i# (.iterator ~expr) (.hasNext i#) nil]
-                      (let* [~lname (.next i#)]
-                        ~@body))
+                    `(jise.core/for [i# (.iterator ~expr) (.hasNext i#) nil]
+                       (jise.core/let [~lname (.next i#)]
+                         ~@body))
                     :else (error (str "for-each not applicable to expression type\n"
                                       "  required: array or Iterable\n"
                                       "  found: " (err/stringify-type type))))]
@@ -1130,9 +1132,9 @@
 (defn- append-finally [cenv finally-clause exprs]
   (if finally-clause
     (if (:expression (context-of cenv))
-      `(let* [v# (do ~@exprs)] ~@finally-clause v#)
-      `(do ~@exprs ~@finally-clause))
-    `(do ~@exprs)))
+      `(jise.core/let [v# (jise.core/do ~@exprs)] ~@finally-clause v#)
+      `(jise.core/do ~@exprs ~@finally-clause))
+    `(jise.core/do ~@exprs)))
 
 (defn- parse-catch-clause [cenv finally-clause [_ class lname & body]]
   (let [class' (resolve-type cenv class)
@@ -1211,7 +1213,7 @@
     (if (vector? (first args))
       (let [elem-type (t/element-type type')
             elems' (map (fn [e]
-                          (->> (if (vector? e) `(new ~(t/type->tag elem-type) ~e) e)
+                          (->> (if (vector? e) `(jise.core/new ~(t/type->tag elem-type) ~e) e)
                                (parse-expr cenv')
                                (ensure-type cenv' elem-type)))
                         (first args))]
@@ -1229,8 +1231,8 @@
   (let [ncs (count (:conversions ctor-or-method))
         varargs (when (not= (count param-types) ncs)
                   (let [vararg-type (peek param-types)
-                        varargs-form `(new ~(t/type->tag vararg-type)
-                                           ~(vec (drop ncs args)))]
+                        varargs-form `(jise.core/new ~(t/type->tag vararg-type)
+                                                     ~(vec (drop ncs args)))]
                     (parse-expr cenv varargs-form)))]
     (cond-> (mapv apply-conversions (:conversions ctor-or-method) args')
       varargs
@@ -1373,7 +1375,10 @@
 (defn- fold-aget [[_ arr index & indices :as expr]]
   (if (empty? indices)
     expr
-    (recur (with-meta `(~'aget (~'aget ~arr ~index) ~@indices) (meta expr)))))
+    (recur
+     (with-meta
+       `(jise.core/aget (jise.core/aget ~arr ~index) ~@indices)
+       (meta expr)))))
 
 (defn- ensure-array-type [{:keys [type] :as x}]
   (when-not (t/array-type? type)
@@ -1410,7 +1415,9 @@
   (if (next more)
     (let [indices (cons index (butlast more))
           form (with-meta
-                 `(~'aset (~'aget ~arr ~@(butlast indices)) ~(last indices) ~(last more))
+                 `(jise.core/aset (jise.core/aget ~arr ~@(butlast indices))
+                                  ~(last indices)
+                                  ~(last more))
                  (meta expr))]
       (parse-expr cenv form))
     (let [cenv' (with-context cenv :expression)
