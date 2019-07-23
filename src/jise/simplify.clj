@@ -4,7 +4,7 @@
 
 (declare simplify)
 
-(defmulti simplify* (fn [cenv expr] (misc/symbol-without-jise-ns (first expr))))
+(defmulti simplify* (fn [cenv expr] (misc/fixup-ns (first expr))))
 (defmethod simplify* :default [cenv expr]
   (let [expanded (misc/macroexpand cenv expr)]
     (when-not (identical? expanded expr)

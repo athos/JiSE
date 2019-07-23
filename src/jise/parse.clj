@@ -171,28 +171,29 @@
                 (error "non-static variable super cannot be referenced from a static context")
                 (-> {:op :super :type (find-in-current-class cenv :parent)}
                     (inherit-context cenv))))]
-      (if-let [cname (namespace sym)]
-        (if (= cname "jise.core")
-          (case (misc/symbol-without-jise-ns sym)
-            this (parse-this cenv)
-            super (parse-super cenv)
-            (error (str "cannot find symbol: " sym)))
-          (if-let [{:keys [field-name]} (find-var cenv sym)]
-            (let [form `(.deref (. ~(:class-name cenv) ~(symbol (str \- field-name))))]
-              (parse-expr cenv (with-meta form (meta sym))))
-            (parse-as-field cenv (symbol cname))))
-        (if-let [{:keys [type foreign?] :as local} (find-lname cenv sym)]
-          (if foreign?
-            (parse-as-field cenv 'jise.core/this)
-            (inherit-context {:op :local :type type :local local} cenv))
-          (case sym
-            this (parse-this cenv)
-            super (parse-super cenv)
-            (if-let [f (find-field cenv (:class-type cenv) (name sym))]
-              (let [target (if (:static (:access f)) (:class-name cenv) 'jise.core/this)]
-                (parse-as-field cenv target))
-              (when throws-on-failure?
-                (error (str "cannot find symbol: " sym) {:variable sym})))))))))
+      (let [sym' (misc/resolve-ns sym)]
+        (if-let [cname (namespace sym')]
+          (if (= cname "jise.core")
+            (case (misc/strip-jise-ns sym')
+              this (parse-this cenv)
+              super (parse-super cenv)
+              (error (str "cannot find symbol: " sym)))
+            (if-let [{:keys [field-name]} (find-var cenv sym)]
+              (let [form `(.deref (. ~(:class-name cenv) ~(symbol (str \- field-name))))]
+                (parse-expr cenv (with-meta form (meta sym))))
+              (parse-as-field cenv (symbol cname))))
+          (if-let [{:keys [type foreign?] :as local} (find-lname cenv sym)]
+            (if foreign?
+              (parse-as-field cenv 'jise.core/this)
+              (inherit-context {:op :local :type type :local local} cenv))
+            (case sym
+              this (parse-this cenv)
+              super (parse-super cenv)
+              (if-let [f (find-field cenv (:class-type cenv) (name sym))]
+                (let [target (if (:static (:access f)) (:class-name cenv) 'jise.core/this)]
+                  (parse-as-field cenv target))
+                (when throws-on-failure?
+                  (error (str "cannot find symbol: " sym) {:variable sym}))))))))))
 
 (defn- parse-seq [cenv expr]
   (if-let [tag (:tag (meta expr))]
@@ -366,7 +367,7 @@
         ret
         (let [[decl & decls] decls]
           (if (seq? decl)
-            (case (misc/symbol-without-jise-ns (first decl))
+            (case (misc/fixup-ns (first decl))
               def (let [[_ name init] decl
                         decl' (convert-def-to-set alias decl)
                         ret' (-> ret
@@ -1258,7 +1259,7 @@
             (inherit-context cenv))))))
 
 (defn- parse-ctor-invocation [cenv [op & args]]
-  (let [super? (= (misc/symbol-without-jise-ns op) 'super)
+  (let [super? (= (misc/fixup-ns op) 'super)
         cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
         class (if super?

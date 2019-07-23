@@ -2,17 +2,19 @@
   (:refer-clojure :exclude [macroexpand])
   (:require [jise.type :as t]))
 
-(defn symbol-without-jise-ns [sym]
+(defn strip-jise-ns [sym]
   (if (= (namespace sym) "jise.core")
     (symbol (name sym))
     sym))
 
-(defn fixup-ns [sym]
-  (let [sym' (symbol-without-jise-ns sym)
-        ns (namespace sym')]
+(defn resolve-ns [sym]
+  (let [ns (namespace sym)]
     (if-let [orig (some->> ns symbol (get (ns-aliases *ns*)))]
-      (symbol (str orig) (name sym'))
-      sym')))
+      (symbol (str orig) (name sym))
+      sym)))
+
+(defn fixup-ns [sym]
+  (strip-jise-ns (resolve-ns sym)))
 
 (defn macroexpand [cenv form]
   (let [expanded (macroexpand-1 form)]
