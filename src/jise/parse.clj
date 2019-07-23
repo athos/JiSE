@@ -1161,7 +1161,7 @@
         (inherit-context cenv :return? false))))
 
 (defn- ensure-existing-label [label]
-  (when-not (contains? *active-labels* label)
+  (when (and label (not (contains? *active-labels* label)))
     (error (str "undefined label: " label))))
 
 (defmethod parse-expr* 'continue [cenv [_ label]]
