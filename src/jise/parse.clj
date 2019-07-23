@@ -91,8 +91,10 @@
                :assignment t/assignment-conversion
                :casting t/casting-conversion)]
     (if-let [cs (conv cenv (:type src) type)]
-      (-> (apply-conversions cs src)
-          (inherit-context cenv))
+      (if (empty? cs)
+        src
+        (-> (apply-conversions cs src)
+            (inherit-context cenv)))
       (err/error-on-incompatible-types type (:type src)))))
 
 (defn find-in-current-class [cenv & ks]
@@ -1002,12 +1004,12 @@
               test' (as-> (parse-expr (with-context cenv :conditional) test) test'
                       (ensure-type (with-context cenv :expression)
                                    t/BOOLEAN test' :context :casting))
-              [then' else'] (convert-operand-types-for-conditional cenv
-                             (parse-expr cenv then)
-                             (if (some? else)
-                               (parse-expr cenv else)
-                               (when (:expression context)
-                                 (parse-literal cenv nil))))
+              [then' else'] (if (:statement context)
+                              [(parse-expr cenv then)
+                               (some->> else (parse-expr cenv))]
+                              (convert-operand-types-for-conditional cenv
+                               (parse-expr cenv then)
+                               (parse-expr cenv else)))
               node {:op :if, :type (:type then'), :test test', :then then'}]
           (if else'
             (-> node
