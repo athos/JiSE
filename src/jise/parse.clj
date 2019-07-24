@@ -1222,13 +1222,19 @@
                         (first args))]
         (-> {:op :new-array
              :type type'
-             :lengths [(parse-literal cenv' (count elems'))]
+             :dims [(parse-literal cenv' (count elems'))]
              :elements (vec elems')}
             (inherit-context cenv)))
-      (-> {:op :new-array
-           :type type'
-           :lengths (mapv #(ensure-numeric-int cenv' (parse-expr cenv' %)) args)}
-          (inherit-context cenv)))))
+      (let [depth (loop [t type' d 0]
+                    (if (t/array-type? t)
+                      (recur (t/element-type t) (inc d))
+                      d))]
+        (if (> depth (inc (count args)))
+          (error "array dimension missing")
+          (-> {:op :new-array
+               :type type'
+               :dims (mapv #(ensure-numeric-int cenv' (parse-expr cenv' %)) args)}
+              (inherit-context cenv)))))))
 
 (defn- args-for [cenv {:keys [param-types] :as ctor-or-method} args args']
   (let [ncs (count (:conversions ctor-or-method))

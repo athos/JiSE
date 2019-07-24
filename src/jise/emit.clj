@@ -574,9 +574,9 @@
    t/DOUBLE Opcodes/T_DOUBLE})
 
 (defmethod emit-expr* :new-array
-  [{:keys [^MethodVisitor mv] :as emitter} {:keys [type lengths elements context line]}]
-  (let [dim (count lengths)]
-    (run! (partial emit-expr emitter) lengths)
+  [{:keys [^MethodVisitor mv] :as emitter} {:keys [type dims elements context line]}]
+  (let [dim (count dims)]
+    (run! (partial emit-expr emitter) dims)
     (emit-line emitter line)
     (if (> dim 1)
       (.visitMultiANewArrayInsn mv (.getDescriptor ^Type type) dim)
