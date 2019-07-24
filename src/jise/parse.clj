@@ -155,7 +155,7 @@
     (if-not (identical? expanded expr)
       (parse-expr cenv expanded)
       (or (parse-sugar cenv expr)
-          (error (str "unsupported expression: " (pr-str expr)) {:expr expr})))))
+          (error (str "cannot find symbol: " (first expr)) {:expr expr})))))
 
 (defn- parse-symbol [cenv sym & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
   (if-let [tag (:tag (meta sym))]
