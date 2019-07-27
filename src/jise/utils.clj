@@ -1,5 +1,5 @@
 (ns jise.utils
-  (:refer-clojure :exclude [defn fn let])
+  (:refer-clojure :exclude [defn fn let deftype])
   (:require [clojure.core :as c]
             [jise.core :as jise])
   (:import [clojure.lang Compiler$LocalBinding]))
@@ -122,3 +122,32 @@
 
 (defmacro do [& body]
   `((fn [] ~@body)))
+
+(defn- parse-opts+specs [opts+specs]
+  (loop [opts+specs opts+specs
+         interfaces []
+         methods []]
+    (if (empty? opts+specs)
+      [interfaces methods]
+      (c/let [[x & more] opts+specs]
+        (if (symbol? x)
+          (recur more (conj interfaces x) methods)
+          (recur more interfaces (conj methods x)))))))
+
+(defmacro deftype [name fields & opts+specs]
+  (c/let [[interfaces methods] (parse-opts+specs opts+specs)
+          ctor (with-meta
+                 `(jise/defm ~(with-meta name nil) ~fields
+                    ~@(for [field fields
+                            :let [field' (with-meta field nil)]]
+                        `(jise/set! (jise/. jise/this ~field') ~field')))
+                 {:public true})
+          fields' (for [field fields]
+                    (with-meta `(jise/def ~field) {:public true}))
+          methods' (for [[mname args & body :as method] methods]
+                     (with-meta
+                       `(jise/defm ~mname ~(vec (rest args))
+                          (jise/let [~(first args) jise/this]
+                            ~@body))
+                       (meta method)))]
+    `^:public (jise/defclass ~name ~interfaces ~@fields' ~ctor ~@methods')))
