@@ -142,8 +142,14 @@
                             :let [field' (with-meta field nil)]]
                         `(jise/set! (jise/. jise/this ~field') ~field')))
                  {:public true})
-          fields' (for [field fields]
-                    (with-meta `(jise/def ~field) {:public true}))
+          fields' (for [field fields
+                        :let [m (meta field)
+                              visibility (cond (:public m) :public
+                                               (:private m) :private
+                                               :else :private)]]
+                    (with-meta
+                      `(jise/def ~(vary-meta field dissoc :public :private))
+                      {visibility true}))
           methods' (for [[mname args & body :as method] methods]
                      (with-meta
                        `(jise/defm ~mname ~(vec (rest args))
