@@ -807,7 +807,8 @@
 
 (defn- parse-cast [cenv type x]
   (let [cenv' (with-context cenv :expression)]
-    (ensure-type cenv type (parse-expr cenv' x) :context :casting)))
+    (-> (ensure-type cenv type (parse-expr cenv' x) :context :casting)
+        (inherit-context cenv))))
 
 (defmethod parse-expr* 'boolean [cenv [_ x :as expr]]
   (ensure-sufficient-arguments 1 expr)
