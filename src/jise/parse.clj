@@ -166,7 +166,7 @@
               (if (:static? cenv)
                 (error "non-static variable this cannot be referenced from a static context")
                 (-> {:op :local :type (:class-type cenv)
-                     :local {:index 0 :access #{} :param? true}}
+                     :local {:index 0 :access #{:final} :param? true}}
                     (inherit-context cenv))))
             (parse-super [cenv]
               (if (:static? cenv)
