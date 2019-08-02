@@ -660,6 +660,9 @@
            :rhs rhs}
           (err/error-on-bad-operand-types op-name t1 t2))))
 
+(defn- conditional-context? [cenv]
+  (:conditional (:context cenv)))
+
 (defn- fold-comparison [[op & args :as expr]]
   (with-meta
     `(jise.core/and ~@(map (fn [[x y]] `(~op ~x ~y)) (partition 2 1 args)))
@@ -667,7 +670,7 @@
 
 (defn- parse-comparison
   ([cenv [op-name x y & more :as expr] op]
-   (if (:conditional (:context cenv))
+   (if (conditional-context? cenv)
      (if more
        (parse-expr cenv (fold-comparison expr))
        (let [cenv' (with-context cenv :expression)
@@ -748,7 +751,7 @@
     (parse-comparison cenv expr :ge)))
 
 (defmethod parse-expr* 'and [cenv [_ & exprs :as expr]]
-  (if (:conditional (:context cenv))
+  (if (conditional-context? cenv)
     (case (count exprs)
       0 (parse-literal cenv true)
       1 (parse-expr cenv (first exprs))
@@ -779,7 +782,7 @@
      :expr expr}))
 
 (defmethod parse-expr* 'or [cenv [_ & exprs :as expr]]
-  (if (:conditional (:context cenv))
+  (if (conditional-context? cenv)
     (case (count exprs)
       0 (parse-literal cenv false)
       1 (parse-expr cenv (first exprs))
@@ -798,7 +801,7 @@
 
 (defmethod parse-expr* 'not [cenv [_ operand :as expr]]
   (ensure-sufficient-arguments 1 expr)
-  (if (:conditional (:context cenv))
+  (if (conditional-context? cenv)
     (let [{:keys [type] :as operand'} (parse-expr cenv operand)]
       (if (#{t/BOOLEAN t/BOOLEAN_CLASS} type)
         (negate-expr operand')
