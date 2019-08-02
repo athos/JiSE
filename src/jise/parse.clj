@@ -714,41 +714,48 @@
 
 (defmethod parse-expr* '== [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (or (when-not more
+  (or (when (and (nil? more) (conditional-context? cenv))
         (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv x y :eq-0 :eq '== true)
               (or (nil? x) (nil? y)) (parse-eq-null cenv x y :eq-null '== true)))
       (parse-comparison cenv expr :eq)))
 
 (defmethod parse-expr* '!= [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (or (when-not more
-        (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv x y :ne-0 :ne '!= false)
-              (or (nil? x) (nil? y)) (parse-eq-null cenv x y :ne-null '!= false)))
-      (parse-comparison cenv expr :ne)))
+  (if more
+    (parse-expr cenv (with-meta `(jise.core/not (jise.core/== ~x ~y ~@more)) (meta expr)))
+    (or (when (conditional-context? cenv)
+          (cond (or (= x 0) (= y 0)) (parse-cmp-0 cenv x y :ne-0 :ne '!= false)
+                (or (nil? x) (nil? y)) (parse-eq-null cenv x y :ne-null '!= false)))
+        (parse-comparison cenv expr :ne))))
 
 (defmethod parse-expr* '< [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (if (and (nil? more) (or (= x 0) (= y 0)))
-    (parse-cmp-0 cenv x y :lt-0 :lt '< false)
-    (parse-comparison cenv expr :lt)))
+  (or (when (and (nil? more) (conditional-context? cenv))
+        (cond (= x 0) (parse-cmp-0 cenv x y :gt-0 :lt '< false)
+              (= y 0) (parse-cmp-0 cenv x y :lt-0 :lt '< false)))
+      (parse-comparison cenv expr :lt)))
 
 (defmethod parse-expr* '> [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (if (and (nil? more) (or (= x 0) (= y 0)))
-    (parse-cmp-0 cenv x y :gt-0 :gt '> false)
-    (parse-comparison cenv expr :gt)))
+  (or (when (and (nil? more) (conditional-context? cenv))
+        (cond (= x 0) (parse-cmp-0 cenv x y :lt-0 :gt '> false)
+              (= y 0) (parse-cmp-0 cenv x y :gt-0 :gt '> false)))
+      (parse-comparison cenv expr :gt)))
 
 (defmethod parse-expr* '<= [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (if (and (nil? more) (or (= x 0) (= y 0)))
-    (parse-cmp-0 cenv x y :le-0 :le '<= true)
-    (parse-comparison cenv expr :le)))
+  (or (when (and (nil? more) (conditional-context? cenv))
+        (cond (= x 0) (parse-cmp-0 cenv x y :ge-0 :le '<= true)
+              (= y 0) (parse-cmp-0 cenv x y :le-0 :le '<= true)))
+      (parse-comparison cenv expr :le)))
 
 (defmethod parse-expr* '>= [cenv [_ x y & more :as expr]]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (if (and (nil? more) (or (= x 0) (= y 0)))
-    (parse-cmp-0 cenv x y :ge-0 :ge '>= true)
-    (parse-comparison cenv expr :ge)))
+  (or (when (and (nil? more) (or (= x 0) (= y 0))
+                 (conditional-context? cenv))
+        (cond (= x 0) (parse-cmp-0 cenv x y :le-0 :ge '>= true)
+              (= y 0) (parse-cmp-0 cenv x y :ge-0 :ge '>= true)))
+      (parse-comparison cenv expr :ge)))
 
 (defmethod parse-expr* 'and [cenv [_ & exprs :as expr]]
   (if (conditional-context? cenv)
