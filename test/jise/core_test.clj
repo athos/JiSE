@@ -97,6 +97,119 @@
       (>>> 2.0 1)
       (>>> 2 1.0))))
 
+(deftest comparison-test
+  (testing "comparison to 0"
+    (are [expr expected] (= expected (eval-expr 'boolean 'expr))
+      (== 0 0) true
+      (== 0 1) false
+      (== 1 0) false
+      (!= 0 0) false
+      (!= 0 1) true
+      (!= 1 0) true
+      (< 0 0) false
+      (< 0 1) true
+      (< 1 0) false
+      (> 0 0) false
+      (> 0 1) false
+      (> 1 0) true
+      (<= 0 0) true
+      (<= 0 1) true
+      (<= 1 0) false
+      (>= 0 0) true
+      (>= 0 1) false
+      (>= 1 0) true))
+  (testing "simple comparison"
+    (are [expr expected] (= expected (eval-expr 'boolean 'expr))
+      (== true true) true
+      (== true false) false
+      (== \a \a) true
+      (== \a \b) false
+      (== 1.0 1.0) true
+      (== 1.0 2.0) false
+      (== "foo" "foo") true
+      (== "foo" "bar") false
+      (== "foo" nil) false
+      (== nil nil) true
+      (== 1 1 1) true
+      (== 1 1 2) false
+      (!= true true) false
+      (!= true false) true
+      (!= \a \a) false
+      (!= \a \b) true
+      (!= 1.0 1.0) false
+      (!= 1.0 2.0) true
+      (!= "foo" "foo") false
+      (!= "foo" "bar") true
+      (!= "foo" nil) true
+      (!= nil nil) false
+      (!= 1 1 1) false
+      (!= 1 1 2) true
+      (< 100 100) false
+      (< 1.0 1.0) false
+      (< 100 200) true
+      (< 1.0 2.0) true
+      (< 200 100) false
+      (< 2.0 1.0) false
+      (< 1 2 3) true
+      (< 1 2 2) false
+      (< 1 3 2) false
+      (> 100 100) false
+      (> 1.0 1.0) false
+      (> 100 200) false
+      (> 1.0 2.0) false
+      (> 200 100) true
+      (> 2.0 1.0) true
+      (> 3 2 1) true
+      (> 3 2 2) false
+      (> 2 3 1) false
+      (<= 100 100) true
+      (<= 1.0 1.0) true
+      (<= 100 200) true
+      (<= 1.0 2.0) true
+      (<= 200 100) false
+      (<= 2.0 1.0) false
+      (<= 1 2 3) true
+      (<= 1 2 2) true
+      (<= 1 3 2) false
+      (>= 100 100) true
+      (>= 100 200) false
+      (>= 1.0 2.0) false
+      (>= 200 100) true
+      (>= 2.0 1.0) true
+      (>= 3 2 1) true
+      (>= 3 2 2) true
+      (>= 2 3 1) false))
+  (testing "numeric promotion"
+    (are [expr expected] (= expected (eval-expr 'boolean 'expr))
+      (== \a 97) true
+      (== 1 1.0) true
+      (== (Long/valueOf "1") 1) true
+      (== \a 97 (Long/valueOf "97")) true
+      (!= \a 97) false
+      (!= 1 1.0) false
+      (!= (Long/valueOf "1") 1) false
+      (!= \a 97 (Long/valueOf "97")) false
+      (< 97 \a) false
+      (< \a 98) true
+      (< 1 2.0) true
+      (< (Long/valueOf "1") 2) true
+      (< \a 98 (Long/valueOf "99")) true
+      (> \a 97) false
+      (> 98 \a) true
+      (> 1 2.0) false
+      (> (Long/valueOf "1") 2) false
+      (> \a 96 (Long/valueOf "95")) true
+      (<= 97 \a) true
+      (<= \a 98) true
+      (<= 1 2.0) true
+      (<= (Long/valueOf "1") 2) true
+      (<= \a 98 (Long/valueOf "99")) true
+      (>= 97 \a) true
+      (>= \a 98) false
+      (>= 1 2.0) false
+      (>= (Long/valueOf "1") 2) false
+      (>= \a 96 (Long/valueOf "96")) true)))
+
 (deftest casting-test
   (testing "valid casting"
     (are [expr type expected] (= expected (eval-expr 'type 'expr))
