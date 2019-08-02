@@ -279,3 +279,30 @@
         (let [y 1] (+ x y))
         y)
       (let [^int x true] x))))
+
+(deftest set!-test
+  (testing "valid set! expr"
+    (are [expr type expected] (= expected (eval-expr 'type 'expr))
+      (let [x 42]
+        (set! x (+ x 1))
+        x)
+      int 43
+
+      (let [x 0]
+        (set! x 42))
+      int 42
+
+      (let [x 0]
+        (set! x \a)
+        x)
+      int 97))
+  (testing "invalid set! expr"
+    (are [expr] (thrown? Compiler$CompilerException (eval-expr 'Object 'expr))
+      (set! x 0)
+      (let [x 0]
+        (set! x "foo"))
+      (let [x 0]
+        (set! x (long 42)))
+      (let [^:final x 0]
+        (set! x 1))
+      (set! this this))))
