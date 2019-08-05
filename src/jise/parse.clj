@@ -637,28 +637,29 @@
     x))
 
 (defn- parse-equal [cenv {t1 :type :as lhs} {t2 :type :as rhs} op op-name]
-  (cond (and (t/convertible-to-numeric? t1)
-             (t/convertible-to-numeric? t2))
-        (-> (parse-binary-op cenv lhs rhs op op-name)
-            (assoc :type t/BOOLEAN))
+  (if (or (t/primitive-type? t1) (t/primitive-type? t2))
+    (cond (and (t/convertible-to-numeric? t1)
+               (t/convertible-to-numeric? t2))
+          (-> (parse-binary-op cenv lhs rhs op op-name)
+              (assoc :type t/BOOLEAN))
 
-        (and (#{t/BOOLEAN t/BOOLEAN_CLASS} t1)
-             (#{t/BOOLEAN t/BOOLEAN_CLASS} t2))
-        {:op op
-         :type t/BOOLEAN
-         :lhs (unbox-if-needed lhs)
-         :rhs (unbox-if-needed rhs)}
-
-        :else
-        (if-let [[lhs' rhs'] (or (when-let [cs (t/casting-conversion cenv t1 t2)]
-                                   [(apply-conversions cs lhs) rhs])
-                                 (when-let [cs (t/casting-conversion cenv t2 t1)]
-                                   [lhs (apply-conversions cs rhs)]))]
+          (and (#{t/BOOLEAN t/BOOLEAN_CLASS} t1)
+               (#{t/BOOLEAN t/BOOLEAN_CLASS} t2))
           {:op op
            :type t/BOOLEAN
-           :lhs lhs
-           :rhs rhs}
-          (err/error-on-bad-operand-types op-name t1 t2))))
+           :lhs (unbox-if-needed lhs)
+           :rhs (unbox-if-needed rhs)}
+
+          :else (err/error-on-bad-operand-types op-name t1 t2))
+    (if-let [[lhs' rhs'] (or (when-let [cs (t/casting-conversion cenv t1 t2)]
+                               [(apply-conversions cs lhs) rhs])
+                             (when-let [cs (t/casting-conversion cenv t2 t1)]
+                               [lhs (apply-conversions cs rhs)]))]
+      {:op op
+       :type t/BOOLEAN
+       :lhs lhs
+       :rhs rhs}
+      (err/error-on-bad-operand-types op-name t1 t2))))
 
 (defn- conditional-context? [cenv]
   (:conditional (:context cenv)))
