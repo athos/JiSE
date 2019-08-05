@@ -52,7 +52,14 @@
       (% 9 2) int 1
       (% 9.0 2.0) double 1.0
       (& 5 3) int 1
+      (& true true) boolean true
+      (& true false) boolean false
       (| 5 3) int 7
+      (| false false) boolean false
+      (| false true) boolean true
+      (xor 5 3) int 6
+      (xor true true) boolean false
+      (xor true false) boolean true
       (! -1) int 0
       (<< 5 2) int 20
       (>> 14 2) int 3
@@ -73,7 +80,11 @@
       (% 5 (Byte/valueOf "2")) int 1
       (% 9.0 2) double 1.0
       (& 5 (Long/valueOf "3")) long 1
+      (& true (Boolean/valueOf false)) boolean false
       (| (Long/valueOf "5") 3) long 7
+      (| (Boolean/valueOf true) false) boolean true
+      (xor (Short/valueOf "5") (Byte/valueOf "3")) int 6
+      (xor false (Boolean/valueOf true)) boolean true
       (! (Byte/valueOf "0")) int -1
       (<< (Long/valueOf "5") 2) long 20
       (>> (Long/valueOf "14") 2) long 3
@@ -88,7 +99,11 @@
       (/)
       (% 9 true)
       (& 5.0 3)
+      (& 1 true)
       (| 5 3.0)
+      (| 1 true)
+      (xor 5 3.0)
+      (xor 1 true)
       (! 1.0)
       (<< 2.0 1)
       (<< 2 1.0)

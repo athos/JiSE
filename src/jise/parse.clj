@@ -587,17 +587,39 @@
   (ensure-sufficient-arguments 2 expr)
   (parse-arithmetic cenv expr :rem))
 
+(defn- unbox-if-needed [x]
+  (if-let [c (t/unboxing-conversion (:type x))]
+    (apply-conversions [c] x)
+    x))
+
+(defn- parse-logical [cenv [op-name x y] op]
+  (let [cenv' (with-context cenv :expression)
+        {t1 :type :as lhs} (parse-expr cenv' x)
+        {t2 :type :as rhs} (parse-expr cenv' y)]
+    (cond (and (t/boolean-type? t1) (t/boolean-type? t2))
+          (-> {:op op
+               :type t/BOOLEAN
+               :lhs (unbox-if-needed lhs)
+               :rhs (unbox-if-needed rhs)}
+              (inherit-context cenv))
+
+          (and (t/convertible-to-integral? t1) (t/convertible-to-integral? t2))
+          (let [{:keys [lhs] :as ret} (parse-binary-op cenv lhs rhs op op-name)]
+            (assoc ret :type (:type lhs)))
+
+          :else (err/error-on-bad-operand-types op-name t1 t2))))
+
 (defmethod parse-expr* '& [cenv expr]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-and))
+  (parse-logical cenv (fold-binary-op expr) :bitwise-and))
 
 (defmethod parse-expr* '| [cenv expr]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-or))
+  (parse-logical cenv (fold-binary-op expr) :bitwise-or))
 
 (defmethod parse-expr* 'xor [cenv expr]
   (ensure-sufficient-arguments 2 expr :varargs? true)
-  (parse-arithmetic cenv (fold-binary-op expr) :bitwise-xor))
+  (parse-logical cenv (fold-binary-op expr) :bitwise-xor))
 
 (defmethod parse-expr* '! [cenv [_ operand :as expr]]
   (ensure-sufficient-arguments 1 expr)
@@ -630,11 +652,6 @@
 
 (defmethod parse-expr* '>>> [cenv expr]
   (parse-shift cenv expr :logical-shift-right))
-
-(defn- unbox-if-needed [x]
-  (if-let [c (t/unboxing-conversion (:type x))]
-    (apply-conversions [c] x)
-    x))
 
 (defn- parse-equal [cenv {t1 :type :as lhs} {t2 :type :as rhs} op op-name]
   (if (or (t/primitive-type? t1) (t/primitive-type? t2))
