@@ -643,8 +643,7 @@
           (-> (parse-binary-op cenv lhs rhs op op-name)
               (assoc :type t/BOOLEAN))
 
-          (and (#{t/BOOLEAN t/BOOLEAN_CLASS} t1)
-               (#{t/BOOLEAN t/BOOLEAN_CLASS} t2))
+          (and (t/boolean-type? t1) (t/boolean-type? t2))
           {:op op
            :type t/BOOLEAN
            :lhs (unbox-if-needed lhs)
@@ -811,7 +810,7 @@
   (ensure-sufficient-arguments 1 expr)
   (if (conditional-context? cenv)
     (let [{:keys [type] :as operand'} (parse-expr cenv operand)]
-      (if (#{t/BOOLEAN t/BOOLEAN_CLASS} type)
+      (if (t/boolean-type? type)
         (negate-expr operand')
         (err/error-on-bad-operand-type 'not type)))
     (parse-expr cenv `(jise.core/if ~expr true false))))
@@ -984,8 +983,7 @@
     (let [t1 (:type then), t2 (:type else)]
       (cond (= t1 t2) [then else]
 
-            (and (#{t/BOOLEAN t/BOOLEAN_CLASS} t1)
-                 (#{t/BOOLEAN t/BOOLEAN_CLASS} t2))
+            (and (t/boolean-type? t1) (t/boolean-type? t2))
             [(unbox-if-needed then) (unbox-if-needed else)]
 
             (and (t/convertible-to-numeric? t1)

@@ -44,6 +44,9 @@
 (def integral-type? #{BYTE CHAR SHORT INT LONG})
 (def numeric-type? (conj integral-type? FLOAT DOUBLE))
 
+(defn boolean-type? [t]
+  (or (= t BOOLEAN) (= t BOOLEAN_CLASS)))
+
 (def ^:private ^:const primitive-array-types
   '{ints [int]
     shorts [short]
