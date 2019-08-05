@@ -680,7 +680,7 @@
          (parse-comparison cenv' x' y' op op-name)))
      (parse-expr cenv `(jise.core/if ~expr true false))))
   ([cenv lhs rhs op op-name]
-   (if ('#{== !=} op-name)
+   (if (#{:eq :ne} op)
      (parse-equal cenv lhs rhs op op-name)
      (-> (parse-binary-op cenv lhs rhs op op-name)
          (assoc :type t/BOOLEAN)))))
