@@ -223,7 +223,31 @@
       (>= \a 98) false
       (>= 1 2.0) false
       (>= (Long/valueOf "1") 2) false
-      (>= \a 96 (Long/valueOf "96")) true)))
+      (>= \a 96 (Long/valueOf "96")) true))
+  (testing "invalid comparison"
+    (are [expr] (thrown? Compiler$CompilerException (eval-expr 'Object 'expr))
+      (== true 1)
+      (== 1.0 "foo")
+      (== \a nil)
+      (== (Integer/valueOf 1) (Long/valueOf "1"))
+      (== 1)
+      (!= true 1)
+      (!= 1.0 "foo")
+      (!= \a nil)
+      (!= (Integer/valueOf 1) (Long/valueOf "1"))
+      (!= 1)
+      (< true 1)
+      (< 1.0 "foo")
+      (< 1)
+      (> true 1)
+      (> 1.0 "foo")
+      (> 1)
+      (<= true 1)
+      (<= 1.0 "foo")
+      (<= 1)
+      (>= true 1)
+      (>= 1.0 "foo")
+      (>= 1))))
 
 (deftest casting-test
   (testing "valid casting"
