@@ -79,26 +79,40 @@
       (jise/defm ~'invoke ~(vec args'')
         (.invokePrim ~'this ~@args')))))
 
-(defn- emit-fn-class [fname args body]
+(defn- emit-fn-class [fname [[args & body]]]
   (c/let [args' (fixup-type-hints args)
           return-type (primitive-type (:tag (meta args)))]
     (if-let [prim (primitive-interface args' return-type)]
       (emit-prim-fn-class fname prim return-type args args' body)
       (emit-ordinary-fn-class fname args args' body))))
 
-(defmacro fn [& body]
-  (c/let [[fname args body] (if (symbol? (first body))
-                              [(first body) (second body) (nnext body)]
-                              [(gensym 'f) (first body) (next body)])]
-   (emit-fn-class fname args body)))
+(defmacro fn [& sigs]
+  (c/let [[fname sigs] (if (symbol? (first sigs))
+                         [(first sigs) (next sigs)]
+                         [(gensym 'f) sigs])
+          sigs (if (vector? (first sigs))
+                 (list sigs)
+                 sigs)]
+    (emit-fn-class fname sigs)))
 
-(defmacro defn [name args & body]
-  (c/let [return-type (primitive-type (:tag (meta args)))
-          args' (cond-> (fixup-type-hints args)
-                  return-type
-                  (with-meta {:tag return-type}))]
-    `(def ~(with-meta name {:arglists `'(~args')})
-       (fn ~name ~args ~@body))))
+(defmacro defn [name & fdecl]
+  (c/let [[fdecl m] (if (string? (first fdecl))
+                      [(next fdecl) {:doc (first fdecl)}]
+                      [fdecl {}])
+          [fdecl m] (if (map? fdecl)
+                      [(next fdecl) (merge m (first fdecl))]
+                      [fdecl m])
+          fdecl (if (vector? (first fdecl))
+                  (list fdecl)
+                  fdecl)
+          fdecl' (for [[params & body] fdecl]
+                   (c/let [params' (fixup-type-hints params)]
+                     `(~(with-meta (vec params') (meta params)) ~@body)))
+          m (cond->> (merge {:arglists `'~(#'c/sigs fdecl')} m)
+              (meta name)
+              (merge (meta name)))]
+    `(def ~(with-meta name m)
+       (fn ~name ~@fdecl))))
 
 (defmacro let-internal [names body]
   (c/let [types (map (c/fn [name]
