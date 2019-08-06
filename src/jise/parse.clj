@@ -800,7 +800,7 @@
           :expr (negate-expr (last (:exprs expr)))}
     :or {:op :and
          :type t/BOOLEAN
-         :exprs (conj (mapv negate-expr (:exprs expr)) (:expr expr))}
+         :exprs (conj (vec (:exprs expr)) (negate-expr (:expr expr)))}
     {:op :not
      :type t/BOOLEAN
      :expr expr}))
