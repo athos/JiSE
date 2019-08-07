@@ -583,7 +583,7 @@
     2 (parse-arithmetic cenv expr :div)
     (parse-expr cenv (fold-binary-op expr))))
 
-(defmethod parse-expr* '% [cenv expr]
+(defmethod parse-expr* 'rem [cenv expr]
   (ensure-sufficient-arguments 2 expr)
   (parse-arithmetic cenv expr :rem))
 

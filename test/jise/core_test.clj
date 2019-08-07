@@ -49,8 +49,8 @@
       (/ 9 2) int 4
       (/ 9.0 2.0) double 4.5
       (/ 2.0) double 0.5
-      (% 9 2) int 1
-      (% 9.0 2.0) double 1.0
+      (rem 9 2) int 1
+      (rem 9.0 2.0) double 1.0
       (& 5 3) int 1
       (& true true) boolean true
       (& true false) boolean false
@@ -77,8 +77,8 @@
       (* 3 (Float/valueOf "3.0")) float 9.0
       (/ 1.0 2) double 0.5
       (/ (Short/valueOf "9") 3) int 3
-      (% 5 (Byte/valueOf "2")) int 1
-      (% 9.0 2) double 1.0
+      (rem 5 (Byte/valueOf "2")) int 1
+      (rem 9.0 2) double 1.0
       (& 5 (Long/valueOf "3")) long 1
       (& true (Boolean/valueOf false)) boolean false
       (| (Long/valueOf "5") 3) long 7
@@ -97,7 +97,7 @@
       (* "foo" 3)
       (/ 4 true)
       (/)
-      (% 9 true)
+      (rem 9 true)
       (& 5.0 3)
       (& 1 true)
       (| 5 3.0)
