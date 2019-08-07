@@ -828,7 +828,7 @@
   (if (conditional-context? cenv)
     (let [{:keys [type] :as operand'} (parse-expr cenv operand)]
       (if (t/boolean-type? type)
-        (negate-expr operand')
+        (negate-expr (unbox-if-needed operand'))
         (err/error-on-bad-operand-type 'not type)))
     (parse-expr cenv `(jise.core/if ~expr true false))))
 
