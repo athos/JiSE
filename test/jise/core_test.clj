@@ -249,6 +249,53 @@
       (>= 1.0 "foo")
       (>= 1))))
 
+(deftest logical-test
+  (testing "simple logical"
+    (are [expr expected] (= expected (eval-expr 'boolean 'expr))
+      (and) true
+      (and true) true
+      (and false) false
+      (and true true) true
+      (and true false) false
+      (and false false) false
+      (and true true true) true
+      (and true false true) false
+      (and false false false) false
+      (and (< 1 2) (< 2 3)) true
+      (or) false
+      (or true) true
+      (or false) false
+      (or true true) true
+      (or true false) true
+      (or true true true) true
+      (or true false true) true
+      (or false false false) false
+      (or (< 2 1) (< 2 3)) true
+      (not true) false
+      (not false) true
+      (not (not (< 1 2))) true
+      (not (and (< 1 2) (< 3 2))) true
+      (not (and (not (< 2 1)) (not (< 2 3)))) true
+      (not (or (< 1 2) (< 2 3))) false
+      (not (or (not (< 1 2)) (not (< 2 3)))) true))
+  (testing "boxed logical"
+    (are [expr expected] (= expected (eval-expr 'boolean 'expr))
+      (and true (Boolean/valueOf false)) false
+      (and (Boolean/valueOf true) true) true
+      (or (Boolean/valueOf false) true) true
+      (or true (Boolean/valueOf true)) true
+      (not (Boolean/valueOf true)) false))
+  (testing "invalid logical"
+    (are [expr] (thrown? Compiler$CompilerException (eval-expr 'boolean 'expr))
+      (and 1 false)
+      (and true nil)
+      (or 1 false)
+      (or true nil)
+      (not 1)
+      (not nil)
+      (not)
+      (not true false))))
+
 (deftest casting-test
   (testing "valid casting"
     (are [expr type expected] (= expected (eval-expr 'type 'expr))
