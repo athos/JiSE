@@ -148,13 +148,30 @@
         :else (or (primitive-type->symbol t)
                   (symbol (.getClassName t)))))
 
-(defn final-class? [cenv t]
-  (and (not (primitive-type? t))
-       (let [tag (type->tag t)]
-         (or (when-let [{:keys [access]} (get-in cenv [:classes tag])]
-               (boolean (:final access)))
-             (when-let [^Class class (type->class t)]
-               (Modifier/isFinal (.getModifiers class)))))))
+(defn modifiers->access-flags [ms]
+  (cond-> #{}
+    (Modifier/isAbstract ms) (conj :abstract)
+    (Modifier/isFinal ms) (conj :final)
+    (Modifier/isPrivate ms) (conj :private)
+    (Modifier/isProtected ms) (conj :protected)
+    (Modifier/isPublic ms) (conj :public)
+    (Modifier/isStatic ms) (conj :static)
+    (Modifier/isTransient ms) (conj :transient)
+    (Modifier/isVolatile ms) (conj :volatile)
+    (->> (bit-or Modifier/PUBLIC Modifier/PROTECTED Modifier/PRIVATE)
+         (bit-and ms)
+         (= 0))
+    (conj :package)))
+
+(defn- modifiers-of [cenv t]
+  (when-not (primitive-type? t)
+    (let [tag (type->tag t)]
+      (or (some-> (get-in cenv [:classes tag]) :access)
+          (when-let [^Class class (type->class t)]
+            (modifiers->access-flags (.getModifiers class)))))))
+
+(defn final-type? [cenv t]
+  (:final (modifiers-of cenv t)))
 
 (def ^:private wider-primitive-types
   {BYTE #{SHORT INT LONG FLOAT DOUBLE}
@@ -216,21 +233,6 @@
 (defn type-category ^long [t]
   (if (#{LONG DOUBLE} t) 2 1))
 
-(defn modifiers->access-flags [ms]
-  (cond-> #{}
-    (Modifier/isAbstract ms) (conj :abstract)
-    (Modifier/isFinal ms) (conj :final)
-    (Modifier/isPrivate ms) (conj :private)
-    (Modifier/isProtected ms) (conj :protected)
-    (Modifier/isPublic ms) (conj :public)
-    (Modifier/isStatic ms) (conj :static)
-    (Modifier/isTransient ms) (conj :transient)
-    (Modifier/isVolatile ms) (conj :volatile)
-    (->> (bit-or Modifier/PUBLIC Modifier/PROTECTED Modifier/PRIVATE)
-         (bit-and ms)
-         (= 0))
-    (conj :package)))
-
 (defn widening-primitive-conversion [from to]
   (when (get-in wider-primitive-types [from to])
     {:conversion :widening-primitive :from from :to to}))
@@ -286,8 +288,8 @@
                                  (narrowing-reference-conversion cenv e1 e2)))))
                   (case [(boolean (some-> (type->class from) (.isInterface)))
                          (boolean (some-> (type->class to) (.isInterface)))]
-                    [false true ] (not (final-class? cenv from))
-                    [true  false] (not (final-class? cenv to))
+                    [false true ] (not (final-type? cenv from))
+                    [true  false] (not (final-type? cenv to))
                     [true  true]  true
                     false)))
     {:conversion :narrowing-reference :from from :to to}))

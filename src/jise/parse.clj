@@ -462,7 +462,7 @@
   (when (> (count parents) 1)
     (error (str "cannot inherit from more than one classes: "
                 (->> parents (map err/stringify-type) (str/join ", ")))))
-  (when (t/final-class? cenv parent)
+  (when (t/final-type? cenv parent)
     (error (str "cannot inherit from final " (err/stringify-type parent)))))
 
 (defn parse-class
