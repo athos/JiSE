@@ -451,7 +451,8 @@
                                     (assoc m :class class)))))
                      (mapcat (comp walk type->class) (:interfaces entry))
                      (walk (type->class (:parent entry))))
-             (walk (type->class class)))
+             (let [c (type->class class)]
+               (cond-> (walk c) (.isInterface c) (concat (walk Object)))))
            (remove-overridden-methods cenv)))))
 
 (defn- convert-arg-types-with [f param-types arg-types throws-on-failure?]

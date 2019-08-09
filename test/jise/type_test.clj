@@ -465,6 +465,9 @@
   (is (= [{:class (t/tag->type 'java.io.Closeable) :interface? true :access #{:public :abstract}
            :param-types [] :return-type t/VOID}]
          (t/get-methods {} t/OBJECT (t/tag->type 'java.io.Closeable) "close")))
+  (is (= [{:class t/OBJECT :interface? false :access #{:public}
+           :param-types [] :return-type t/STRING}]
+         (t/get-methods {} t/OBJECT (t/tag->type 'java.io.Closeable) "toString")))
   (let [cl (t/tag->type 'ClassLoader)
         class (t/tag->type 'Class)
         cenv {:classes
