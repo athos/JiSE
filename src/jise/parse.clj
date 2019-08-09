@@ -1275,9 +1275,13 @@
       (conj varargs))))
 
 (defmethod parse-expr* 'new [cenv [_ type & args :as expr]]
-  (let [type' (resolve-type cenv type)]
-    (when (t/primitive-type? type')
-      (error (str (err/stringify-type type') " cannot be instantiated")))
+  (let [type' (resolve-type cenv type)
+        abstract? (t/abstract-type? cenv type')]
+    (when (or (t/primitive-type? type')
+              (and (not (t/array-type? type')) abstract?))
+      (error (str (err/stringify-type type')
+                  (when abstract? " is abstract;")
+                  " cannot be instantiated")))
     (if (t/array-type? type')
       (parse-array-creation cenv type' expr)
       (let [cenv' (with-context cenv :expression)

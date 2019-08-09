@@ -173,6 +173,9 @@
 (defn final-type? [cenv t]
   (:final (modifiers-of cenv t)))
 
+(defn abstract-type? [cenv t]
+  (:abstract (modifiers-of cenv t)))
+
 (def ^:private wider-primitive-types
   {BYTE #{SHORT INT LONG FLOAT DOUBLE}
    SHORT #{INT LONG FLOAT DOUBLE}
