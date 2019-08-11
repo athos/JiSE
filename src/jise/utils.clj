@@ -106,8 +106,11 @@
                   (list fdecl)
                   fdecl)
           fdecl' (for [[params & body] fdecl]
-                   (c/let [params' (fixup-type-hints params)]
-                     `(~(with-meta (vec params') (meta params)) ~@body)))
+                   (c/let [params' (fixup-type-hints params)
+                           meta (meta params)]
+                     `(~(with-meta (vec params')
+                          (cond-> meta (:tag meta) (update :tag primitive-type)))
+                       ~@body)))
           m (cond->> (merge {:arglists `'~(#'c/sigs fdecl')} m)
               (meta name)
               (merge (meta name)))]
