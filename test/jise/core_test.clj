@@ -381,7 +381,17 @@
       (let [x 0]
         (set! x \a)
         x)
-      int 97))
+      int 97
+
+      (let [x 0]
+        (set! x (Integer/valueOf 1))
+        x)
+      int 1
+
+      (let [x (Integer/valueOf 0)]
+        (set! x 1)
+        x)
+      Integer 1))
   (testing "invalid set! expr"
     (are [expr] (thrown? Compiler$CompilerException (eval-expr 'Object 'expr))
       (set! x 0)
