@@ -1471,3 +1471,24 @@
            :index index'
            :expr expr'}
           (inherit-context cenv)))))
+
+(defmethod parse-expr* 'defclass [_ _]
+  (err/error-on-reserved-word defclass))
+
+(defmethod parse-expr* 'definterface [_ _]
+  (err/error-on-reserved-word definterface))
+
+(defmethod parse-expr* 'defenum [_ _]
+  (err/error-on-reserved-word defenum))
+
+(defmethod parse-expr* 'defannotation [_ _]
+  (err/error-on-reserved-word defannotation))
+
+(defmethod parse-expr* 'class [_ _]
+  (err/error-on-reserved-word class))
+
+(defmethod parse-expr* 'fn [_ _]
+  (err/error-on-reserved-word fn))
+
+(defmethod parse-expr* 'fn* [_ _]
+  (err/error-on-reserved-word fn*))

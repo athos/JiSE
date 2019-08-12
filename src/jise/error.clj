@@ -22,6 +22,9 @@
          data# (merge {:line *line* :column *column*} ~data)]
      (throw (ex-info msg# data#))))
 
+(defmacro error-on-reserved-word [keyword]
+  `(error ~(str keyword " is a reserved word, but cannot be used now")))
+
 (defn error-message-on-incompatible-types [expected actual]
   (format "incompatible types: %s cannot be converted to %s"
           (stringify-type actual)
