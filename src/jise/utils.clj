@@ -60,31 +60,38 @@
         ~@body))
     body))
 
-(defn- emit-ordinary-fn-class [fname args args' body]
-  `^:public
-  (jise/class ~fname [clojure.lang.AFunction clojure.lang.IFn]
-    ^:public ^Object
-    (jise/defm ~'invoke ~(vec args')
-      ~@(emit-fn-body args args' body))))
+(defn- emit-fn-methods [[params & body]]
+  (c/let [params' (fixup-type-hints params)
+          return-type (primitive-type (:tag (meta params)))]
+    (if (primitive-interface params return-type)
+      (c/let [params'' (fixup-type-hints params :allow-primitive? false)]
+        [(with-meta
+           `(jise/defm ~'invokePrim ~(vec params')
+              ~@(emit-fn-body params params' body))
+           {:public true :tag return-type})
+         `^:public ^Object
+         (jise/defm ~'invoke ~(vec params'')
+           (.invokePrim jise/this ~@params'))])
+      [`^:public ^Object
+       (jise/defm ~'invoke ~(vec params')
+         ~@(emit-fn-body params params' body))])))
 
-(defn- emit-prim-fn-class [fname prim return-type args args' body]
-  (c/let [args'' (fixup-type-hints args :allow-primitive? false)]
+(defn- emit-fn-class [fname sigs]
+  (c/let [{:keys [prims]}
+          (reduce (c/fn [m [params]]
+                    (c/let [arity (count params)
+                            return-type (primitive-type (:tag (meta params)))]
+                      (when ((:arities m) arity)
+                        (throw (ex-info "Can't have 2 overloads with same arity" {})))
+                      (as-> (update m :arities conj arity) m
+                        (if-let [prim (primitive-interface params return-type)]
+                          (update m :prims conj prim)
+                          m))))
+                  {:prims [] :arities #{}}
+                  sigs)]
     `^:public
-    (jise/class ~fname [clojure.lang.AFunction clojure.lang.IFn ~prim]
-      ~(with-meta
-         `(jise/defm ~'invokePrim ~(vec args')
-            ~@(emit-fn-body args args' body))
-         {:public true :tag return-type})
-      ^:public ^Object
-      (jise/defm ~'invoke ~(vec args'')
-        (.invokePrim ~'this ~@args')))))
-
-(defn- emit-fn-class [fname [[args & body]]]
-  (c/let [args' (fixup-type-hints args)
-          return-type (primitive-type (:tag (meta args)))]
-    (if-let [prim (primitive-interface args' return-type)]
-      (emit-prim-fn-class fname prim return-type args args' body)
-      (emit-ordinary-fn-class fname args args' body))))
+    (jise/class ~fname [clojure.lang.AFunction clojure.lang.IFn ~@prims]
+      ~@(mapcat emit-fn-methods sigs))))
 
 (defmacro fn [& sigs]
   (c/let [[fname sigs] (if (symbol? (first sigs))
