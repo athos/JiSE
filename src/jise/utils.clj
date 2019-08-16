@@ -63,7 +63,7 @@
 (defn- emit-fn-methods [[params & body]]
   (c/let [params' (fixup-type-hints params)
           return-type (primitive-type (:tag (meta params)))]
-    (if-let [prim (primitive-interface params return-type)]
+    (if-let [prim (primitive-interface params' return-type)]
       (c/let [params'' (fixup-type-hints params :allow-primitive? false)]
         [(with-meta
            `(jise/defm ~'invokePrim ~(vec params')
@@ -80,11 +80,12 @@
   (c/let [{:keys [prims]}
           (reduce (c/fn [m [params]]
                     (c/let [arity (count params)
+                            params' (fixup-type-hints params)
                             return-type (primitive-type (:tag (meta params)))]
                       (when ((:arities m) arity)
                         (throw (ex-info "Can't have 2 overloads with same arity" {})))
                       (as-> (update m :arities conj arity) m
-                        (if-let [prim (primitive-interface params return-type)]
+                        (if-let [prim (primitive-interface params' return-type)]
                           (update m :prims conj prim)
                           m))))
                   {:prims [] :arities #{}}
