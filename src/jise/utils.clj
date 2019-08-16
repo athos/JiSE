@@ -63,7 +63,7 @@
 (defn- emit-fn-methods [[params & body]]
   (c/let [params' (fixup-type-hints params)
           return-type (primitive-type (:tag (meta params)))]
-    (if (primitive-interface params return-type)
+    (if-let [prim (primitive-interface params return-type)]
       (c/let [params'' (fixup-type-hints params :allow-primitive? false)]
         [(with-meta
            `(jise/defm ~'invokePrim ~(vec params')
@@ -71,7 +71,7 @@
            {:public true :tag return-type})
          `^:public ^Object
          (jise/defm ~'invoke ~(vec params'')
-           (.invokePrim jise/this ~@params'))])
+           (.invokePrim (jise/cast ~prim jise/this) ~@params'))])
       [`^:public ^Object
        (jise/defm ~'invoke ~(vec params')
          ~@(emit-fn-body params params' body))])))
