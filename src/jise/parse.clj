@@ -160,8 +160,8 @@
 (defn- parse-symbol [cenv sym & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
   (if-let [tag (:tag (meta sym))]
     (parse-expr cenv `(jise.core/cast ~tag ~(vary-meta sym dissoc :tag)))
-    (letfn [(parse-as-field [cenv target]
-              (parse-expr cenv (with-meta `(. ~target ~(symbol (str \- (name sym)))) (meta sym))))
+    (letfn [(parse-as-field [cenv callee]
+              (parse-expr cenv (with-meta `(. ~callee ~(symbol (str \- (name sym)))) (meta sym))))
             (parse-this [cenv]
               (if (:static? cenv)
                 (error "non-static variable this cannot be referenced from a static context")
@@ -192,8 +192,8 @@
               this (parse-this cenv)
               super (parse-super cenv)
               (if-let [f (find-field cenv (:class-type cenv) (name sym))]
-                (let [target (if (:static (:access f)) (:class-name cenv) 'jise.core/this)]
-                  (parse-as-field cenv target))
+                (let [callee (if (:static (:access f)) (:class-name cenv) 'jise.core/this)]
+                  (parse-as-field cenv callee))
                 (when throws-on-failure?
                   (error (str "cannot find symbol: " sym) {:variable sym}))))))))))
 
@@ -1328,49 +1328,49 @@
 
 (declare parse-alength)
 
-(defn- parse-field-access [cenv target target-type fname]
-  (if (and (t/array-type? target-type) (= fname "length"))
-    (if (nil? target)
+(defn- parse-field-access [cenv callee callee-type fname]
+  (if (and (t/array-type? callee-type) (= fname "length"))
+    (if (nil? callee)
       (error "class expected")
-      (parse-alength cenv target))
+      (parse-alength cenv callee))
     (if-let [{:keys [type used?] :as field} (get (:enclosing-env cenv) fname)]
       (do (reset! used? true)
           (-> {:op :field-access
                :type type
                :field (assoc field :class (:class-type cenv) :name fname)
-               :target target}
+               :target callee}
               (inherit-context cenv)))
-      (if-let [{:keys [access] :as field} (find-field cenv target-type fname)]
+      (if-let [{:keys [access] :as field} (find-field cenv callee-type fname)]
         (if (and (:final access) (contains? field :value))
           (parse-literal cenv (:value field))
           (-> {:op :field-access
                :type (:type field)
                :field (assoc field :name fname)}
               (inherit-context cenv)
-              (cond-> target (assoc :target target))))
+              (cond-> callee (assoc :target callee))))
         (error (str "cannot find symbol\n"
                     "  symbol: variable " fname "\n"
-                    "  location: class " (err/stringify-type target-type)))))))
+                    "  location: class " (err/stringify-type callee-type)))))))
 
-(defn- parse-method-invocation [cenv target target-type mname args]
+(defn- parse-method-invocation [cenv callee callee-type mname args]
   (let [cenv' (with-context cenv :expression)
         args' (map (partial parse-expr cenv') args)
         arg-types (map :type args')
         method (try
-                 (let [ms (t/find-methods cenv (:class-type cenv) target-type mname arg-types)]
+                 (let [ms (t/find-methods cenv (:class-type cenv) callee-type mname arg-types)]
                    (if (> (count ms) 1)
                      (throw (ex-info "ambiguous invocation"
                                      {:cause :ambiguous-invocation :alternatives ms}))
                      (first ms)))
                  (catch Exception e
-                   (err/handle-method-error cenv target-type mname arg-types e)))
-        target' (if (and (nil? target)
-                         (= target-type (:class-type cenv))
+                   (err/handle-method-error cenv callee-type mname arg-types e)))
+        callee' (if (and (nil? callee)
+                         (= callee-type (:class-type cenv))
                          (not (:static (:access method))))
                   ;; for method invocation omitting receiver such as (method args ...)
                   (parse-expr cenv' 'jise.core/this)
-                  target)]
-    (when (and (nil? target') (not (:static (:access method))))
+                  callee)]
+    (when (and (nil? callee') (not (:static (:access method))))
       (error "class expected"))
     (-> {:op :method-invocation
          :type (:return-type method)
@@ -1378,37 +1378,37 @@
          :args (args-for cenv' method args args')}
         (inherit-context cenv)
         (cond->
-            target' (assoc :target target')
-            (= (:op target') :super) (assoc :super? true)))))
+            callee' (assoc :target callee')
+            (= (:op callee') :super) (assoc :super? true)))))
 
-(defmethod parse-expr* '. [cenv [_ target property & maybe-args :as expr]]
+(defmethod parse-expr* '. [cenv [_ callee property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))
-    (parse-expr cenv `(. ~target ~@property))
+    (parse-expr cenv `(. ~callee ~@property))
     (let [cenv' (with-context cenv :expression)
-          target' (if (symbol? target)
-                    (parse-symbol cenv' target :throws-on-failure? false)
-                    (when (not (t/tag->type cenv' target :throws-on-failure? false))
-                      (parse-expr cenv' target)))
-          target-type (or (:type target') (resolve-type cenv target))
+          callee' (if (symbol? callee)
+                    (parse-symbol cenv' callee :throws-on-failure? false)
+                    (when (not (t/tag->type cenv' callee :throws-on-failure? false))
+                      (parse-expr cenv' callee)))
+          callee-type (or (:type callee') (resolve-type cenv callee))
           pname (name property)]
-      (cond (and (nil? target') (or (= pname "class") (= pname "-class")))
-            (parse-literal cenv target-type)
+      (cond (and (nil? callee') (or (= pname "class") (= pname "-class")))
+            (parse-literal cenv callee-type)
 
-            (t/primitive-type? target-type)
-            (error (str (err/stringify-type target-type) " cannot be dereferenced"))
+            (t/primitive-type? callee-type)
+            (error (str (err/stringify-type callee-type) " cannot be dereferenced"))
 
             (str/starts-with? pname "-")
             (if (empty? maybe-args)
-             (parse-field-access cenv target' target-type (subs pname 1))
+             (parse-field-access cenv callee' callee-type (subs pname 1))
              (error "field access cannot take arguments"))
 
             :else
             (try
-              (parse-method-invocation cenv target' target-type pname maybe-args)
+              (parse-method-invocation cenv callee' callee-type pname maybe-args)
               (catch Exception e
                 (if (empty? maybe-args)
                   (try
-                    (parse-field-access cenv target' target-type pname)
+                    (parse-field-access cenv callee' callee-type pname)
                     (catch Exception _ (throw e)))
                   (throw e))))))))
 
