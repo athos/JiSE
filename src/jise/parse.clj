@@ -265,8 +265,8 @@
 (defn- next-index [cenv type]
   (first (swap-vals! (:next-index cenv) + (t/type-category type))))
 
-(defn- parse-binding [cenv lname init method-param? allow-vararg-param?]
-  (let [init' (when-not method-param?
+(defn- parse-binding [cenv lname init param? allow-vararg-param?]
+  (let [init' (when-not param?
                 (parse-expr (with-context cenv :expression) init))
         lname' (parse-name cenv lname
                            :default-type (:type init')
@@ -277,22 +277,22 @@
         (assoc :index (next-index cenv (:type lname')))
         (cond-> init' (assoc :init init')))))
 
-(defn- parse-bindings [cenv bindings & {:keys [method-params?]}]
+(defn- parse-bindings [cenv bindings & {:keys [params?]}]
   (loop [[lname init & bindings] bindings
          cenv' (with-context cenv :expression)
          allow-vararg-param? false
          ret []]
     (if lname
       (if (= lname '&)
-        (if method-params?
+        (if params?
           (recur bindings cenv' true ret)
           (error "varargs parameter is only allowed in method signature"))
         (if (and allow-vararg-param? (seq bindings))
           (error "varargs parameter must be the last parameter")
-          (let [b (parse-binding cenv' lname init method-params?
+          (let [b (parse-binding cenv' lname init params?
                                  (and allow-vararg-param? (empty? bindings)))
                 cenv' (assoc-in cenv' [:lenv (:name b)]
-                                (cond-> b method-params? (assoc :param? true)))]
+                                (cond-> b params? (assoc :param? true)))]
             (when (and allow-vararg-param? (not (t/array-type? (:type b))))
               (error "varargs parameter must be of array type"))
             (recur bindings cenv' allow-vararg-param? (conj ret b)))))
@@ -321,7 +321,7 @@
                                              :lenv (:enclosing-env cenv)
                                              :next-index (atom init-index))
                                       (interleave args (repeat nil))
-                                      :method-params? true)
+                                      :params? true)
         return-type (if ctor? t/VOID type)
         context (if (= return-type t/VOID) :statement :expression)
         body' (err/with-line&column-of method
