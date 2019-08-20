@@ -1156,8 +1156,13 @@
                        (cond-> label (assoc :label label)))}
             (inherit-context cenv :return? false))))))
 
-(defn- seq-prefixed-with? [prefix x]
-  (and (seq? x) (= (first x) prefix)))
+(defn- split-with-ops [ops forms]
+  (split-with (fn [x]
+                (not (and (seq? x)
+                          (let [op (first x)]
+                            (and (symbol? op)
+                                 (ops (misc/fixup-ns op)))))))
+              forms))
 
 (defn- append-finally [cenv finally-clause exprs]
   (if finally-clause
@@ -1175,10 +1180,8 @@
      :body body'}))
 
 (defmethod parse-expr* 'try [cenv [_ & body]]
-  (let [[body clauses] (split-with #(and (not (seq-prefixed-with? 'catch %))
-                                         (not (seq-prefixed-with? 'finally %)))
-                                   body)
-        [catch-clauses finally-clauses] (split-with #(not (seq-prefixed-with? 'finally %)) clauses)
+  (let [[body clauses] (split-with-ops '#{catch finally} body)
+        [catch-clauses finally-clauses] (split-with-ops '#{finally} clauses)
         finally-clause (nfirst finally-clauses)
         append-finally (partial append-finally cenv finally-clause)
         body' (parse-expr cenv (append-finally body))]
