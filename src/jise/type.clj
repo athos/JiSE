@@ -17,6 +17,7 @@
 (def OBJECT (Type/getType Object))
 (def STRING (Type/getType String))
 (def CLASS (Type/getType Class))
+(def THROWABLE (Type/getType Throwable))
 
 (def BOOLEAN_CLASS (Type/getType Boolean))
 (def BYTE_CLASS (Type/getType Byte))

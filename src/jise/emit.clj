@@ -467,7 +467,7 @@
         end-label (Label.)
         catch-clauses' (map #(assoc % :label (Label.)) catch-clauses)]
     (doseq [{:keys [label local]} catch-clauses'
-            :let [iname (.getInternalName ^Type (:type local))]]
+            :let [iname (some-> ^Type (:type local) (.getInternalName))]]
       (.visitTryCatchBlock mv start-label handler-label label iname))
     (.visitLabel mv start-label)
     (emit-expr emitter body)
@@ -476,7 +476,7 @@
     (.visitLabel mv handler-label)
     (doseq [{:keys [label local body]} catch-clauses']
       (.visitLabel mv label)
-      (emit-store emitter (:type local) (:index local))
+      (emit-store emitter (or (:type local) t/THROWABLE) (:index local))
       (emit-expr emitter body)
       (when-not (:tail (:context body))
         (.visitJumpInsn mv Opcodes/GOTO end-label)))

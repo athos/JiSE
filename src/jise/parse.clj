@@ -1171,26 +1171,34 @@
       `(jise.core/do ~@exprs ~@finally-clause))
     `(jise.core/do ~@exprs)))
 
-(defn- parse-catch-clause [cenv finally-clause [_ class lname & body]]
-  (let [class' (resolve-type cenv class)
-        [cenv' [b]] (parse-bindings cenv [(with-meta lname {:tag class}) nil])
-        body' (parse-expr cenv' (append-finally cenv finally-clause body))]
-    {:type (:type body')
-     :local b
-     :body body'}))
+(defn- parse-catch-clause
+  ([cenv finally-clause [_ class lname & body]]
+   (parse-catch-clause cenv finally-clause class lname body))
+  ([cenv finally-clause class lname body]
+   (let [class' (resolve-type cenv class)
+         [cenv' [b]] (parse-bindings cenv [(with-meta lname {:tag class}) nil] :params? true)
+         body' (parse-expr cenv' (append-finally cenv finally-clause body))]
+     {:type (:type body')
+      :local (cond-> b (nil? class) (assoc :type nil))
+      :body body'})))
 
 (defmethod parse-expr* 'try [cenv [_ & body]]
   (let [[body clauses] (split-with-ops '#{catch finally} body)
         [catch-clauses finally-clauses] (split-with-ops '#{finally} clauses)
         finally-clause (nfirst finally-clauses)
-        append-finally (partial append-finally cenv finally-clause)
-        body' (parse-expr cenv (append-finally body))]
+        cenv' (with-context cenv (:expression (context-of cenv) :statement))
+        append-finally (partial append-finally cenv' finally-clause)
+        body' (parse-expr cenv' (append-finally body))
+        catch-clauses' (mapv (partial parse-catch-clause cenv' finally-clause)
+                             catch-clauses)
+        ex (gensym 'ex)
+        finally-catch-clause (->> `((jise.core/do ~@finally-clause (throw ~ex)))
+                                  (parse-catch-clause cenv' nil nil ex))]
     (-> {:op :try
          :type (:type body')
          :body body'
-         :catch-clauses (mapv (partial parse-catch-clause cenv finally-clause)
-                              catch-clauses)}
-        (inherit-context cenv :return? false))))
+         :catch-clauses (conj catch-clauses' finally-catch-clause)}
+        (inherit-context cenv))))
 
 (defn- ensure-existing-label [label]
   (when (and label (not (contains? *active-labels* label)))
