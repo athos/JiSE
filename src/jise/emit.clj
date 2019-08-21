@@ -461,26 +461,40 @@
         (.visitLabel mv end-label)))
     (push-null-unless-statement emitter context)))
 
-(defmethod emit-expr* :try [{:keys [^MethodVisitor mv] :as emitter} {:keys [type body catch-clauses]}]
-  (let [start-label (Label.)
-        handler-label (Label.)
-        end-label (Label.)
-        catch-clauses' (map #(assoc % :label (Label.)) catch-clauses)]
-    (doseq [{:keys [label local]} catch-clauses'
-            :let [iname (some-> ^Type (:type local) (.getInternalName))]]
-      (.visitTryCatchBlock mv start-label handler-label label iname))
-    (.visitLabel mv start-label)
+(defmethod emit-expr* :try
+  [{:keys [^MethodVisitor mv] :as emitter} {:keys [type body catch-clauses finally-clause]}]
+  (let [body-start-label (Label.)
+        body-end-label (Label.)
+        try-end-label (Label.)
+        default-clause-label (when finally-clause (Label.))
+        catch-clauses' (map #(assoc % :start-label (Label.) :end-label (Label.)) catch-clauses)]
+    (doseq [{:keys [start-label local]} catch-clauses'
+            :let [iname (.getInternalName ^Type (:type local))]]
+      (.visitTryCatchBlock mv body-start-label body-end-label start-label iname))
+    (when finally-clause
+      (.visitTryCatchBlock mv body-start-label body-end-label default-clause-label nil)
+      (doseq [{:keys [start-label end-label]} catch-clauses']
+        (.visitTryCatchBlock mv start-label end-label default-clause-label nil)))
+    (.visitLabel mv body-start-label)
     (emit-expr emitter body)
-    (when-not (:tail (:context body))
-      (.visitJumpInsn mv Opcodes/GOTO end-label))
-    (.visitLabel mv handler-label)
-    (doseq [{:keys [label local body]} catch-clauses']
-      (.visitLabel mv label)
+    (.visitLabel mv body-end-label)
+    (when finally-clause
+      (emit-expr emitter finally-clause))
+    (.visitJumpInsn mv Opcodes/GOTO try-end-label)
+    (doseq [[{:keys [start-label end-label local body]} more] (partition-all 2 1 catch-clauses')]
+      (.visitLabel mv start-label)
       (emit-store emitter (or (:type local) t/THROWABLE) (:index local))
       (emit-expr emitter body)
-      (when-not (:tail (:context body))
-        (.visitJumpInsn mv Opcodes/GOTO end-label)))
-    (.visitLabel mv end-label)))
+      (.visitLabel mv end-label)
+      (when finally-clause
+        (emit-expr emitter finally-clause))
+      (when (or finally-clause more)
+        (.visitJumpInsn mv Opcodes/GOTO try-end-label)))
+    (when finally-clause
+      (.visitLabel mv default-clause-label)
+      (emit-expr emitter finally-clause)
+      (.visitInsn mv Opcodes/ATHROW))
+    (.visitLabel mv try-end-label)))
 
 (defmethod emit-expr* :continue [{:keys [^MethodVisitor mv] :as emitter} {:keys [label]}]
   (let [^Label label (if label
