@@ -468,13 +468,6 @@
         try-end-label (Label.)
         default-clause-label (when finally-clause (Label.))
         catch-clauses' (map #(assoc % :start-label (Label.) :end-label (Label.)) catch-clauses)]
-    (doseq [{:keys [start-label local]} catch-clauses'
-            :let [iname (.getInternalName ^Type (:type local))]]
-      (.visitTryCatchBlock mv body-start-label body-end-label start-label iname))
-    (when finally-clause
-      (.visitTryCatchBlock mv body-start-label body-end-label default-clause-label nil)
-      (doseq [{:keys [start-label end-label]} catch-clauses']
-        (.visitTryCatchBlock mv start-label end-label default-clause-label nil)))
     (.visitLabel mv body-start-label)
     (emit-expr emitter body)
     (.visitLabel mv body-end-label)
@@ -494,7 +487,14 @@
       (.visitLabel mv default-clause-label)
       (emit-expr emitter finally-clause)
       (.visitInsn mv Opcodes/ATHROW))
-    (.visitLabel mv try-end-label)))
+    (.visitLabel mv try-end-label)
+    (doseq [{:keys [start-label local]} catch-clauses'
+            :let [iname (.getInternalName ^Type (:type local))]]
+      (.visitTryCatchBlock mv body-start-label body-end-label start-label iname))
+    (when finally-clause
+      (.visitTryCatchBlock mv body-start-label body-end-label default-clause-label nil)
+      (doseq [{:keys [start-label end-label]} catch-clauses']
+        (.visitTryCatchBlock mv start-label end-label default-clause-label nil)))))
 
 (defmethod emit-expr* :continue [{:keys [^MethodVisitor mv] :as emitter} {:keys [label]}]
   (let [^Label label (if label
