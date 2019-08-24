@@ -171,7 +171,7 @@
                         :let [m (meta field)
                               visibility (cond (:public m) :public
                                                (:private m) :private
-                                               :else :private)]]
+                                               :else :public)]]
                     (with-meta
                       `(jise/def ~(vary-meta field dissoc :public :private))
                       {visibility true}))
