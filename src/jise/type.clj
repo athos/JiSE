@@ -550,7 +550,8 @@
    (find-methods {} caller class name arg-types))
   ([cenv caller class name arg-types
     & {:keys [throws-on-failure?] :or {throws-on-failure? true}}]
-   (let [nargs (count arg-types)]
+   (let [nargs (count arg-types)
+         ensure-not-empty (if throws-on-failure? ensure-not-empty #(last %&))]
      (as-> (get-methods cenv caller class name) ms
        (ensure-not-empty :no-such-target "no such method" ms)
        (->> (filter (fn [{:keys [param-types access]}]
