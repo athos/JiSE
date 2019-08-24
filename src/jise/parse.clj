@@ -957,16 +957,20 @@
            :expr rhs}
           (inherit-context cenv))
 
-      (let [local (:local lhs)]
-        (if (:final (:access local))
-          (if (:param? local)
-            (error (str "final parameter " target " may not be assigned"))
-            (error (str "cannot assign a value to final variable " target)))
-          (-> {:op :assignment
-               :type (:type lhs)
-               :lhs lhs
-               :rhs rhs}
-              (inherit-context cenv)))))))
+      (if (symbol? target)
+        (let [local (:local lhs)]
+          (if (:final (:access local))
+            (if (:param? local)
+              (error (str "final parameter " target " may not be assigned"))
+              (error (str "cannot assign a value to final variable " target)))
+            (-> {:op :assignment
+                 :type (:type lhs)
+                 :lhs lhs
+                 :rhs rhs}
+                (inherit-context cenv))))
+        (error (str "unexpected type\n"
+                    "  required: variable\n"
+                    "  found:    value"))))))
 
 (defn- parse-increment [cenv target by max-value op-name dec?]
   (let [{:keys [type] :as target'} (parse-expr (with-context cenv :expression) target)
