@@ -1170,7 +1170,9 @@
 
 (defn- parse-catch-clause [cenv [_ class lname & body]]
   (let [class' (resolve-type cenv class)
-        [cenv' [b]] (parse-bindings cenv [(with-meta lname {:tag class}) nil] :params? true)
+        _ (when-not (t/super? cenv t/THROWABLE class')
+            (err/error-on-incompatible-types t/THROWABLE class'))
+        [cenv' [b]] (parse-bindings cenv [(vary-meta lname assoc :tag class) nil] :params? true)
         body' (parse-exprs cenv' body)]
     {:type (:type body')
      :local b
