@@ -166,4 +166,10 @@
                           ~@body))
                      (merge {visibility true}
                             (dissoc (meta method) :public :private))))]
-    `^:public (jise/defclass ~name ~interfaces ~@fields' ~ctor ~@methods')))
+    `(do
+       ^:public
+       (jise/defclass ~name ~interfaces ~@fields' ~ctor ~@methods')
+       (defn ~(symbol (str "->" name))
+         ~(str "Positional factory function for class " name)
+         ~(vec fields)
+         (new ~name ~@(map #(with-meta % nil) fields))))))
