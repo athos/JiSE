@@ -159,6 +159,12 @@
           (recur more (conj interfaces x) methods)
           (recur more interfaces (conj methods x)))))))
 
+(defn- visibility-of [x]
+  (c/let [m (meta x)]
+    (cond (:public m) :public
+          (:private m) :private
+          :else :public)))
+
 (defmacro deftype [name fields & opts+specs]
   (c/let [[interfaces methods] (parse-opts+specs opts+specs)
           ctor (with-meta
@@ -168,17 +174,16 @@
                         `(jise/set! (jise/. jise/this ~field') ~field')))
                  {:public true})
           fields' (for [field fields
-                        :let [m (meta field)
-                              visibility (cond (:public m) :public
-                                               (:private m) :private
-                                               :else :public)]]
-                    (with-meta
-                      `(jise/def ~(vary-meta field dissoc :public :private))
-                      {visibility true}))
-          methods' (for [[mname args & body :as method] methods]
+                        :let [visibility (visibility-of field)]]
+                    `(jise/def ~(with-meta field
+                                  (merge {visibility true}
+                                         (dissoc (meta field) :public :private)))))
+          methods' (for [[mname args & body :as method] methods
+                         :let [visibility (visibility-of method)]]
                      (with-meta
                        `(jise/defm ~mname ~(vec (rest args))
                           (jise/let [~(first args) jise/this]
                             ~@body))
-                       (meta method)))]
-    `^:public (jise/defclass ~name ~interfaces ~@fields' ~ctor ~@methods')))
+                       (merge {visibility true}
+                              (dissoc (meta method) :public :private))))]
+    `^:public (jise/defclass ~name ~interfaces ~@fields' ~ctor ~@methods)))
