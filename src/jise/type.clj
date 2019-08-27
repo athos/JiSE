@@ -228,8 +228,8 @@
 (defn ^Type object-type [obj]
   (cond (boolean? obj) BOOLEAN
         (char? obj) CHAR
-        (int? obj) INT
-        (float? obj) DOUBLE
+        (integer? obj) INT
+        (or (float? obj) (decimal? obj)) DOUBLE
         (string? obj) STRING
         (instance? Type obj) CLASS
         :else nil))
