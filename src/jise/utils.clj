@@ -121,9 +121,13 @@
                    ~@body))
         m (cond->> (merge {:arglists `'~(#'c/sigs fdecl')} m)
             (meta name)
-            (merge (meta name)))]
-    `(def ~(with-meta name m)
-       (fn ~name ~@fdecl))))
+            (merge (meta name)))
+        name-with-meta (with-meta name m)]
+    `(do
+       ;; the following `declare` is necessary to allow self reference within fn definition
+       (declare ~name-with-meta)
+       (def ~name-with-meta
+         (fn ~name ~@fdecl)))))
 
 (defmacro do [& body]
   `((fn [] ~@body)))
