@@ -1,12 +1,13 @@
 (ns jise.simplify
-  (:require [jise.misc :as misc]
+  (:require [jise.macroexpand :as mex]
+            [jise.misc :as misc]
             [jise.type :as t]))
 
 (declare simplify)
 
 (defmulti simplify* (fn [cenv expr] (misc/fixup-ns (first expr))))
 (defmethod simplify* :default [cenv expr]
-  (let [expanded (misc/macroexpand cenv expr)]
+  (let [expanded (mex/macroexpand cenv expr)]
     (when-not (identical? expanded expr)
       (simplify cenv expanded))))
 

@@ -2,6 +2,7 @@
   (:refer-clojure :exclude [find-var])
   (:require [clojure.string :as str]
             [jise.error :as err :refer [error]]
+            [jise.macroexpand :as mex]
             [jise.misc :as misc]
             [jise.simplify :as simp]
             [jise.type :as t])
@@ -151,7 +152,7 @@
 
 (defmulti parse-expr* (fn [cenv expr] (misc/fixup-ns (first expr))))
 (defmethod parse-expr* :default [cenv expr]
-  (let [expanded (misc/macroexpand cenv expr)]
+  (let [expanded (mex/macroexpand cenv expr)]
     (if-not (identical? expanded expr)
       (parse-expr cenv expanded)
       (or (parse-sugar cenv expr)
@@ -384,7 +385,7 @@
               do (recur (concat (rest decl) decls) ret)
               (let [v (resolve (first decl))
                     [decls ret] (if (and v (:macro (meta v)))
-                                  [(cons (misc/macroexpand {} decl) decls) ret]
+                                  [(cons (mex/macroexpand {} decl) decls) ret]
                                   [decls (update ret :initializer conj decl)])]
                 (recur decls ret)))
             (recur decls ret)))))))
