@@ -470,6 +470,15 @@
   (when (t/final-type? cenv parent)
     (error (str "cannot inherit from final " (err/stringify-type parent)))))
 
+(defn- check-blank-final-initialization [cenv]
+  (let [fields (find-in-current-class cenv :fields)]
+    (when-let [field (some (fn [[_ field]]
+                             (when (and (:final (:access field))
+                                        (some-> (:blank? field) deref))
+                               field))
+                           fields)]
+      (error (str "variable " (:name field) " might not have been initialized")))))
+
 (defn parse-class
   ([class] (parse-class {} class))
   ([enclosing-env [_ cname & body :as class]]
@@ -493,6 +502,7 @@
                            :vars (atom {:var->entry {} :fields #{}}))
                     (as-> cenv (assoc cenv :class-type (resolve-type cenv cname))))
            ctors' (mapv (partial parse-method cenv true) ctors')
+           _ (check-blank-final-initialization cenv)
            methods' (mapv (partial parse-method cenv false) methods)
            synthesized-fields (synthesize-fields cenv)]
        {:name (str/replace (str cname) \. \/)
