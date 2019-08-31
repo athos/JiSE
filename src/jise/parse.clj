@@ -410,7 +410,12 @@
 (defn- init-cenv [proto-cenv cname parent interfaces fields ctors methods initializer]
   (let [fields' (into {} (map (fn [[_ name :as field]]
                                 (err/with-line&column-of field
-                                  [(str name) (parse-field proto-cenv field)])))
+                                  (let [field' (parse-field proto-cenv field)]
+                                    [(str name)
+                                     (cond-> field'
+                                       (and (:final (:access field'))
+                                            (not (contains? field' :value)))
+                                       (assoc :blank? (atom true)))]))))
                       fields)
         ctors' (reduce (fn [cs [_ _ args :as ctor]]
                          (err/with-line&column-of ctor
@@ -925,14 +930,16 @@
 
 (defn- parse-field-update [cenv {:keys [field] :as lhs} rhs]
   (cond (and (:final (:access field))
-             (some-> (:initialized? field) deref))
+             (if-let [blank? (:blank? field)]
+               (not @blank?)
+               true))
         (error (str "cannot assign a value to final variable " (:name field)))
 
         (:foreign? field)
         (error (str "cannot assign a value to foreign variable " (:name field)))
 
         :else
-        (do (some-> (:initialized? field) (reset! true))
+        (do (some-> (:blank? field) (reset! false))
             (-> {:op :field-update
                  :type (:type lhs)
                  :field field
