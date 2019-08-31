@@ -1,5 +1,6 @@
 (ns jise.type
-  (:require [clojure.string :as str])
+  (:require [clojure.string :as str]
+            [jise.misc :as misc])
   (:import [clojure.asm Opcodes Type]
            [java.lang.reflect Constructor Field Method Modifier]))
 
@@ -87,22 +88,29 @@
              (when throws-on-failure?
                (throw (ex-info (str "cannot resolve type " (pr-str tag))
                                {:cause :unresolved-type :tag tag}))))]
-     (cond (symbol? tag) (or (primitive->type tag)
-                             (as-> (get primitive-array-types tag) t
-                               (tag->type cenv t
+     (cond (symbol? tag) (if (namespace tag)
+                           (let [tag' (misc/fixup-ns tag)]
+                             (if (namespace tag')
+                               (fail)
+                               (tag->type cenv tag'
                                           :allow-vararg-param-type? allow-vararg-param-type?
-                                          :throws-on-failure? throws-on-failure?))
-                             (find-in-cenv cenv tag)
-                             (when-let [c (resolve tag)]
-                               (when (class? c)
-                                 (Type/getType ^Class c)))
-                             (when-let [[_ name] (re-matches #"(.+)\.\.\.$" (name tag))]
-                               (if allow-vararg-param-type?
-                                 (tag->array-type cenv [(symbol name)]
-                                                  :throws-on-failure? throws-on-failure?)
-                                 (throw (ex-info "vararg param type not allowed here"
-                                                 {:cause :invalid-vararg-param-type}))))
-                             (fail))
+                                          :throws-on-failure? throws-on-failure?)))
+                           (or (primitive->type tag)
+                               (as-> (get primitive-array-types tag) t
+                                 (tag->type cenv t
+                                            :allow-vararg-param-type? allow-vararg-param-type?
+                                            :throws-on-failure? throws-on-failure?))
+                               (find-in-cenv cenv tag)
+                               (when-let [c (resolve tag)]
+                                 (when (class? c)
+                                   (Type/getType ^Class c)))
+                               (when-let [[_ name] (re-matches #"(.+)\.\.\.$" (name tag))]
+                                 (if allow-vararg-param-type?
+                                   (tag->array-type cenv [(symbol name)]
+                                                    :throws-on-failure? throws-on-failure?)
+                                   (throw (ex-info "vararg param type not allowed here"
+                                                   {:cause :invalid-vararg-param-type}))))
+                               (fail)))
            (class? tag) (Type/getType ^Class tag)
            (vector? tag) (tag->array-type cenv tag :throws-on-failure? throws-on-failure?)
            (nil? tag) nil
