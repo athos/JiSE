@@ -1177,7 +1177,7 @@
                      (cond-> label (assoc :label label)))]
         (-> (if bindings
               {:op :let :bindings bindings' :body node}
-              {:op :do :exprs (cond->> node init' (cons init'))})
+              {:op :do :exprs (cond->> [node] init' (cons init'))})
             (inherit-context cenv :return? false))))))
 
 (defn- split-with-ops [ops forms]
