@@ -151,7 +151,14 @@
 
 (defmacro deftype [name fields & opts+specs]
   (let [[interfaces methods] (parse-opts+specs opts+specs)
-        interfaces' (into ['clojure.lang.IType] interfaces)
+        interfaces' (into ['clojure.lang.IType]
+                          (map (c/fn [name]
+                                 (let [v (resolve name)]
+                                   (if-let [^Class c (or (and (var? v) (:on-interface @v))
+                                                         (and (class? v) v))]
+                                     (symbol (.getName c))
+                                     name))))
+                          interfaces)
         ctor (with-meta
                `(jise/defm ~(with-meta name nil) ~fields
                   ~@(for [field fields
