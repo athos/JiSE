@@ -1157,25 +1157,27 @@
     (case nargs
       (0 1) (error "malformed for-loop")
       2 (parse-enhanced-for-loop cenv form)
-      (let [bindings (if (and (= nargs 3) (nil? (first args)))
-                       []
-                       (drop-last 2 args))
+      (let [[init bindings] (if (= nargs 3)
+                              [(first args) nil]
+                              [nil (drop-last 2 args)])
             _ (when-not (even? (count bindings))
                 (error "malformed for-loop"))
+            init' (some->> init (parse-expr (with-context cenv :statement)))
             [cond step] (take-last 2 args)
             [cenv' bindings'] (parse-bindings cenv bindings)
             cond' (as-> (parse-expr (with-context cenv' :conditional) cond) cond'
                     (ensure-type (with-context cenv :expression)
                                  t/BOOLEAN cond' :context :casting))
-            label (extract-label form)]
-        (-> {:op :let
-             :bindings bindings'
-             :body (-> {:op :for
-                        :cond cond'
-                        :step (parse-expr (with-context cenv' :statement) step)
-                        :body (parse-exprs (with-context cenv' :statement) body)}
-                       (inherit-context cenv)
-                       (cond-> label (assoc :label label)))}
+            label (extract-label form)
+            node (-> {:op :for
+                      :cond cond'
+                      :step (parse-expr (with-context cenv' :statement) step)
+                      :body (parse-exprs (with-context cenv' :statement) body)}
+                     (inherit-context cenv)
+                     (cond-> label (assoc :label label)))]
+        (-> (if bindings
+              {:op :let :bindings bindings' :body node}
+              {:op :do :exprs (cond->> node init' (cons init'))})
             (inherit-context cenv :return? false))))))
 
 (defn- split-with-ops [ops forms]
