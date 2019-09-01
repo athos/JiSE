@@ -151,6 +151,7 @@
 
 (defmacro deftype [name fields & opts+specs]
   (let [[interfaces methods] (parse-opts+specs opts+specs)
+        interfaces' (into ['clojure.lang.IType] interfaces)
         ctor (with-meta
                `(jise/defm ~(with-meta name nil) ~fields
                   ~@(for [field fields
@@ -172,7 +173,7 @@
                             (dissoc (meta method) :public :private))))]
     `(do
        ^:public
-       (jise/defclass ~name ~interfaces ~@fields' ~ctor ~@methods')
+       (jise/defclass ~name ~interfaces' ~@fields' ~ctor ~@methods')
        (defn ~(symbol (str "->" name))
          ~(str "Positional factory function for class " name)
          ~(vec fields)
