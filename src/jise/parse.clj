@@ -146,8 +146,21 @@
         (parse-method-invocation cenv nil class-type (str op) (rest expr)))
       (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
         (when-not (:macro (meta var))
-          (let [form `(.invoke (. ~(:class-name cenv) ~(symbol (str \- field-name)))
-                               ~@(rest expr))]
+          (let [nargs (count (rest expr))
+                cname (:class-name cenv)
+                field (symbol (str \- field-name))
+                form (if-let [primc (some->> var meta :arglists
+                                             (filter (fn [^clojure.lang.APersistentVector sig]
+                                                       (or (= (count sig) nargs)
+                                                           (let [offset (.indexOf sig '&)]
+                                                             (and (>= offset 0)
+                                                                  (>= nargs offset))))))
+                                             first
+                                             clojure.lang.Compiler$FnMethod/primInterface)]
+                       `(.invokePrim (jise.core/cast ~(symbol primc) (.deref (. ~cname ~field)))
+                                     ~@(rest expr))
+                       `(.invoke (jise.core/cast clojure.lang.IFn (.deref (. ~cname ~field)))
+                                 ~@(rest expr)))]
             (parse-expr cenv (with-meta form (meta expr))))))))
 
 (defmulti parse-expr* (fn [cenv expr] (misc/fixup-ns (first expr))))
