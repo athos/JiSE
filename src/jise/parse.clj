@@ -131,13 +131,14 @@
 (declare parse-expr parse-method-invocation)
 
 (defn- parse-sugar [{:keys [class-type] :as cenv} [op :as expr]]
-  (or (when-let [{:keys [type] :as x} (or (find-lname cenv op)
-                                          (find-field cenv class-type (str op)))]
+  (or (when-let [{:keys [type] :as x} (and (not (namespace op))
+                                           (or (find-lname cenv op)
+                                               (find-field cenv class-type (name op))))]
         (cond (t/array-type? type)
               (parse-expr cenv (with-meta `(jise.core/aget ~@expr) (meta expr)))
 
               (t/super? cenv IFN_TYPE type)
-              (parse-expr cenv (with-meta `(. ~op invoke ~@(rest expr)) (meta expr)))
+              (parse-expr cenv (with-meta `(.invoke ~op ~@(rest expr)) (meta expr)))
 
               :else
               (error (format "array or clojure.lang.IFn required, but %s found"
