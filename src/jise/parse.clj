@@ -339,13 +339,18 @@
                                       :params? true)
         return-type (if ctor? t/VOID type)
         context (if (= return-type t/VOID) :statement :expression)
+        this-name (or (:jise.core/this-name (meta method)) (:jise.core/this-name cenv))
         body' (err/with-line&column-of method
                 (if (:abstract access)
                   (when body (error "abstract methods cannot have a body"))
-                  (let [cenv' (assoc cenv'
-                                     :return-type return-type
-                                     :context #{context :tail :return}
-                                     :static? static?)]
+                  (let [cenv' (cond-> (assoc cenv'
+                                             :return-type return-type
+                                             :context #{context :tail :return}
+                                             :static? static?)
+                                (and (not static?) this-name)
+                                (assoc-in [:lenv (name this-name)]
+                                          {:index 0 :type (:class-type cenv)
+                                           :access #{:final} :param? true}))]
                     (cond->> (parse-exprs cenv' body)
                       ctor? (inject-ctor-invocation cenv')))))]
     (cond-> {:return-type return-type
@@ -515,7 +520,10 @@
                                (when (seq initializer) `(jise.core/do ~@initializer)))
                     (assoc :enclosing-env enclosing-env
                            :vars (atom {:var->entry {} :fields #{}}))
-                    (as-> cenv (assoc cenv :class-type (resolve-type cenv cname))))
+                    (as-> cenv (assoc cenv :class-type (resolve-type cenv cname)))
+                    (cond->
+                      (:jise.core/this-name (meta class))
+                      (assoc :jise.core/this-name (:jise.core/this-name (meta class)))))
            ctors' (mapv (partial parse-method cenv true) ctors')
            _ (check-blank-final-initialization cenv)
            methods' (mapv (partial parse-method cenv false) methods)

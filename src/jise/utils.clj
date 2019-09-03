@@ -77,7 +77,8 @@
          ~@(emit-fn-body params params' body))])))
 
 (defn- emit-fn-class [fname sigs]
-  (let [{:keys [prims]}
+  (let [fname' (or fname (gensym 'f))
+        {:keys [prims]}
         (reduce (c/fn [m [params]]
                   (let [arity (count params)
                           params' (fixup-type-hints params)
@@ -90,14 +91,16 @@
                         m))))
                 {:prims [] :arities #{}}
                 sigs)]
-    `^:public
-    (jise/class ~fname [clojure.lang.AFunction clojure.lang.IFn ~@prims]
-      ~@(mapcat emit-fn-methods sigs))))
+    (cond-> `^:public
+            (jise/class ~fname' [clojure.lang.AFunction clojure.lang.IFn ~@prims]
+              ~@(mapcat emit-fn-methods sigs))
+      fname
+      (vary-meta assoc ::jise/this-name fname))))
 
 (defmacro fn [& sigs]
   (let [[fname sigs] (if (symbol? (first sigs))
                        [(first sigs) (next sigs)]
-                       [(gensym 'f) sigs])
+                       [nil sigs])
         sigs (if (vector? (first sigs))
                (list sigs)
                sigs)]
@@ -173,10 +176,8 @@
         methods' (for [[mname args & body :as method] methods
                        :let [visibility (visibility-of method)]]
                    (with-meta
-                     `(jise/defm ~mname ~(vec (rest args))
-                        (jise/let [~(first args) jise/this]
-                          ~@body))
-                     (merge {visibility true}
+                     `(jise/defm ~mname ~(vec (rest args)) ~@body)
+                     (merge {visibility true ::jise/this-name (first args)}
                             (dissoc (meta method) :public :private))))]
     `(do
        ^:public
