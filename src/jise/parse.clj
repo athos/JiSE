@@ -128,6 +128,25 @@
                  (get-in @(:vars cenv) [:fields fname]))
         {:class class :type VAR_TYPE :access #{:public :static}})))
 
+(defn- expand-fn-invocation [cenv {:keys [var field-name]} [op & args]]
+  (let [nargs (count args)
+        cname (:class-name cenv)
+        field (symbol (str \- field-name))
+        sig (->> var meta :arglists
+                 (filter (fn [^clojure.lang.APersistentVector sig]
+                           (or (= (count sig) nargs)
+                               (let [offset (.indexOf sig '&)]
+                                 (and (>= offset 0)
+                                      (>= nargs offset))))))
+                 first)
+        tag (or (:tag (meta op)) (:tag (meta sig)) (:tag (meta var)))]
+    (cond->>
+        (if-let [primc (some->> sig clojure.lang.Compiler$FnMethod/primInterface)]
+          `(.invokePrim (jise.core/cast ~(symbol primc) (.deref (. ~cname ~field))) ~@args)
+          `(.invoke (jise.core/cast clojure.lang.IFn (.deref (. ~cname ~field))) ~@args))
+      tag
+      (list 'jise.core/cast tag))))
+
 (declare parse-expr parse-method-invocation)
 
 (defn- parse-sugar [{:keys [class-type] :as cenv} [op :as expr]]
@@ -145,23 +164,9 @@
                              (err/stringify-type type)))))
       (when (t/get-methods cenv class-type class-type (str op))
         (parse-method-invocation cenv nil class-type (str op) (rest expr)))
-      (when-let [{:keys [var field-name]} (and (namespace op) (find-var cenv op))]
+      (when-let [{:keys [var] :as var-entry} (and (namespace op) (find-var cenv op))]
         (when-not (:macro (meta var))
-          (let [nargs (count (rest expr))
-                cname (:class-name cenv)
-                field (symbol (str \- field-name))
-                form (if-let [primc (some->> var meta :arglists
-                                             (filter (fn [^clojure.lang.APersistentVector sig]
-                                                       (or (= (count sig) nargs)
-                                                           (let [offset (.indexOf sig '&)]
-                                                             (and (>= offset 0)
-                                                                  (>= nargs offset))))))
-                                             first
-                                             clojure.lang.Compiler$FnMethod/primInterface)]
-                       `(.invokePrim (jise.core/cast ~(symbol primc) (.deref (. ~cname ~field)))
-                                     ~@(rest expr))
-                       `(.invoke (jise.core/cast clojure.lang.IFn (.deref (. ~cname ~field)))
-                                 ~@(rest expr)))]
+          (let [form (expand-fn-invocation cenv var-entry expr)]
             (parse-expr cenv (with-meta form (meta expr))))))))
 
 (defmulti parse-expr* (fn [cenv expr] (misc/fixup-ns (first expr))))
