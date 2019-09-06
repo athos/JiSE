@@ -332,6 +332,15 @@
                 (inherit-context cenv :return? false)))))
       body))
 
+(defn- parse-exceptions [cenv exceptions]
+  (when exceptions
+    (mapv (fn [e]
+            (let [t (resolve-type cenv e)]
+              (if (t/super? cenv t/THROWABLE t)
+                t
+                (error (err/error-message-on-incompatible-types t/THROWABLE t)))))
+          exceptions)))
+
 (defn- parse-method [cenv ctor? [_ mname args & body :as method]]
   (err/with-line&column-of method
     (let [modifiers (modifiers-of method)
@@ -343,6 +352,7 @@
                                                :next-index (atom init-index))
                                         (interleave args (repeat nil))
                                         :params? true)
+          exceptions (parse-exceptions cenv (:throws modifiers))
           return-type (if ctor? t/VOID type)
           context (if (= return-type t/VOID) :statement :expression)
           this-name (or (:jise.core/this-name (meta method)) (:jise.core/this-name cenv))
@@ -352,6 +362,9 @@
                                              :return-type return-type
                                              :context #{context :tail :return}
                                              :static? static?)
+                                exceptions
+                                (assoc :exceptions (set exceptions))
+
                                 (and (not static?) this-name)
                                 (assoc-in [:lenv (name this-name)]
                                           {:index 0 :type (:class-type cenv)
@@ -364,7 +377,8 @@
                :body body'}
         ctor? (assoc :ctor? ctor?)
         (not ctor?) (assoc :name (str mname))
-        (some #{'&} args) (update :access conj :varargs)))))
+        (some #{'&} args) (update :access conj :varargs)
+        exceptions (assoc :exceptions exceptions)))))
 
 (defn- parse-supers [proto-cenv [maybe-supers & body]]
   (let [supers (when (vector? maybe-supers) maybe-supers)

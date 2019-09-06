@@ -70,14 +70,18 @@
     (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
 
 (defn- emit-method
-  [^ClassWriter cw parent {:keys [name access return-type args body static-initializer? ctor? varargs?]}]
+  [^ClassWriter cw parent
+   {:keys [name access return-type exceptions args body static-initializer? ctor? varargs?]}]
   (let [desc (->> (map :type args)
                   (into-array Type)
                   (Type/getMethodDescriptor return-type))
         mname (cond static-initializer? "<clinit>"
                     ctor? "<init>"
                     :else (munge name))
-        mv (.visitMethod cw (access-value (cond-> access varargs? (conj :varargs))) mname desc nil nil)
+        excs (some->> (seq exceptions)
+                      (map #(.getInternalName ^Type %))
+                      (into-array String))
+        mv (.visitMethod cw (access-value (cond-> access varargs? (conj :varargs))) mname desc nil excs)
         emitter (make-emitter mv)]
     (doseq [arg args]
       (.visitParameter mv (:name arg) (access-value (:access arg))))
