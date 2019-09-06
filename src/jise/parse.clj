@@ -333,20 +333,20 @@
       body))
 
 (defn- parse-method [cenv ctor? [_ mname args & body :as method]]
-  (let [modifiers (modifiers-of method)
-        {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
-        static? (boolean (:static access))
-        init-index (if static? 0 1)
-        [cenv' args'] (parse-bindings (assoc cenv
-                                             :lenv (:enclosing-env cenv)
-                                             :next-index (atom init-index))
-                                      (interleave args (repeat nil))
-                                      :params? true)
-        return-type (if ctor? t/VOID type)
-        context (if (= return-type t/VOID) :statement :expression)
-        this-name (or (:jise.core/this-name (meta method)) (:jise.core/this-name cenv))
-        body' (err/with-line&column-of method
-                (if (:abstract access)
+  (err/with-line&column-of method
+    (let [modifiers (modifiers-of method)
+          {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
+          static? (boolean (:static access))
+          init-index (if static? 0 1)
+          [cenv' args'] (parse-bindings (assoc cenv
+                                               :lenv (:enclosing-env cenv)
+                                               :next-index (atom init-index))
+                                        (interleave args (repeat nil))
+                                        :params? true)
+          return-type (if ctor? t/VOID type)
+          context (if (= return-type t/VOID) :statement :expression)
+          this-name (or (:jise.core/this-name (meta method)) (:jise.core/this-name cenv))
+          body' (if (:abstract access)
                   (when body (error "abstract methods cannot have a body"))
                   (let [cenv' (cond-> (assoc cenv'
                                              :return-type return-type
@@ -357,14 +357,14 @@
                                           {:index 0 :type (:class-type cenv)
                                            :access #{:final} :param? true}))]
                     (cond->> (parse-exprs cenv' body)
-                      ctor? (inject-ctor-invocation cenv')))))]
-    (cond-> {:return-type return-type
-             :args args'
-             :access access
-             :body body'}
-      ctor? (assoc :ctor? ctor?)
-      (some #{'&} args) (update :access conj :varargs)
-      (not ctor?) (assoc :name (str mname)))))
+                      ctor? (inject-ctor-invocation cenv'))))]
+      (cond-> {:return-type return-type
+               :args args'
+               :access access
+               :body body'}
+        ctor? (assoc :ctor? ctor?)
+        (not ctor?) (assoc :name (str mname))
+        (some #{'&} args) (update :access conj :varargs)))))
 
 (defn- parse-supers [proto-cenv [maybe-supers & body]]
   (let [supers (when (vector? maybe-supers) maybe-supers)
