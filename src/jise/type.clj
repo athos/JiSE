@@ -6,6 +6,7 @@
 
 (set! *warn-on-reflection* true)
 
+(def VOID Type/VOID_TYPE)
 (def BOOLEAN Type/BOOLEAN_TYPE)
 (def BYTE Type/BYTE_TYPE)
 (def CHAR Type/CHAR_TYPE)
@@ -14,12 +15,12 @@
 (def LONG Type/LONG_TYPE)
 (def FLOAT Type/FLOAT_TYPE)
 (def DOUBLE Type/DOUBLE_TYPE)
-(def VOID Type/VOID_TYPE)
 (def OBJECT (Type/getType Object))
 (def STRING (Type/getType String))
 (def CLASS (Type/getType Class))
 (def THROWABLE (Type/getType Throwable))
 
+(def VOID_CLASS (Type/getType Void))
 (def BOOLEAN_CLASS (Type/getType Boolean))
 (def BYTE_CLASS (Type/getType Byte))
 (def CHARACTER_CLASS (Type/getType Character))
@@ -253,8 +254,9 @@
   (when (get-in narrower-primitive-types [from to])
     {:conversion :narrowing-primitive :from from :to to}))
 
-(def ^:private boxed-types
-  {BOOLEAN BOOLEAN_CLASS
+(def boxed-types
+  {VOID VOID_CLASS
+   BOOLEAN BOOLEAN_CLASS
    BYTE BYTE_CLASS
    CHAR CHARACTER_CLASS
    SHORT SHORT_CLASS
@@ -263,7 +265,7 @@
    FLOAT FLOAT_CLASS
    DOUBLE DOUBLE_CLASS})
 
-(def ^:private unboxed-types
+(def unboxed-types
   (into {} (map (fn [[k v]] [v k])) boxed-types))
 
 (defn convertible-to-integral? [t]

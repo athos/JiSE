@@ -150,6 +150,11 @@
                    (<= Short/MIN_VALUE v Short/MAX_VALUE))
               (.visitIntInsn mv Opcodes/SIPUSH v)
 
+              (and (= type t/CLASS) (t/primitive-type? value))
+              (let [owner (.getInternalName ^Type (t/boxed-types value))
+                    desc (.getDescriptor ^Type t/CLASS)]
+                (.visitFieldInsn mv Opcodes/GETSTATIC owner "TYPE" desc))
+
               :else (.visitLdcInsn mv v))))))
 
 (defn- emit-load [{:keys [^MethodVisitor mv]} ^Type type index]
