@@ -1435,33 +1435,34 @@
 (defmethod parse-expr* '. [cenv [_ callee property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))
     (parse-expr cenv `(. ~callee ~@property))
-    (let [cenv' (with-context cenv :expression)
-          callee' (if (symbol? callee)
-                    (parse-symbol cenv' callee :throws-on-failure? false)
-                    (when (not (t/tag->type cenv' callee :throws-on-failure? false))
-                      (parse-expr cenv' callee)))
-          callee-type (or (:type callee') (resolve-type cenv callee))
-          pname (name property)]
-      (cond (and (nil? callee') (or (= pname "class") (= pname "-class")))
-            (parse-literal cenv callee-type)
+    (let [pname (name property)]
+      (if (or (= pname "class") (= pname "-class"))
+        (if-let [t (t/tag->type cenv callee :throws-on-failure? false)]
+          (parse-literal cenv t)
+          (error (str "cannot find symbol\n  symbol: class " callee)))
+        (let [cenv' (with-context cenv :expression)
+              callee' (if (symbol? callee)
+                        (parse-symbol cenv' callee :throws-on-failure? false)
+                        (when (not (t/tag->type cenv' callee :throws-on-failure? false))
+                          (parse-expr cenv' callee)))
+              callee-type (or (:type callee') (resolve-type cenv callee))]
+          (cond (t/primitive-type? callee-type)
+                (error (str (err/stringify-type callee-type) " cannot be dereferenced"))
 
-            (t/primitive-type? callee-type)
-            (error (str (err/stringify-type callee-type) " cannot be dereferenced"))
-
-            (str/starts-with? pname "-")
-            (if (empty? maybe-args)
-             (parse-field-access cenv callee' callee-type (subs pname 1))
-             (error "field access cannot take arguments"))
-
-            :else
-            (try
-              (parse-method-invocation cenv callee' callee-type pname maybe-args)
-              (catch Exception e
+                (str/starts-with? pname "-")
                 (if (empty? maybe-args)
-                  (try
-                    (parse-field-access cenv callee' callee-type pname)
-                    (catch Exception _ (throw e)))
-                  (throw e))))))))
+                  (parse-field-access cenv callee' callee-type (subs pname 1))
+                  (error "field access cannot take arguments"))
+
+                :else
+                (try
+                  (parse-method-invocation cenv callee' callee-type pname maybe-args)
+                  (catch Exception e
+                    (if (empty? maybe-args)
+                      (try
+                        (parse-field-access cenv callee' callee-type pname)
+                        (catch Exception _ (throw e)))
+                      (throw e))))))))))
 
 (defn- fold-aget [[_ arr index & indices :as expr]]
   (if (empty? indices)
