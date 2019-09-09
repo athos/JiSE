@@ -66,13 +66,24 @@
                           (t/tag->type 'String...)))))
 
 (deftest type->class-test
-  (are [type class]
-      (= class (t/type->class (Type/getType ^String type)))
-    "Ljava/lang/String;"
-    String
+  (testing "existing classes can be reified with type->class"
+    (are [type class]
+        (= class (t/type->class {} type))
+      t/CHAR
+      Character/TYPE
 
-    "[I"
-    (Class/forName "[I")))
+      (Type/getType "Ljava/lang/String;")
+      String
+
+      (Type/getType "[I")
+      (Class/forName "[I"))
+    (let [cenv {:classes {'foo.bar.C {}}
+                :aliases {'C 'foo.bar.C}}]
+      (is (= Character/TYPE (t/type->class cenv t/CHAR)))))
+  (testing "non Java classes cannot be reified with type->class"
+    (let [cenv {:classes {'foo.bar.C {}}
+                :aliases {'C 'foo.bar.C}}]
+      (is (nil? (t/type->class cenv (t/tag->type cenv 'C)))))))
 
 (deftest type->tag-test
   (are [type t]

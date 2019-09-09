@@ -127,14 +127,15 @@
    "F" Float/TYPE
    "D" Double/TYPE})
 
-(defn ^Class type->class [^Type t]
-  (let [iname (.getInternalName t)]
-    (try
-      (if (str/starts-with? iname "[")
-        (Class/forName (str/replace iname #"/" "."))
-        (or (primitive-iname->class iname)
-            (resolve (symbol (.getClassName t)))))
-      (catch ClassNotFoundException _))))
+(defn ^Class type->class [cenv ^Type t]
+  (when-not (find-in-cenv cenv (symbol (.getClassName t)))
+    (let [iname (.getInternalName t)]
+      (try
+        (if (str/starts-with? iname "[")
+          (Class/forName (str/replace iname #"/" "."))
+          (or (primitive-iname->class iname)
+              (resolve (symbol (.getClassName t)))))
+        (catch ClassNotFoundException _)))))
 
 (defn ^Type class->type [^Class class]
   (Type/getType class))
@@ -177,7 +178,7 @@
   (when-not (primitive-type? t)
     (let [tag (type->tag t)]
       (or (some-> (get-in cenv [:classes tag]) :access)
-          (when-let [^Class class (type->class t)]
+          (when-let [^Class class (type->class cenv t)]
             (modifiers->access-flags (.getModifiers class)))))))
 
 (defn final-type? [cenv t]
@@ -223,8 +224,8 @@
                  (cond (or (= parent t1) (contains? interfaces t1)) true
                        (= parent OBJECT) false
                        :else (recur parent))
-                 (when-let [c (type->class t)]
-                   (when-let [c1 (type->class t1)]
+                 (when-let [c (type->class cenv t)]
+                   (when-let [c1 (type->class cenv t1)]
                      (contains? (supers c) c1)))))))))
 
 (defn super? [cenv t1 t2]
@@ -300,8 +301,8 @@
                           (and (array-type? from)
                                (let [e1 (element-type from) e2 (element-type to)]
                                  (narrowing-reference-conversion cenv e1 e2)))))
-                  (case [(boolean (some-> (type->class from) (.isInterface)))
-                         (boolean (some-> (type->class to) (.isInterface)))]
+                  (case [(boolean (some-> (type->class cenv from) (.isInterface)))
+                         (boolean (some-> (type->class cenv to) (.isInterface)))]
                     [false true ] (not (final-type? cenv from))
                     [true  false] (not (final-type? cenv to))
                     [true  true]  true
@@ -425,9 +426,9 @@
             (assoc field :class class))
           ;; Here we assume all the superclasses and interfaces are defined outside of JiSE
           (let [{:keys [parent interfaces]} entry]
-            (or (some walk (map type->class interfaces))
-                (walk (type->class parent)))))
-        (walk (type->class class))))))
+            (or (some walk (map (partial type->class cenv) interfaces))
+                (walk (type->class cenv parent)))))
+        (walk (type->class cenv class))))))
 
 (defn- remove-overridden-methods [cenv methods]
   (->> methods
@@ -465,9 +466,9 @@
                           (keep (fn [{:keys [access] :as m}]
                                   (when (accessible-from? cenv caller class access)
                                     (assoc m :class class)))))
-                     (mapcat (comp walk type->class) (:interfaces entry))
-                     (walk (type->class (:parent entry))))
-             (let [c (type->class class)]
+                     (mapcat (comp walk (partial type->class cenv)) (:interfaces entry))
+                     (walk (type->class cenv (:parent entry))))
+             (let [c (type->class cenv class)]
                (cond-> (walk c) (.isInterface c) (concat (walk Object)))))
            (remove-overridden-methods cenv)))))
 
@@ -578,7 +579,7 @@
              (filter (fn [{:keys [access]}]
                        (accessible-from? cenv caller class access)))
              seq)
-        (->> (.getDeclaredConstructors (type->class class))
+        (->> (.getDeclaredConstructors (type->class cenv class))
              (keep (fn [^Constructor ctor]
                      (let [access (modifiers->access-flags (.getModifiers ctor))
                            varargs? (.isVarArgs ctor)]

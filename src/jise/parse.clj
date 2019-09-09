@@ -384,7 +384,7 @@
   (let [supers (when (vector? maybe-supers) maybe-supers)
         supers' (map (partial resolve-type proto-cenv) supers)
         {parents false
-         interfaces true} (group-by #(.isInterface (t/type->class %)) supers')]
+         interfaces true} (group-by #(.isInterface (t/type->class proto-cenv %)) supers')]
     {:parents (cond-> parents (empty? parents) (conj t/OBJECT))
      :interfaces interfaces
      :body (cond->> body (nil? supers) (cons maybe-supers))}))
