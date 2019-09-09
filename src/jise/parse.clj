@@ -7,7 +7,8 @@
             [jise.simplify :as simp]
             [jise.type :as t])
   (:import [clojure.asm Type]
-           [clojure.java.api Clojure]))
+           [clojure.java.api Clojure]
+           [java.lang.annotation Annotation Retention RetentionPolicy Target]))
 
 (def ^:private ^:dynamic *active-labels* #{})
 
@@ -36,12 +37,56 @@
 
         (error (str "cannot resolve type " (pr-str tag)) {:unresolved-type tag})))))
 
+(defrecord AnnotationRecord [type values])
+
+(defn- parse-annotation [proto-cenv ann v]
+  (letfn [(parse-value [val]
+            (cond (vector? val)
+                  (mapv parse-value val)
+
+                  (symbol? val)
+                  (let [val' (try (eval val) (catch Throwable _))]
+                    (if (or (class? val') (instance? Enum val'))
+                      val'
+                      (error (str "Unsupported annotation value: "
+                                  val' " of class " (class val')))))
+
+                  (seq? val)
+                  (let [[nested v'] val
+                        ann' (resolve nested)
+                        {:keys [type values]} (parse-annotation proto-cenv ann' v')]
+                    (->AnnotationRecord type values))
+
+                  :else val))]
+    (when (contains? (supers ann) Annotation)
+      (let [vals (if (map? v)
+                   (into {} (map (fn [[k v]] [(name k) (parse-value v)])) v)
+                   {"value" v})]
+        {:type (t/class->type ann)
+         :retention (or (some-> ^Retention (.getAnnotation ann Retention) (.value))
+                        RetentionPolicy/RUNTIME)
+         :target (some->> ^Target (.getAnnotation ann Target) (.value) set)
+         :values vals}))))
+
+(defn- parse-annotations [proto-cenv m]
+  (reduce (fn [anns [k v]]
+            (let [ann (and (symbol? k) (resolve k))]
+              (if-let [ann' (and (class? ann) (parse-annotation proto-cenv ann v))]
+                (conj anns ann')
+                anns)))
+          []
+          m))
+
 (defn- parse-modifiers
   [proto-cenv {:keys [tag] :as modifiers} & {:keys [default-type allow-vararg-param?]}]
-  {:type (if (nil? tag)
-           (or default-type t/OBJECT)
-           (resolve-type proto-cenv tag :allow-vararg-param-type? allow-vararg-param?))
-   :access (access-flags modifiers)})
+  (let [annotations (parse-annotations proto-cenv modifiers)]
+    (cond-> {:type (if (nil? tag)
+                     (or default-type t/OBJECT)
+                     (resolve-type proto-cenv tag
+                                   :allow-vararg-param-type? allow-vararg-param?))
+             :access (access-flags modifiers)}
+      (seq annotations)
+      (assoc :annotations annotations))))
 
 (defn- field-init-value
   ([field]
@@ -52,10 +97,11 @@
 
 (defn- parse-field [proto-cenv [_ fname value :as field]]
   (let [modifiers (modifiers-of field)
-        {:keys [access type]} (parse-modifiers proto-cenv modifiers)
+        {:keys [access type annotations]} (parse-modifiers proto-cenv modifiers)
         value' (field-init-value access field)]
     (cond-> {:name (str fname)
              :type type
+             :annotations annotations
              :access access}
       value'
       (assoc :value value'))))
@@ -344,7 +390,7 @@
 (defn- parse-method [cenv ctor? [_ mname args & body :as method]]
   (err/with-line&column-of method
     (let [modifiers (modifiers-of method)
-          {:keys [access type]} (parse-modifiers cenv modifiers :default-type t/VOID)
+          {:keys [access type annotations]} (parse-modifiers cenv modifiers :default-type t/VOID)
           static? (boolean (:static access))
           init-index (if static? 0 1)
           [cenv' args'] (parse-bindings (assoc cenv
@@ -373,6 +419,7 @@
                       ctor? (inject-ctor-invocation cenv'))))]
       (cond-> {:return-type return-type
                :args args'
+               :annotations annotations
                :access access
                :body body'}
         ctor? (assoc :ctor? ctor?)
@@ -523,8 +570,10 @@
   ([enclosing-env [_ cname & body :as class]]
    (err/with-line&column-of class
      (let [alias (class-alias cname)
+           modifiers (modifiers-of class)
            proto-cenv {:class-name cname :classes {cname {}}
                        :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
+           annotations (parse-annotations proto-cenv modifiers)
            {:keys [parents interfaces body]} (parse-supers proto-cenv body)
            {:keys [ctors fields methods initializer]} (parse-class-body cname body)
            {initializer :non-static static-initializer :static} (filter-static initializer)
@@ -548,7 +597,8 @@
            methods' (mapv (partial parse-method cenv false) methods)
            synthesized-fields (synthesize-fields cenv)]
        {:name (str/replace (str cname) \. \/)
-        :access (access-flags (modifiers-of class))
+        :access (access-flags modifiers)
+        :annotations annotations
         :parent parent
         :interfaces interfaces
         :static-initializer (when-let [init (->> (:static (filter-static synthesized-fields))
