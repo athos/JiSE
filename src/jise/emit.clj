@@ -1,8 +1,11 @@
 (ns jise.emit
   (:require [jise.insns :as insns]
+            [jise.parse]
             [jise.type :as t])
-  (:import [clojure.asm ClassVisitor ClassWriter Label MethodVisitor Opcodes Type]
-           [clojure.lang Compiler DynamicClassLoader]))
+  (:import [clojure.asm AnnotationVisitor ClassVisitor ClassWriter Label MethodVisitor Opcodes Type]
+           [clojure.lang Compiler DynamicClassLoader]
+           [java.lang.annotation RetentionPolicy]
+           [jise.parse AnnotationRecord]))
 
 (set! *warn-on-reflection* true)
 
@@ -25,7 +28,29 @@
                :volatile Opcodes/ACC_VOLATILE}]
     (apply + (keep attrs flags))))
 
-(defn- emit-field [^ClassWriter cw {:keys [access name type value]}]
+(defn- emit-annotation [^AnnotationVisitor av values]
+  (doseq [[name value] values]
+    (cond (vector? value)
+          (let [av' (.visitArray av name)]
+            (doseq [v value]
+              (emit-annotation av' v))
+            (.visitEnd av'))
+
+          (instance? AnnotationRecord value)
+          (let [av' (.visitAnnotation av name (.getDescriptor ^Type (:type value)))]
+            (emit-annotation av' (:values value))
+            (.visitEnd av'))
+
+          :else (.visit av name value))))
+
+(defn emit-annotations [visitor-fn annotations]
+  (doseq [{:keys [retention values] :as ann} annotations
+          :when (not= retention RetentionPolicy/SOURCE)]
+    (let [^AnnotationVisitor av (visitor-fn ann)]
+      (emit-annotation av values)
+      (.visitEnd av))))
+
+(defn- emit-field [^ClassWriter cw {:keys [access name annotations type value]}]
   (let [access (access-value access)
         desc (.getDescriptor ^Type type)
         value' (when value
@@ -33,9 +58,13 @@
                         t/LONG long t/FLOAT float t/DOUBLE double}
                        type
                        identity)
-                  value))]
-   (doto (.visitField cw access (munge name) desc nil value')
-     (.visitEnd))))
+                  value))
+        fv (.visitField cw access (munge name) desc nil value')]
+    (emit-annotations (fn [{:keys [^Type type retention]}]
+                        (.visitAnnotation fv (.getDescriptor type)
+                                          (= retention RetentionPolicy/RUNTIME)))
+                      annotations)
+   (.visitEnd fv)))
 
 (defmulti emit-expr* (fn [emitter expr] (:op expr)))
 (defmethod emit-expr* :default [_ expr]
@@ -71,7 +100,7 @@
 
 (defn- emit-method
   [^ClassWriter cw parent
-   {:keys [name access return-type exceptions args body static-initializer? ctor? varargs?]}]
+   {:keys [name annotations access return-type exceptions args body static-initializer? ctor? varargs?]}]
   (let [desc (->> (map :type args)
                   (into-array Type)
                   (Type/getMethodDescriptor return-type))
@@ -83,6 +112,9 @@
                       (into-array String))
         mv (.visitMethod cw (access-value (cond-> access varargs? (conj :varargs))) mname desc nil excs)
         emitter (make-emitter mv)]
+    (emit-annotations (fn [{:keys [^Type type retention]}]
+                        (.visitAnnotation mv (.getDescriptor type) (= retention RetentionPolicy/RUNTIME)))
+                      annotations)
     (doseq [arg args]
       (.visitParameter mv (:name arg) (access-value (:access arg))))
     (.visitCode mv)
@@ -91,7 +123,8 @@
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
-(defn emit-class [{:keys [source name access parent interfaces static-initializer ctors fields methods]}]
+(defn emit-class
+  [{:keys [source name annotations access parent interfaces static-initializer ctors fields methods]}]
   (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)]
     (.visit cw Opcodes/V1_8
             (+ (access-value access) Opcodes/ACC_SUPER)
@@ -99,6 +132,9 @@
             nil
             (.getInternalName ^Type parent)
             (into-array String (map #(.getInternalName ^Type %) interfaces)))
+    (emit-annotations (fn [{:keys [^Type type retention]}]
+                        (.visitAnnotation cw (.getDescriptor type) (= retention RetentionPolicy/RUNTIME)))
+                      annotations)
     (when source
       (.visitSource cw source nil))
     (doseq [field fields]
