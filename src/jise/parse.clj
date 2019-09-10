@@ -321,12 +321,13 @@
         (inherit-context cenv :return? false))))
 
 (defn- parse-name [proto-cenv name & {:keys [default-type allow-vararg-param?]}]
-  (let [{:keys [access type]} (parse-modifiers proto-cenv (meta name)
-                                               :default-type default-type
-                                               :allow-vararg-param? allow-vararg-param?)]
+  (let [{:keys [access type annotations]} (parse-modifiers proto-cenv (meta name)
+                                                           :default-type default-type
+                                                           :allow-vararg-param? allow-vararg-param?)]
     {:name name
      :type type
-     :access access}))
+     :access access
+     :annotations annotations}))
 
 (defn- next-index [cenv type]
   (first (swap-vals! (:next-index cenv) + (t/type-category type))))

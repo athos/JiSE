@@ -115,8 +115,12 @@
     (emit-annotations (fn [{:keys [^Type type retention]}]
                         (.visitAnnotation mv (.getDescriptor type) (= retention RetentionPolicy/RUNTIME)))
                       annotations)
-    (doseq [arg args]
-      (.visitParameter mv (:name arg) (access-value (:access arg))))
+    (doseq [[i {:keys [name access annotations]}] (map-indexed vector args)]
+      (.visitParameter mv name (access-value access))
+      (emit-annotations (fn [{:keys [^Type type retention]}]
+                          (.visitParameterAnnotation mv i (.getDescriptor type)
+                                                     (= retention RetentionPolicy/RUNTIME)))
+                        annotations))
     (.visitCode mv)
     (when-not (:abstract access)
       (emit-expr emitter body))
