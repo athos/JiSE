@@ -8,7 +8,7 @@
             [jise.type :as t])
   (:import [clojure.asm Type]
            [clojure.java.api Clojure]
-           [java.lang.annotation Annotation Retention RetentionPolicy Target]))
+           [java.lang.annotation Annotation ElementType Retention RetentionPolicy Target]))
 
 (def ^:private ^:dynamic *active-labels* #{})
 
@@ -76,6 +76,11 @@
                 anns)))
           []
           m))
+
+(defn- check-annotation-target [target annotations]
+  (when-first [ann (remove #(contains? (:target %) target) annotations)]
+    (error (format "annotation type %s not applicable to this kind of declaration"
+                   (err/stringify-type (:type ann))))))
 
 (defn- parse-modifiers
   [proto-cenv {:keys [tag] :as modifiers} & {:keys [default-type allow-vararg-param?]}]
@@ -320,10 +325,14 @@
          :exprs (conj exprs' last')}
         (inherit-context cenv :return? false))))
 
-(defn- parse-name [proto-cenv name & {:keys [default-type allow-vararg-param?]}]
+(defn- parse-name [proto-cenv name param? & {:keys [default-type allow-vararg-param?]}]
   (let [{:keys [access type annotations]} (parse-modifiers proto-cenv (meta name)
                                                            :default-type default-type
                                                            :allow-vararg-param? allow-vararg-param?)]
+    (check-annotation-target (if param?
+                               ElementType/PARAMETER
+                               ElementType/LOCAL_VARIABLE)
+                             annotations)
     {:name name
      :type type
      :access access
@@ -335,7 +344,7 @@
 (defn- parse-binding [cenv lname init param? allow-vararg-param?]
   (let [init' (when-not param?
                 (parse-expr (with-context cenv :expression) init))
-        lname' (parse-name cenv lname
+        lname' (parse-name cenv lname param?
                            :default-type (:type init')
                            :allow-vararg-param? allow-vararg-param?)
         init' (when init' (ensure-type cenv (:type lname') init' :context :casting))]
@@ -392,6 +401,7 @@
   (err/with-line&column-of method
     (let [modifiers (modifiers-of method)
           {:keys [access type annotations]} (parse-modifiers cenv modifiers :default-type t/VOID)
+          _ (check-annotation-target ElementType/METHOD annotations)
           static? (boolean (:static access))
           init-index (if static? 0 1)
           [cenv' args'] (parse-bindings (assoc cenv
@@ -485,7 +495,7 @@
                                 pts
                                 (let [vararg-param? (= prev '&)]
                                   (when vararg-param? (vreset! varargs? true))
-                                  (->> (parse-name proto-cenv arg :allow-vararg-param? vararg-param?)
+                                  (->> (parse-name proto-cenv arg true :allow-vararg-param? vararg-param?)
                                        :type
                                        (conj pts)))))
                             []
@@ -507,7 +517,7 @@
         ctors' (reduce (fn [cs [_ _ args :as ctor]]
                          (err/with-line&column-of ctor
                            (let [access (access-flags (modifiers-of ctor))
-                                 param-types (mapv #(:type (parse-name proto-cenv %)) args)]
+                                 param-types (mapv #(:type (parse-name proto-cenv % true)) args)]
                              (conj cs {:access access :param-types param-types}))))
                        [] ctors)
         methods' (reduce (fn [m [_ name :as method]]
@@ -575,6 +585,7 @@
            proto-cenv {:class-name cname :classes {cname {}}
                        :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
            annotations (parse-annotations proto-cenv modifiers)
+           _ (check-annotation-target ElementType/TYPE annotations)
            {:keys [parents interfaces body]} (parse-supers proto-cenv body)
            {:keys [ctors fields methods initializer]} (parse-class-body cname body)
            {initializer :non-static static-initializer :static} (filter-static initializer)
