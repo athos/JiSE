@@ -39,30 +39,82 @@
 
 (defrecord AnnotationRecord [type values])
 
-(defn- parse-annotation [proto-cenv ann v]
-  (letfn [(parse-value [val]
-            (cond (vector? val)
-                  (mapv parse-value val)
+(defn- element-value-type [proto-cenv annotation-type name]
+  (if-let [{:keys [return-type]} (->> (t/find-methods proto-cenv nil annotation-type name []
+                                                      :throws-on-failure? false)
+                                      first)]
+    return-type
+    (error (str "cannot find symbol: " name))))
 
-                  (symbol? val)
-                  (let [val' (try (eval val) (catch Throwable _))]
-                    (if (or (class? val') (instance? Enum val'))
-                      val'
-                      (error (str "Unsupported annotation value: "
-                                  val' " of class " (class val')))))
+(declare parse-annotation)
 
-                  (seq? val)
-                  (let [[nested v'] val
-                        ann' (resolve nested)
-                        {:keys [type values]} (parse-annotation proto-cenv ann' v')]
-                    (->AnnotationRecord type values))
+(defn- parse-element-value [proto-cenv t val]
+  ;; the simplified value may be false (which is a valid constant value),
+  ;; so handle it carefully to distinguish the value from nil
+  (let [val (as-> val v
+              (when-not (vector? v)
+                (simp/simplify proto-cenv v))
+              (if (nil? v) val v))
+        val' (cond (t/primitive-type? t)
+                   (if (= t/BOOLEAN t)
+                     (when (boolean? val) val)
+                     (when (number? val)
+                       (cond (= t/BYTE t) (unchecked-byte val)
+                             (= t/SHORT t) (unchecked-short val)
+                             (= t/CHAR t) (unchecked-char val)
+                             (= t/INT t) (unchecked-int val)
+                             (= t/FLOAT t) (unchecked-float val)
+                             (= t/DOUBLE t) (unchecked-double val))))
 
-                  :else val))]
+                   (= t t/STRING)
+                   (when (string? val) val)
+
+                   (= t t/CLASS)
+                   (when-let [t' (t/tag->type proto-cenv val)]
+                     t')
+
+                   (t/array-type? t)
+                   (let [t' (t/element-type t)]
+                     (if (vector? val)
+                       (mapv (partial parse-element-value proto-cenv t') val)
+                       [(parse-element-value proto-cenv t' val)]))
+
+                   (t/super? proto-cenv (t/tag->type 'Enum) t)
+                   (let [val' (try (eval val) (catch Throwable _))]
+                     (when (instance? (t/type->class proto-cenv t) val')
+                       val'))
+
+                   (t/super? proto-cenv (t/tag->type 'java.lang.annotation.Annotation) t)
+                   (when-let [[nested val'] (and (seq? val) val)]
+                     (let [ann' (when (symbol? nested)
+                                  (t/type->class proto-cenv (t/tag->type proto-cenv nested)))]
+                       (when (and (class? ann') (= (t/class->type ann') t))
+                         (let [{:keys [type values]} (parse-annotation proto-cenv ann' val')]
+                           (->AnnotationRecord type values))))))]
+    (when (nil? val')
+      (let [vt (t/class->type (class val))]
+        (err/error-on-incompatible-types t (or (t/unboxed-types vt) vt))))
+    val'))
+
+(defn- parse-annotation [proto-cenv ^Class ann value]
+  (let [annotation-type (t/class->type ann)]
     (when (contains? (supers ann) Annotation)
-      (let [vals (if (map? v)
-                   (into {} (map (fn [[k v]] [(name k) (parse-value v)])) v)
-                   {"value" v})]
-        {:type (t/class->type ann)
+      (let [vals (if (map? value)
+                   (into {} (map (fn [[k v]]
+                                   (let [kname (name k)
+                                         et (element-value-type proto-cenv annotation-type kname)]
+                                     [kname (parse-element-value proto-cenv et v)])))
+                         value)
+                   (let [et (element-value-type proto-cenv annotation-type "value")]
+                     {"value" (parse-element-value proto-cenv et value)}))]
+        (when-first [elem (remove (fn [^java.lang.reflect.Method m]
+                                    (or (vals (.getName m))
+                                        (not (nil? (.getDefaultValue m)))))
+                                  (.getDeclaredMethods ann))]
+          (error (format "@%s is missing a default value for the element '%s'"
+                         (err/stringify-type annotation-type)
+                         (.getName elem))))
+        {:type annotation-type
          :retention (or (some-> ^Retention (.getAnnotation ann Retention) (.value))
                         RetentionPolicy/RUNTIME)
          :target (some->> ^Target (.getAnnotation ann Target) (.value) set)
