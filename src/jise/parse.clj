@@ -122,10 +122,14 @@
 
 (defn- parse-annotations [proto-cenv m]
   (reduce (fn [anns [k v]]
-            (let [ann (and (symbol? k) (resolve k))]
-              (if-let [ann' (and (class? ann) (parse-annotation proto-cenv ann v))]
-                (conj anns ann')
-                anns)))
+            (if (symbol? k)
+              (let [ann (resolve k)]
+                (if-let [ann' (and (class? ann) (parse-annotation proto-cenv ann v))]
+                  (conj anns ann')
+                  (do (binding [*out* *err*]
+                        (println (str "Warning: " k " is not an annotation type, ignored")))
+                      anns)))
+              anns))
           []
           m))
 
