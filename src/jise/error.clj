@@ -15,7 +15,7 @@
 (defn stringify-type [t]
   (if (nil? t)
     "<null>"
-    (-> (t/type->tag t) str (str/replace #"java\.lang\." ""))))
+    (-> (t/type->tag t) str (str/replace #"^java\.lang\.([^.]+)$" "$1"))))
 
 (defmacro error [msg & [data]]
   `(let [msg# (str "Error: " ~msg " (" *file* \: *line* \: *column* ")")
