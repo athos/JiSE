@@ -509,39 +509,49 @@
 (defn- class-alias [cname]
   (symbol (str/replace cname #"^.*\.([^.]+)" "$1")))
 
-(defn convert-def-to-set [alias [_ name init :as def]]
+(defn- convert-def-to-set [cname [_ name init :as def]]
   (when (and init (not (field-init-value def)))
     (let [static? (:static (modifiers-of def))]
-      (cond-> `(jise.core/set! (. ~(if static? alias 'jise.core/this)
+      (cond-> `(jise.core/set! (. ~(if static? cname 'jise.core/this)
                                   ~(symbol (str \- name)))
                                ~init)
         static? (with-meta {:static true})))))
 
-(defn- parse-class-body [cname body]
-  (let [alias (class-alias cname)]
-    (loop [decls body
-           ret {:ctors [], :fields [], :methods [], :initializer []}]
+(defn- group-decls [cname decls]
+  (let [alias (class-alias cname)
+        dest-key (fn [{:keys [static]} static-key normal-key]
+                   (if static static-key normal-key))]
+    (loop [decls decls
+           ret {:initializer [], :static-initializer []
+                :ctors [], :fields [], :methods []}]
       (if (empty? decls)
         ret
         (let [[decl & decls] decls]
           (if (seq? decl)
             (case (misc/fixup-ns (first decl))
               def (let [[_ name init] decl
+                        key (dest-key (modifiers-of decl) :static-initializer :initializer)
                         decl' (convert-def-to-set alias decl)
                         ret' (-> ret
                                  (update :fields conj decl)
-                                 (cond-> decl' (update :initializer conj decl')))]
+                                 (cond-> decl' (update key conj decl')))]
                     (recur decls ret'))
-              defm (let [[_ name] decl]
-                     (recur decls
-                            (if (= name alias)
-                              (update ret :ctors conj decl)
-                              (update ret :methods conj decl))))
-              do (recur (concat (rest decl) decls) ret)
+              defm (let [[_ name] decl
+                         key (if (= name alias) :ctors :methods)]
+                     (recur decls (update ret key conj decl)))
+              do (let [decls' (concat (cond->> (rest decl)
+                                        (:static (meta decl))
+                                        (map (fn [decl]
+                                               (if (instance? clojure.lang.IObj decl)
+                                                 (vary-meta decl assoc :static true)
+                                                 decl))))
+                                      decls)]
+                   (recur decls' ret))
               (let [v (resolve (first decl))
                     [decls ret] (if (and v (:macro (meta v)))
                                   [(cons (mex/macroexpand {} decl) decls) ret]
-                                  [decls (update ret :initializer conj decl)])]
+                                  (let [key (dest-key (meta decl) :static-initializer :initializer)]
+                                    [decls (update ret key conj decl)]))]
                 (recur decls ret)))
             (recur decls ret)))))))
 
@@ -563,7 +573,8 @@
      :return-type type
      :param-types param-types}))
 
-(defn- init-cenv [proto-cenv cname parent interfaces fields ctors methods initializer]
+(defn- build-class-entry
+  [proto-cenv cname parent interfaces {:keys [fields ctors methods initializer]}]
   (let [fields' (into {} (map (fn [[_ name :as field]]
                                 (err/with-line&column-of field
                                   (let [field' (parse-field proto-cenv field)]
@@ -583,19 +594,20 @@
                            (err/with-line&column-of method
                              (let [method' (parse-method-signature proto-cenv method)]
                                (update m (str name) (fnil conj []) method'))))
-                         {} methods)
-        class-entry  {:parent parent :interfaces (set interfaces) :initializer initializer
-                      :fields fields' :ctors ctors' :methods methods'}]
-    (assoc-in proto-cenv [:classes cname] class-entry)))
+                         {} methods)]
+    {:parent parent :interfaces (set interfaces) :initializer initializer
+     :fields fields' :ctors ctors' :methods methods'}))
 
-(defn- filter-static [exprs]
-  (reduce (fn [ret expr]
-            (let [k (if (:static (modifiers-of expr))
-                      :static
-                      :non-static)]
-              (update ret k conj expr)))
-          {:static [] :non-static []}
-          exprs))
+(defn- build-cenv
+  [proto-cenv cname modifiers parent interfaces {:keys [initializer] :as decls}]
+  (let [initializer' (when (seq initializer) `(jise.core/do ~@initializer))
+        entry (build-class-entry proto-cenv cname parent interfaces
+                                 (assoc decls :initializer initializer'))]
+    (-> (assoc-in proto-cenv [:classes cname] entry)
+        (assoc :vars (atom {:var->entry {} :fields #{}}))
+        (cond->
+          (:jise.core/this-name modifiers)
+          (assoc :jise.core/this-name (:jise.core/this-name modifiers))))))
 
 (defn- synthesize-fields [{:keys [enclosing-env vars]}]
   (as-> [] fields
@@ -635,50 +647,46 @@
                            fields)]
       (error (str "variable " (:name field) " might not have been initialized")))))
 
+(defn- parse-static-initializer [cenv static-initializer-body synthesized-fields]
+  (let [{:keys [static-initializer]} (some->> (seq synthesized-fields)
+                                              (group-decls (:class-name cenv)))]
+    (when-let [init (seq (concat static-initializer-body static-initializer))]
+      (let [m `^:static (jise.core/defm ~'<clinit> [] ~@init)]
+        (-> (parse-method cenv false m)
+            (assoc :static-initializer? true))))))
+
 (defn parse-class
   ([class] (parse-class {} class))
   ([enclosing-env [_ cname & body :as class]]
    (err/with-line&column-of class
      (let [alias (class-alias cname)
+           proto-cenv (as-> {:class-name cname :classes {cname {}}
+                             :aliases (cond-> {} (not= cname alias) (assoc alias cname))
+                             :enclosing-env enclosing-env}
+                          proto-cenv
+                        (assoc proto-cenv :class-type (t/find-in-cenv proto-cenv cname)))
            modifiers (modifiers-of class)
-           proto-cenv {:class-name cname :classes {cname {}}
-                       :aliases (cond-> {} (not= cname alias) (assoc alias cname))}
            annotations (parse-annotations proto-cenv modifiers)
            _ (check-annotation-target ElementType/TYPE annotations)
            {:keys [parents interfaces body]} (parse-supers proto-cenv body)
-           {:keys [ctors fields methods initializer]} (parse-class-body cname body)
-           {initializer :non-static static-initializer :static} (filter-static initializer)
            _ (check-supers proto-cenv parents interfaces)
+           {:keys [fields ctors methods static-initializer] :as decls} (group-decls cname body)
            parent (first parents)
-           ctors' (if (empty? ctors)
-                    [(with-meta `(jise.core/defm ~alias [] (jise.core/super))
-                       (select-keys modifiers [:public :protected :private]))]
-                    ctors)
-           cenv (-> proto-cenv
-                    (init-cenv cname parent interfaces fields ctors' methods
-                               (when (seq initializer) `(jise.core/do ~@initializer)))
-                    (assoc :enclosing-env enclosing-env
-                           :vars (atom {:var->entry {} :fields #{}}))
-                    (as-> cenv (assoc cenv :class-type (resolve-type cenv cname)))
-                    (cond->
-                      (:jise.core/this-name (meta class))
-                      (assoc :jise.core/this-name (:jise.core/this-name (meta class)))))
-           ctors' (mapv (partial parse-method cenv true) ctors')
-           _ (check-blank-final-initialization cenv)
+           cenv (build-cenv proto-cenv cname modifiers parent interfaces decls)
            methods' (mapv (partial parse-method cenv false) methods)
+           ctors (if (empty? ctors)
+                   [(with-meta `(jise.core/defm ~alias [] (jise.core/super))
+                      (select-keys modifiers [:public :protected :private]))]
+                   ctors)
+           ctors' (mapv (partial parse-method cenv true) ctors)
+           _ (check-blank-final-initialization cenv)
            synthesized-fields (synthesize-fields cenv)]
        {:name (str/replace (str cname) \. \/)
         :access (access-flags modifiers)
         :annotations annotations
         :parent parent
         :interfaces interfaces
-        :static-initializer (when-let [init (->> (:static (filter-static synthesized-fields))
-                                                 (keep (partial convert-def-to-set alias))
-                                                 (concat static-initializer)
-                                                 seq)]
-                              (let [m `^:static (jise.core/defm ~'<clinit> [] ~@init)]
-                                (-> (parse-method cenv false m)
-                                    (assoc :static-initializer? true))))
+        :static-initializer (parse-static-initializer cenv static-initializer synthesized-fields)
         :ctors ctors'
         :methods methods'
         :fields (mapv (partial parse-field cenv)
