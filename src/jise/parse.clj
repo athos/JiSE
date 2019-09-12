@@ -160,6 +160,9 @@
   (let [modifiers (modifiers-of field)
         {:keys [access type annotations]} (parse-modifiers proto-cenv modifiers)
         value' (field-init-value access field)]
+    (when (and value' (not (t/constant-value-compatible-with? type value')))
+      (let [t (t/class->type (class value'))]
+        (err/error-on-incompatible-types type (or (t/unboxed-types t) t))))
     (cond-> {:name (str fname)
              :type type
              :annotations annotations

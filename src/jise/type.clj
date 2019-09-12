@@ -277,6 +277,13 @@
   (or (numeric-type? t)
       (some-> (unboxed-types t) numeric-type?)))
 
+(defn constant-value-compatible-with? [type value]
+  (when value
+    (or (when (convertible-to-integral? type) (int? value))
+        (when (convertible-to-numeric? type) (double? value))
+        (when (= type STRING) (string? value))
+        (when (boolean-type? type) (boolean? value)))))
+
 (defn boxing-conversion [t]
   (when-let [t' (boxed-types t)]
     {:conversion :boxing :from t :to t'}))
