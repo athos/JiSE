@@ -652,7 +652,7 @@
            parent (first parents)
            ctors' (if (empty? ctors)
                     [(with-meta `(jise.core/defm ~alias [] (jise.core/super))
-                       (select-keys (modifiers-of class) [:public :protected :private]))]
+                       (select-keys modifiers [:public :protected :private]))]
                     ctors)
            cenv (-> proto-cenv
                     (init-cenv cname parent interfaces fields ctors' methods
@@ -676,10 +676,9 @@
                                                  (keep (partial convert-def-to-set alias))
                                                  (concat static-initializer)
                                                  seq)]
-                              (err/with-line&column-of class
-                                (let [m `^:static (jise.core/defm ~'<clinit> [] ~@init)]
-                                  (-> (parse-method cenv false m)
-                                      (assoc :static-initializer? true)))))
+                              (let [m `^:static (jise.core/defm ~'<clinit> [] ~@init)]
+                                (-> (parse-method cenv false m)
+                                    (assoc :static-initializer? true))))
         :ctors ctors'
         :methods methods'
         :fields (mapv (partial parse-field cenv)
