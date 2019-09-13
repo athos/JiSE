@@ -19,12 +19,13 @@
         (symbol? expr) (let [ns (namespace expr)
                              class (if ns
                                      (t/tag->type cenv (symbol ns) :throws-on-failure? false)
-                                     (when (not (contains? (:locals cenv) expr))
+                                     (when (not (contains? (:lenv cenv) expr))
                                        (:class-type cenv)))
                              caller (:class-type cenv)]
                          (when-let [field (and class (t/find-field cenv caller class (name expr)))]
                            (let [{:keys [access value]} field]
-                             (when (and (:static access) (:final access) value)
+                             (when (and (:final access) value
+                                        (or (not (:static? cenv)) (:static access)))
                                value))))
         :else nil))
 

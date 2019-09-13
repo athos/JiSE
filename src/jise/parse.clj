@@ -1576,7 +1576,7 @@
 
 (defmethod parse-expr* '. [cenv [_ callee property & maybe-args :as expr]]
   (if (and (seq? property) (nil? maybe-args))
-    (parse-expr cenv `(. ~callee ~@property))
+    (parse-expr cenv (with-meta `(. ~callee ~@property) (meta expr)))
     (let [pname (name property)]
       (if (or (= pname "class") (= pname "-class"))
         (if-let [t (t/tag->type cenv callee :throws-on-failure? false)]
