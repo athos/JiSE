@@ -51,50 +51,52 @@
 (defn- parse-element-value [proto-cenv t val]
   ;; the simplified value may be false (which is a valid constant value),
   ;; so handle it carefully to distinguish the value from nil
-  (let [val (as-> val v
-              (when-not (vector? v)
-                (simp/simplify proto-cenv v))
-              (if (nil? v) val v))
-        val' (cond (t/primitive-type? t)
-                   (if (= t/BOOLEAN t)
-                     (when (boolean? val) val)
-                     (when (number? val)
-                       (cond (= t/BYTE t) (unchecked-byte val)
-                             (= t/SHORT t) (unchecked-short val)
-                             (= t/CHAR t) (unchecked-char val)
-                             (= t/INT t) (unchecked-int val)
-                             (= t/FLOAT t) (unchecked-float val)
-                             (= t/DOUBLE t) (unchecked-double val))))
+  (letfn [(simplify! [v]
+            (if-some [v' (simp/simplify proto-cenv v)]
+              v'
+              (error "element value must be a constant expression")))]
+    (if-some [val' (cond
+                     (t/primitive-type? t)
+                     (let [val (simplify! val)]
+                       (if (= t/BOOLEAN t)
+                         (when (boolean? val) val)
+                         (when (number? val)
+                           (cond (= t/BYTE t) (unchecked-byte val)
+                                 (= t/SHORT t) (unchecked-short val)
+                                 (= t/CHAR t) (unchecked-char val)
+                                 (= t/INT t) (unchecked-int val)
+                                 (= t/FLOAT t) (unchecked-float val)
+                                 (= t/DOUBLE t) (unchecked-double val)))))
 
-                   (= t t/STRING)
-                   (when (string? val) val)
+                     (= t t/STRING)
+                     (let [val (simplify! val)]
+                       (when (string? val) val))
 
-                   (= t t/CLASS)
-                   (when-let [t' (t/tag->type proto-cenv val)]
-                     t')
+                     (= t t/CLASS)
+                     (when-let [t' (t/tag->type proto-cenv val)]
+                       t')
 
-                   (t/array-type? t)
-                   (let [t' (t/element-type t)]
-                     (if (vector? val)
-                       (mapv (partial parse-element-value proto-cenv t') val)
-                       [(parse-element-value proto-cenv t' val)]))
+                     (t/array-type? t)
+                     (let [t' (t/element-type t)]
+                       (if (vector? val)
+                         (mapv (partial parse-element-value proto-cenv t') val)
+                         [(parse-element-value proto-cenv t' val)]))
 
-                   (t/super? proto-cenv (t/tag->type 'Enum) t)
-                   (let [val' (try (eval val) (catch Throwable _))]
-                     (when (instance? (t/type->class proto-cenv t) val')
-                       val'))
+                     (t/super? proto-cenv (t/tag->type 'Enum) t)
+                     (let [val' (try (eval val) (catch Throwable _))]
+                       (when (instance? (t/type->class proto-cenv t) val')
+                         val'))
 
-                   (t/super? proto-cenv (t/tag->type 'java.lang.annotation.Annotation) t)
-                   (when-let [[nested val'] (and (seq? val) val)]
-                     (let [ann' (when (symbol? nested)
-                                  (t/type->class proto-cenv (t/tag->type proto-cenv nested)))]
-                       (when (and (class? ann') (= (t/class->type ann') t))
-                         (let [{:keys [type values]} (parse-annotation proto-cenv ann' val')]
-                           (->AnnotationRecord type values))))))]
-    (when (nil? val')
+                     (t/super? proto-cenv (t/tag->type 'java.lang.annotation.Annotation) t)
+                     (when-let [[nested val'] (and (seq? val) val)]
+                       (let [ann' (when (symbol? nested)
+                                    (t/type->class proto-cenv (t/tag->type proto-cenv nested)))]
+                         (when (and (class? ann') (= (t/class->type ann') t))
+                           (let [{:keys [type values]} (parse-annotation proto-cenv ann' val')]
+                             (->AnnotationRecord type values))))))]
+      val'
       (let [vt (t/class->type (class val))]
-        (err/error-on-incompatible-types t (or (t/unboxed-types vt) vt))))
-    val'))
+        (err/error-on-incompatible-types t (or (t/unboxed-types vt) vt))))))
 
 (defn- parse-annotation [proto-cenv ^Class ann value]
   (let [annotation-type (t/class->type ann)]
