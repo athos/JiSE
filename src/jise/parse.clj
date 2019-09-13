@@ -113,7 +113,7 @@
                                   (.getDeclaredMethods ann))]
           (error (format "@%s is missing a default value for the element '%s'"
                          (err/stringify-type annotation-type)
-                         (.getName elem))))
+                         (.getName ^java.lang.reflect.Method elem))))
         {:type annotation-type
          :retention (or (some-> ^Retention (.getAnnotation ann Retention) (.value))
                         RetentionPolicy/RUNTIME)
