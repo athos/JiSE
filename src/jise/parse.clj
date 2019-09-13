@@ -154,14 +154,14 @@
 (defn- field-init-value
   ([field]
    (let [access (access-flags (modifiers-of field))]
-     (field-init-value access field)))
-  ([access [_ _ value :as field]]
-   (and (:static access) value (simp/simplify {} value))))
+     (field-init-value {} access field)))
+  ([proto-cenv access [_ _ value :as field]]
+   (and (:final access) value (simp/simplify proto-cenv value))))
 
 (defn- parse-field [proto-cenv [_ fname value :as field]]
   (let [modifiers (modifiers-of field)
         {:keys [access type annotations]} (parse-modifiers proto-cenv modifiers)
-        value' (field-init-value access field)]
+        value' (field-init-value proto-cenv access field)]
     (when (and value' (not (t/constant-value-compatible-with? type value')))
       (let [t (t/class->type (class value'))]
         (err/error-on-incompatible-types type (or (t/unboxed-types t) t))))
