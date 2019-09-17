@@ -52,14 +52,11 @@
                 (gensym 'C))
         enclosing-env (enclosing-env &env)
         body (if (symbol? maybe-name) body (cons maybe-name body))
-        qname (compile-class (meta &form) enclosing-env cname body)
-        obj (gensym 'obj)]
-    `(let [~obj (new ~qname)]
-       ~@(for [[name {:keys [used?]}] enclosing-env
-               :when @used?
-               :let [sym (symbol name)]]
-           `(set! (. ~obj ~sym) ~sym))
-       ~obj)))
+        qname (compile-class (meta &form) enclosing-env cname body)]
+    `(new ~qname
+          ~@(for [[name {:keys [used?]}] enclosing-env
+                  :when @used?]
+              (symbol name)))))
 
 (comment
 

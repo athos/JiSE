@@ -460,6 +460,8 @@
   (err/with-line&column-of method
     (let [modifiers (modifiers-of method)
           {:keys [access type annotations]} (parse-modifiers cenv modifiers :default-type t/VOID)
+          _ (when (and (:abstract access) body)
+              (error "abstract methods cannot have a body"))
           _ (check-annotation-target ElementType/METHOD annotations)
           static? (boolean (:static access))
           init-index (if static? 0 1)
@@ -472,21 +474,19 @@
           return-type (if ctor? t/VOID type)
           context (if (= return-type t/VOID) :statement :expression)
           this-name (or (:jise.core/this-name (meta method)) (:jise.core/this-name cenv))
-          body' (if (:abstract access)
-                  (when body (error "abstract methods cannot have a body"))
-                  (let [cenv' (cond-> (assoc cenv'
-                                             :return-type return-type
-                                             :context #{context :tail :return}
-                                             :static? static?)
-                                exceptions
-                                (assoc :exceptions (set exceptions))
+          cenv' (cond-> (assoc cenv'
+                               :return-type return-type
+                               :context #{context :tail :return}
+                               :static? static?)
+                  exceptions
+                  (assoc :exceptions (set exceptions))
 
-                                (and (not static?) this-name)
-                                (assoc-in [:lenv (name this-name)]
-                                          {:index 0 :type (:class-type cenv)
-                                           :access #{:final} :param? true}))]
-                    (cond->> (parse-exprs cenv' body)
-                      ctor? (inject-ctor-invocation cenv'))))]
+                  (and (not static?) this-name)
+                  (assoc-in [:lenv (name this-name)]
+                            {:index 0 :type (:class-type cenv)
+                             :access #{:final} :param? true}))
+          body' (cond->> (parse-exprs cenv' body)
+                  ctor? (inject-ctor-invocation cenv'))]
       (cond-> {:return-type return-type
                :args args'
                :annotations annotations
@@ -599,12 +599,11 @@
 
 (defn- build-cenv
   [proto-cenv cname modifiers parent interfaces {:keys [static non-static] :as decls}]
-  (let [entry (build-class-entry proto-cenv cname parent interfaces decls)
-        cenv' (update-in proto-cenv [:classes cname] merge entry)
-        [cenv' stinit] (parse-fields cenv' static)
+  (let [[cenv' stinit] (parse-fields proto-cenv static)
         [cenv' init] (parse-fields cenv' non-static)
-        init' (when (seq init) `(jise.core/do ~@init))]
-    (-> cenv'
+        init' (when (seq init) `(jise.core/do ~@init))
+        entry (build-class-entry cenv' cname parent interfaces decls)]
+    (-> (update-in cenv' [:classes cname] merge entry)
         (assoc-in [:classes cname :initializer] init')
         (assoc :static-initializer stinit
                :vars (atom {:var->entry {} :fields #{}}))
@@ -633,19 +632,6 @@
                            fields)]
       (error (str "variable " (:name field) " might not have been initialized")))))
 
-(defn- synthesize-non-static-fields [{:keys [enclosing-env]}]
-  (reduce (fn [fields [name {:keys [type used?]}]]
-            (if @used?
-              (let [type' (t/type->tag type)]
-                (conj fields
-                      `(jise.core/def
-                         ~(with-meta
-                            (symbol name)
-                            {:tag type' :public true}))))
-              fields))
-          []
-          enclosing-env))
-
 (defn- synthesize-static-fields [{:keys [vars]}]
   (reduce (fn [fields [_ {:keys [field-name var-name]}]]
             (conj fields
@@ -667,6 +653,48 @@
          (-> (parse-method cenv false m)
              (assoc :static-initializer? true))))]))
 
+(defn- synthesize-non-static-fields [{:keys [enclosing-env]}]
+  (reduce (fn [fields [name {:keys [type used?]}]]
+            (if @used?
+              (let [type' (t/type->tag type)]
+                (conj fields
+                      (with-meta
+                        `(jise.core/def ~(symbol name))
+                        {:tag type' :private true
+                         :final true :synthetic true})))
+              fields))
+          []
+          enclosing-env))
+
+(defn- parse-ctors [cenv ctors]
+  (letfn [(names-for-synthetic-fields [fields]
+            (mapv (fn [[_ name :as field]]
+                    (vary-meta name assoc :tag (:tag (meta field))))
+                  fields))
+          (add-params-for-synthetic-fields [names ctors]
+            (for [[_ name params & body :as ctor] ctors]
+              (with-meta
+                `(jise.core/defm ~name ~(into names params)
+                   ~@body)
+                (meta ctor))))]
+    (let [synthetic-fields (synthesize-non-static-fields cenv)
+          names (names-for-synthetic-fields synthetic-fields)
+          [cenv' _] (parse-fields cenv synthetic-fields)
+          cenv' (assoc cenv' :synthetic-fields names)
+          ctors' (->> ctors
+                      (add-params-for-synthetic-fields names)
+                      (mapv (partial parse-method cenv' true)))
+          synthetic-fields' (synthesize-non-static-fields cenv')]
+      ;; when ctors yield additional synthetic fields, parse them again
+      (if (= (count synthetic-fields) (count synthetic-fields'))
+        [cenv' ctors']
+        (let [names' (names-for-synthetic-fields synthetic-fields')
+              cenv' (assoc cenv' :synthetic-fields names')]
+          [cenv'
+           (->> ctors
+                (add-params-for-synthetic-fields names')
+                (mapv (partial parse-method cenv' true)))])))))
+
 (defn parse-class
   ([class] (parse-class {} class))
   ([enclosing-env [_ cname & body :as class]]
@@ -687,14 +715,12 @@
            annotations (parse-annotations cenv modifiers)
            _ (check-annotation-target ElementType/TYPE annotations)
            methods' (mapv (partial parse-method cenv false) (:methods decls))
-           ctors (if (empty? (:ctors decls))
+           [cenv' stinit] (parse-static-initializer cenv)
+           ctors (if-let [ctors (seq (:ctors decls))]
+                   ctors
                    [(with-meta `(jise.core/defm ~alias [] (jise.core/super))
-                      (select-keys modifiers [:public :protected :private]))]
-                   (:ctors decls))
-           ctors' (mapv (partial parse-method cenv true) ctors)
-           ;; synthesized fields never yield additional initialization code
-           [cenv' _] (parse-fields cenv (synthesize-non-static-fields cenv))
-           [cenv' stinit] (parse-static-initializer cenv')
+                      (select-keys modifiers [:public :protected :private]))])
+           [cenv' ctors'] (parse-ctors cenv ctors)
            _ (check-blank-final-initialization cenv')]
        {:name (str/replace (str cname) \. \/)
         :access (access-flags modifiers)
@@ -1129,9 +1155,6 @@
                true))
         (error (str "cannot assign a value to final variable " (:name field)))
 
-        (:foreign? field)
-        (error (str "cannot assign a value to foreign variable " (:name field)))
-
         :else
         (do (some-> (:blank? field) (reset! false))
             (-> {:op :field-update
@@ -1470,16 +1493,20 @@
                :dims (mapv #(ensure-numeric-int cenv' (parse-expr cenv' %)) args)}
               (inherit-context cenv)))))))
 
-(defn- args-for [cenv {:keys [param-types] :as ctor-or-method} args args']
-  (let [ncs (count (:conversions ctor-or-method))
+(defn- args-for [cenv ctor-or-method args args' & {:keys [synthetic-params]}]
+  (let [{:keys [conversions param-types]} ctor-or-method
+        ncs (count conversions)
         varargs (when (not= (count param-types) ncs)
                   (let [vararg-type (peek param-types)
                         varargs-form `(jise.core/new ~(t/type->tag vararg-type)
                                                      ~(vec (drop ncs args)))]
-                    (parse-expr cenv varargs-form)))]
-    (cond-> (mapv apply-conversions (:conversions ctor-or-method) args')
-      varargs
-      (conj varargs))))
+                    (parse-expr cenv varargs-form)))
+        cenv' (with-context cenv :expression)
+        synthetic-params' (when (seq synthetic-params)
+                            (parse-expr cenv' synthetic-params))]
+    (as-> (mapv apply-conversions conversions args') args
+      varargs (conj args varargs)
+      synthetic-params' (into synthetic-params' args))))
 
 (defmethod parse-expr* 'new [cenv [_ type & args :as expr]]
   (let [type' (resolve-type cenv type)
@@ -1497,12 +1524,22 @@
             ctors (try
                     (t/find-ctors cenv (:class-type cenv) type' arg-types)
                     (catch Exception e (err/handle-ctor-error type' arg-types e)))
-            ctor (first ctors)]
+            ctor (first ctors)
+            synthetic-names (when (= type' (:class-type cenv'))
+                              (:synthetic-fields cenv'))]
         (-> {:op :new
              :type type'
              :ctor (assoc ctor :class type')
-             :args (args-for cenv' ctor args args')}
+             :args (args-for cenv' ctor args args'
+                             :synthetic-params synthetic-names)}
             (inherit-context cenv))))))
+
+(defn- setup-synthetic-fields [cenv fields]
+  (->> `(jise.core/do
+          ~@(for [field fields
+                  :let [field' (with-meta field nil)]]
+              `(jise.core/set! (. jise.core/this ~field) ~field)))
+       (parse-expr (with-context cenv :statement))))
 
 (defn- parse-ctor-invocation [cenv [op & args]]
   (let [super? (= (misc/fixup-ns op) 'super)
@@ -1516,10 +1553,18 @@
                 (t/find-ctors cenv (:class-type cenv) class arg-types)
                 (catch Exception e (err/handle-ctor-error class arg-types e)))
         ctor (first ctors)
+        synthetic-names (not-empty (:synthetic-fields cenv'))
         initializer (when super? (find-in-current-class cenv :initializer))
-        node {:op :ctor-invocation
-              :ctor (assoc ctor :class class)
-              :args (args-for cenv' ctor args args')}]
+        node (as-> {:op :ctor-invocation
+                    :ctor (assoc ctor :class class)
+                    :args (args-for cenv' ctor args args'
+                                    :synthetic-params
+                                    (when-not super? synthetic-names))}
+                 node
+               (if (and super? synthetic-names)
+                 {:op :do
+                  :exprs [(setup-synthetic-fields cenv' synthetic-names) node]}
+                 node))]
     (if initializer
       (-> {:op :do
            :exprs [(with-context node :statement)
