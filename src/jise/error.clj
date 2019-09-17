@@ -25,6 +25,9 @@
 (defmacro error-on-reserved-word [keyword]
   `(error ~(str keyword " is a reserved word, but cannot be used now")))
 
+(defmacro error-on-illegal-access-to-non-static [name]
+  `(error (str "non-static variable " ~name " cannot be referenced from a static context")))
+
 (defn error-message-on-incompatible-types [expected actual]
   (format "incompatible types: %s cannot be converted to %s"
           (stringify-type actual)

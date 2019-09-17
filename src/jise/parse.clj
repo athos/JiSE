@@ -294,13 +294,13 @@
               (parse-expr cenv (with-meta `(. ~callee ~(symbol (str \- (name sym)))) (meta sym))))
             (parse-this [cenv]
               (if (:static? cenv)
-                (error "non-static variable this cannot be referenced from a static context")
+                (err/error-on-illegal-access-to-non-static "this")
                 (-> {:op :local :type (:class-type cenv)
                      :local {:index 0 :access #{:final} :param? true}}
                     (inherit-context cenv))))
             (parse-super [cenv]
               (if (:static? cenv)
-                (error "non-static variable super cannot be referenced from a static context")
+                (err/error-on-illegal-access-to-non-static "super")
                 (-> {:op :super :type (find-in-current-class cenv :parent)}
                     (inherit-context cenv))))]
       (let [sym' (misc/resolve-ns sym)]
@@ -322,8 +322,11 @@
               this (parse-this cenv)
               super (parse-super cenv)
               (if-let [f (find-field cenv (:class-type cenv) (name sym))]
-                (let [callee (if (:static (:access f)) (:class-name cenv) 'jise.core/this)]
-                  (parse-as-field cenv callee))
+                (if (:static? cenv)
+                  (if (:static (:access f))
+                    (parse-as-field cenv (:class-name cenv))
+                    (err/error-on-illegal-access-to-non-static (name sym)))
+                  (parse-as-field cenv 'jise.core/this))
                 (when throws-on-failure?
                   (error (str "cannot find symbol: " sym) {:variable sym}))))))))))
 
