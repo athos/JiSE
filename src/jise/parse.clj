@@ -73,7 +73,7 @@
                        (when (string? val) val))
 
                      (= t t/CLASS)
-                     (when-let [t' (t/tag->type proto-cenv val)]
+                     (when-let [t' (t/tag->type proto-cenv val :throws-on-failure? false)]
                        t')
 
                      (t/array-type? t)
