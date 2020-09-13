@@ -64,7 +64,7 @@
                         (.visitAnnotation fv (.getDescriptor type)
                                           (= retention RetentionPolicy/RUNTIME)))
                       annotations)
-   (.visitEnd fv)))
+    (.visitEnd fv)))
 
 (defmulti emit-expr* (fn [emitter expr] (:op expr)))
 (defmethod emit-expr* :default [_ expr]
@@ -159,8 +159,8 @@
 (defn- drop-if-statement [{:keys [^MethodVisitor mv]} context]
   (when (:statement context)
     (let [opcode (if (= (t/type-category type) 2)
-                 Opcodes/POP2
-                 Opcodes/POP)]
+                   Opcodes/POP2
+                   Opcodes/POP)]
       (.visitInsn mv opcode))))
 
 (defn- push-null-unless-statement [{:keys [^MethodVisitor mv]} context]
