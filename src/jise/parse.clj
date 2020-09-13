@@ -158,6 +158,7 @@
   (let [has-init? (= (count field) 3)
         modifiers (modifiers-of field)
         {:keys [access type annotations]} (parse-modifiers proto-cenv modifiers)
+        _ (check-annotation-target ElementType/FIELD annotations)
         value' (when has-init?
                  (field-init-value proto-cenv access field))]
     (when (and value' (not (t/constant-value-compatible-with? type value')))
