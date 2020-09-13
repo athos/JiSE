@@ -9,11 +9,12 @@
 
 (set! *warn-on-reflection* true)
 
-(defn- make-emitter [mv]
+(defn- make-emitter [mv debug?]
   {:mv mv
    :continue-label nil
    :break-label nil
-   :labels {}})
+   :labels {}
+   :debug? debug?})
 
 (defn access-value [flags]
   (let [attrs {:abstract Opcodes/ACC_ABSTRACT
@@ -98,8 +99,13 @@
     (emit-line emitter line)
     (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
 
+(defn- emit-local-name [emitter {:keys [name ^Type type index]} start-label end-label]
+  (when (:debug? emitter)
+    (.visitLocalVariable ^MethodVisitor (:mv emitter) name (.getDescriptor type) nil
+                         start-label end-label index)))
+
 (defn- emit-method
-  [^ClassWriter cw parent
+  [^ClassWriter cw parent debug?
    {:keys [name annotations access return-type exceptions args body static-initializer? ctor? varargs?]}]
   (let [desc (->> (map :type args)
                   (into-array Type)
@@ -113,7 +119,7 @@
         mv (.visitMethod cw (access-value (cond-> access varargs? (conj :varargs))) mname desc nil excs)
         start-label (Label.)
         end-label (Label.)
-        emitter (make-emitter mv)]
+        emitter (make-emitter mv debug?)]
     (emit-annotations (fn [{:keys [^Type type retention]}]
                         (.visitAnnotation mv (.getDescriptor type) (= retention RetentionPolicy/RUNTIME)))
                       annotations)
@@ -128,14 +134,15 @@
     (when-not (:abstract access)
       (emit-expr emitter body))
     (.visitLabel mv end-label)
-    (doseq [{:keys [name ^Type type index]} args]
-      (.visitLocalVariable mv name (.getDescriptor type) nil start-label end-label index))
+    (doseq [arg args]
+      (emit-local-name emitter arg start-label end-label))
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
 (defn emit-class
   [{:keys [source name annotations access parent interfaces static-initializer ctors fields methods]}]
-  (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)]
+  (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)
+        debug? (true? (some-> (System/getProperty "jise.debug") read-string))]
     (.visit cw Opcodes/V1_8
             (+ (access-value access) Opcodes/ACC_SUPER)
             name
@@ -150,11 +157,11 @@
     (doseq [field fields]
       (emit-field cw field))
     (when static-initializer
-      (emit-method cw parent static-initializer))
+      (emit-method cw parent debug? static-initializer))
     (doseq [ctor ctors]
-      (emit-method cw parent ctor))
+      (emit-method cw parent debug? ctor))
     (doseq [method methods]
-      (emit-method cw parent method))
+      (emit-method cw parent debug? method))
     (.visitEnd cw)
     (.toByteArray cw)))
 
@@ -343,9 +350,8 @@
       (.visitLabel mv start-label))
     (emit-expr emitter body)
     (.visitLabel mv end-label)
-    (doseq [[binding start-label] (map vector bindings start-labels)
-            :let [{:keys [name ^Type type index]} binding]]
-      (.visitLocalVariable mv name (.getDescriptor type) nil start-label end-label index))))
+    (doseq [[binding start-label] (map vector bindings start-labels)]
+      (emit-local-name emitter binding start-label end-label))))
 
 (defn- emit-dup [{:keys [^MethodVisitor mv]} type]
   (let [opcode (case (t/type-category type)
@@ -540,14 +546,13 @@
       (emit-expr emitter finally-clause))
     (.visitJumpInsn mv Opcodes/GOTO try-end-label)
     (doseq [[{:keys [start-label end-label local body]} more] (partition-all 2 1 catch-clauses')
-            :let [{:keys [name ^Type type index]} local
-                  label (Label.)]]
+            :let [label (Label.)]]
       (.visitLabel mv start-label)
-      (emit-store emitter (or type t/THROWABLE) index)
+      (emit-store emitter (or (:type local) t/THROWABLE) (:index local))
       (.visitLabel mv label)
       (emit-expr emitter body)
       (.visitLabel mv end-label)
-      (.visitLocalVariable mv name (.getDescriptor type) nil label end-label index)
+      (emit-local-name emitter local label end-label)
       (when finally-clause
         (emit-expr emitter finally-clause))
       (when (or finally-clause more)
