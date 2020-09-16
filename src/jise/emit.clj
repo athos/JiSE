@@ -9,11 +9,12 @@
 
 (set! *warn-on-reflection* true)
 
-(defn- make-emitter [mv]
+(defn- make-emitter [mv debug?]
   {:mv mv
    :continue-label nil
    :break-label nil
-   :labels {}})
+   :labels {}
+   :debug? debug?})
 
 (defn access-value [flags]
   (let [attrs {:abstract Opcodes/ACC_ABSTRACT
@@ -98,8 +99,13 @@
     (emit-line emitter line)
     (.visitMethodInsn mv Opcodes/INVOKESPECIAL iname "<init>" desc false)))
 
+(defn- emit-local-name [emitter {:keys [name ^Type type index]} start-label end-label]
+  (when (:debug? emitter)
+    (.visitLocalVariable ^MethodVisitor (:mv emitter) name (.getDescriptor type) nil
+                         start-label end-label index)))
+
 (defn- emit-method
-  [^ClassWriter cw parent
+  [^ClassWriter cw parent debug?
    {:keys [name annotations access return-type exceptions args body static-initializer? ctor? varargs?]}]
   (let [desc (->> (map :type args)
                   (into-array Type)
@@ -111,7 +117,9 @@
                       (map #(.getInternalName ^Type %))
                       (into-array String))
         mv (.visitMethod cw (access-value (cond-> access varargs? (conj :varargs))) mname desc nil excs)
-        emitter (make-emitter mv)]
+        start-label (Label.)
+        end-label (Label.)
+        emitter (make-emitter mv debug?)]
     (emit-annotations (fn [{:keys [^Type type retention]}]
                         (.visitAnnotation mv (.getDescriptor type) (= retention RetentionPolicy/RUNTIME)))
                       annotations)
@@ -122,14 +130,19 @@
                                                      (= retention RetentionPolicy/RUNTIME)))
                         annotations))
     (.visitCode mv)
+    (.visitLabel mv start-label)
     (when-not (:abstract access)
       (emit-expr emitter body))
+    (.visitLabel mv end-label)
+    (doseq [arg args]
+      (emit-local-name emitter arg start-label end-label))
     (.visitMaxs mv 1 1)
     (.visitEnd mv)))
 
 (defn emit-class
   [{:keys [source name annotations access parent interfaces static-initializer ctors fields methods]}]
-  (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)]
+  (let [cw (ClassWriter. ClassWriter/COMPUTE_FRAMES)
+        debug? (true? (some-> (System/getProperty "jise.debug") read-string))]
     (.visit cw Opcodes/V1_8
             (+ (access-value access) Opcodes/ACC_SUPER)
             name
@@ -144,11 +157,11 @@
     (doseq [field fields]
       (emit-field cw field))
     (when static-initializer
-      (emit-method cw parent static-initializer))
+      (emit-method cw parent debug? static-initializer))
     (doseq [ctor ctors]
-      (emit-method cw parent ctor))
+      (emit-method cw parent debug? ctor))
     (doseq [method methods]
-      (emit-method cw parent method))
+      (emit-method cw parent debug? method))
     (.visitEnd cw)
     (.toByteArray cw)))
 
@@ -327,12 +340,18 @@
 (defn- emit-store [{:keys [^MethodVisitor mv]} ^Type type index]
   (.visitVarInsn mv (.getOpcode type Opcodes/ISTORE) index))
 
-(defmethod emit-expr* :let [emitter {:keys [bindings body line]}]
-  (emit-line emitter line)
-  (doseq [{:keys [init] :as b} bindings]
-    (emit-expr emitter init)
-    (emit-store emitter (:type b) (:index b)))
-  (emit-expr emitter body))
+(defmethod emit-expr* :let [{:keys [^MethodVisitor mv] :as emitter} {:keys [bindings body line]}]
+  (let [start-labels (map (fn [_] (Label.)) bindings)
+        end-label (Label.)]
+    (emit-line emitter line)
+    (doseq [[{:keys [init] :as b} start-label] (map vector bindings start-labels)]
+      (emit-expr emitter init)
+      (emit-store emitter (:type b) (:index b))
+      (.visitLabel mv start-label))
+    (emit-expr emitter body)
+    (.visitLabel mv end-label)
+    (doseq [[binding start-label] (map vector bindings start-labels)]
+      (emit-local-name emitter binding start-label end-label))))
 
 (defn- emit-dup [{:keys [^MethodVisitor mv]} type]
   (let [opcode (case (t/type-category type)
@@ -526,11 +545,14 @@
     (when finally-clause
       (emit-expr emitter finally-clause))
     (.visitJumpInsn mv Opcodes/GOTO try-end-label)
-    (doseq [[{:keys [start-label end-label local body]} more] (partition-all 2 1 catch-clauses')]
+    (doseq [[{:keys [start-label end-label local body]} more] (partition-all 2 1 catch-clauses')
+            :let [label (Label.)]]
       (.visitLabel mv start-label)
       (emit-store emitter (or (:type local) t/THROWABLE) (:index local))
+      (.visitLabel mv label)
       (emit-expr emitter body)
       (.visitLabel mv end-label)
+      (emit-local-name emitter local label end-label)
       (when finally-clause
         (emit-expr emitter finally-clause))
       (when (or finally-clause more)
