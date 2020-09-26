@@ -464,6 +464,8 @@
   (err/with-line&column-of method
     (let [modifiers (modifiers-of method)
           {:keys [access type annotations]} (parse-modifiers cenv modifiers :default-type t/VOID)
+          _ (when (and (:abstract access) body)
+              (error "abstract methods cannot have a body"))
           _ (check-annotation-target ElementType/METHOD annotations)
           static? (boolean (:static access))
           init-index (if static? 0 1)
@@ -476,21 +478,19 @@
           return-type (if ctor? t/VOID type)
           context (if (= return-type t/VOID) :statement :expression)
           this-name (or (:jise.core/this-name (meta method)) (:jise.core/this-name cenv))
-          body' (if (:abstract access)
-                  (when body (error "abstract methods cannot have a body"))
-                  (let [cenv' (cond-> (assoc cenv'
-                                             :return-type return-type
-                                             :context #{context :tail :return}
-                                             :static? static?)
-                                exceptions
-                                (assoc :exceptions (set exceptions))
+          cenv' (cond-> (assoc cenv'
+                               :return-type return-type
+                               :context #{context :tail :return}
+                               :static? static?)
+                  exceptions
+                  (assoc :exceptions (set exceptions))
 
-                                (and (not static?) this-name)
-                                (assoc-in [:lenv (name this-name)]
-                                          {:index 0 :type (:class-type cenv)
-                                           :access #{:final} :param? true}))]
-                    (cond->> (parse-exprs cenv' body)
-                      ctor? (inject-ctor-invocation cenv'))))]
+                  (and (not static?) this-name)
+                  (assoc-in [:lenv (name this-name)]
+                            {:index 0 :type (:class-type cenv)
+                             :access #{:final} :param? true}))
+          body' (cond->> (parse-exprs cenv' body)
+                  ctor? (inject-ctor-invocation cenv'))]
       (cond-> {:return-type return-type
                :args args'
                :annotations annotations
