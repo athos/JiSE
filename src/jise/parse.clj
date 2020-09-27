@@ -876,8 +876,8 @@
                                [lhs (apply-conversions cs rhs)]))]
       {:op op
        :type t/BOOLEAN
-       :lhs lhs
-       :rhs rhs}
+       :lhs lhs'
+       :rhs rhs'}
       (err/error-on-bad-operand-types op-name t1 t2))))
 
 (defn- conditional-context? [cenv]
