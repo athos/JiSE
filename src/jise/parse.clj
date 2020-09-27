@@ -151,10 +151,10 @@
       (seq annotations)
       (assoc :annotations annotations))))
 
-(defn- field-init-value [proto-cenv access [_ _ value :as field]]
+(defn- field-init-value [proto-cenv access [_ _ value]]
   (and (:final access) (simp/simplify proto-cenv value)))
 
-(defn- parse-field [proto-cenv [_ fname value :as field]]
+(defn- parse-field [proto-cenv [_ fname :as field]]
   (let [has-init? (= (count field) 3)
         modifiers (modifiers-of field)
         {:keys [access type annotations]} (parse-modifiers proto-cenv modifiers)
@@ -220,7 +220,7 @@
     (when-not (:macro (meta var))
       (let [vname (symbol (subs (str var) 2))]
         (-> (swap! (:vars cenv)
-                   (fn [{:keys [var->entry fields] :as vars}]
+                   (fn [{:keys [var->entry] :as vars}]
                      (if (get var->entry vname)
                        vars
                        (let [field-name (gensym (:name (meta var)))
@@ -261,9 +261,9 @@
 (declare parse-expr parse-method-invocation)
 
 (defn- parse-sugar [{:keys [class-type] :as cenv} [op :as expr]]
-  (or (when-let [{:keys [type] :as x} (and (not (namespace op))
-                                           (or (find-lname cenv op)
-                                               (find-field cenv class-type (name op))))]
+  (or (when-let [{:keys [type]} (and (not (namespace op))
+                                     (or (find-lname cenv op)
+                                         (find-field cenv class-type (name op))))]
         (cond (t/array-type? type)
               (parse-expr cenv (with-meta `(jise.core/aget ~@expr) (meta expr)))
 
@@ -334,7 +334,7 @@
 (defn- parse-seq [cenv expr]
   (if-let [tag (:tag (meta expr))]
     (parse-expr cenv `(jise.core/cast ~tag ~(vary-meta expr dissoc :tag)))
-    (let [{:keys [tag line label]} (meta expr)
+    (let [{:keys [line label]} (meta expr)
           cenv' (if label (inherit-context cenv cenv :return? false) cenv)
           expr' (if (symbol? (first expr))
                   (binding [*active-labels* (cond-> *active-labels* label (conj label))]
@@ -544,7 +544,7 @@
                 (recur decls ret)))
             (recur decls ret)))))))
 
-(defn- parse-method-signature [proto-cenv [_ name args :as method]]
+(defn- parse-method-signature [proto-cenv [_ _ args :as method]]
   (let [modifiers (modifiers-of method)
         {:keys [type access]} (parse-modifiers proto-cenv modifiers :default-type t/VOID)
         varargs? (volatile! false)
@@ -562,7 +562,7 @@
      :return-type type
      :param-types param-types}))
 
-(defn- build-class-entry [proto-cenv cname parent interfaces {:keys [ctors methods]}]
+(defn- build-class-entry [proto-cenv parent interfaces {:keys [ctors methods]}]
   (let [ctors' (reduce (fn [cs [_ _ args :as ctor]]
                          (err/with-line&column-of ctor
                            (let [access (access-flags (modifiers-of ctor))
@@ -585,8 +585,8 @@
 (defn- parse-fields [cenv fields]
   (let [cname (:class-name cenv)]
     (reduce (fn [[cenv initializer] field]
-              (let [[_ fname init] field
-                    {:keys [static] :as modifiers} (modifiers-of field)
+              (let [[_ _ init] field
+                    {:keys [static]} (modifiers-of field)
                     cenv' (cond-> cenv static (assoc :static? true))
                     field' (err/with-line&column-of field
                              (parse-field cenv' field))
@@ -603,7 +603,7 @@
 
 (defn- build-cenv
   [proto-cenv cname modifiers parent interfaces {:keys [static non-static] :as decls}]
-  (let [entry (build-class-entry proto-cenv cname parent interfaces decls)
+  (let [entry (build-class-entry proto-cenv parent interfaces decls)
         cenv' (update-in proto-cenv [:classes cname] merge entry)
         [cenv' stinit] (parse-fields cenv' static)
         [cenv' init] (parse-fields cenv' non-static)
@@ -662,7 +662,7 @@
           (:var->entry @vars)))
 
 (defn- parse-static-initializer [cenv]
-  (let [{:keys [static-initializer class-name]} cenv
+  (let [{:keys [static-initializer]} cenv
         additional-static-fields (synthesize-static-fields cenv)
         [cenv' additional-stinit] (parse-fields cenv additional-static-fields)]
     [cenv'
@@ -1449,7 +1449,7 @@
           x'))
       (err/error-on-incompatible-types t/INT (:type x))))
 
-(defn- parse-array-creation [cenv type' [_ type & args :as expr]]
+(defn- parse-array-creation [cenv type' [_ _ & args]]
   (let [cenv' (with-context cenv :expression)]
     (if (vector? (first args))
       (let [elem-type (t/element-type type')
